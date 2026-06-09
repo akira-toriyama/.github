@@ -26,8 +26,8 @@ jobs:
       GH_TOKEN: ${{ secrets.ROADMAP_PROJECT_PAT }}
       OWNER: akira-toriyama
       PROJECT: '5'
-      # Space-separated repo names to skip (e.g. 'test next.js-tpl shenron-demo'). Empty = none.
-      EXCLUDE: ''
+      # Space-separated repo names to skip. next.js-tpl = learning/scratch repo, not roadmap work.
+      EXCLUDE: 'next.js-tpl'
     steps:
       - name: Add open issues not yet on the board
         run: |
@@ -59,6 +59,7 @@ jobs:
           for repo in "${REPOS[@]}"; do
             case " $EXCLUDE " in *" $repo "*) echo "skip(excluded): $repo"; continue;; esac
             # gh issue list returns issues only (PRs excluded) == is:issue; id is the node id.
+            # Skip bot/GitHub-App authors (app/*, *[bot]) — dependency-update / CI noise.
             while IFS=$'\t' read -r cid url; do
               [ -z "${url:-}" ] && continue
               if ! grep -qxF "$url" <<<"$existing"; then
@@ -68,6 +69,7 @@ jobs:
                   -f p="$PID" -f c="$cid" >/dev/null
                 added=$((added+1))
               fi
-            done < <(gh issue list -R "$OWNER/$repo" --state open --limit 1000 --json id,url -q '.[] | [.id, .url] | @tsv')
+            done < <(gh issue list -R "$OWNER/$repo" --state open --limit 1000 --json id,url,author \
+              -q '.[] | select((.author.login // "") | (startswith("app/") or endswith("[bot]")) | not) | [.id, .url] | @tsv')
           done
           echo "done: added $added new issue(s) across ${#REPOS[@]} repos"
