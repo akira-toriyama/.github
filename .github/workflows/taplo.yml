@@ -1,0 +1,28 @@
+name: taplo
+
+# Reusable TOML lint (Taplo), called by each config.toml repo's thin caller workflow.
+# It runs in the CALLER repo's context: actions/checkout pulls the caller's code, so taplo
+# validates the caller repo's *.toml — against its `#:schema` directive when one is present.
+# The logic lives here once; callers only trigger + `uses:` this file.
+#
+# Caller skeleton (.github/workflows/taplo.yml in each config.toml repo):
+#   on:
+#     pull_request: { paths: ['**/*.toml'] }
+#     push:        { paths: ['**/*.toml'] }
+#     workflow_dispatch:
+#   jobs:
+#     taplo:
+#       uses: akira-toriyama/.github/.github/workflows/taplo.yml@main
+
+on:
+  workflow_call:
+
+jobs:
+  taplo:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: taplo lint
+        # Syntax + semantic checks now; validates against per-repo `#:schema` once added.
+        # `fmt --check` (style enforcement) can be added here later — one central edit.
+        run: npx --yes @taplo/cli@0.7.0 lint
