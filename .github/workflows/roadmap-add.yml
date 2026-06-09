@@ -1,10 +1,11 @@
 name: roadmap-add
 
-# Aggregate every OPEN issue from the roadmap repos into project #5 (akira-toriyama/roadmap).
+# Aggregate every OPEN issue from all owned repos into project #5 (akira-toriyama/roadmap).
 # The built-in "Auto-add to project" workflow is capped at 1 repo (Free) / 5 (Pro-Team), so it
-# cannot cover all repos. This sweeps them all for free.
+# cannot cover all repos. This sweeps them for free and discovers the repo list dynamically
+# (gh repo list), so new repos are picked up automatically — the README's "全 repo / 迷子ゼロ".
 # Triggers: every 15 min (GitHub may delay scheduled runs) and on-demand via
-#   gh workflow run roadmap-add.yml -R akira-toriyama/akira-toriyama
+#   gh workflow run roadmap-add.yml -R akira-toriyama/.github
 #
 # Uses gh api graphql directly (not `gh project`, which needs owner-type resolution and
 # fails with "unknown owner type" when the PAT only carries the `project` scope).
@@ -25,11 +26,19 @@ jobs:
       GH_TOKEN: ${{ secrets.ROADMAP_PROJECT_PAT }}
       OWNER: akira-toriyama
       PROJECT: '5'
-      REPOS: 'facet chord halo perch wand canon dotfiles glossary-site excalidraw-claude-code'
+      # Space-separated repo names to skip (e.g. 'test next.js-tpl shenron-demo'). Empty = none.
+      EXCLUDE: ''
     steps:
       - name: Add open issues not yet on the board
         run: |
           set -euo pipefail
+
+          # All owned, non-fork, non-archived PUBLIC repos (new ones auto-included).
+          # Private repos are skipped: the project-scope PAT cannot read their issues.
+          mapfile -t REPOS < <(gh repo list "$OWNER" --no-archived --limit 200 \
+            --json name,isFork,isPrivate \
+            -q '.[] | select(.isFork==false and .isPrivate==false) | .name' | sort)
+          echo "scanning ${#REPOS[@]} repos"
 
           # Project node id.
           PID="$(gh api graphql -f query='
@@ -47,7 +56,8 @@ jobs:
             -q '.data.user.projectV2.items.nodes[].content.url // empty' | sort -u)"
 
           added=0
-          for repo in $REPOS; do
+          for repo in "${REPOS[@]}"; do
+            case " $EXCLUDE " in *" $repo "*) echo "skip(excluded): $repo"; continue;; esac
             # gh issue list returns issues only (PRs excluded) == is:issue; id is the node id.
             while IFS=$'\t' read -r cid url; do
               [ -z "${url:-}" ] && continue
@@ -60,4 +70,4 @@ jobs:
               fi
             done < <(gh issue list -R "$OWNER/$repo" --state open --limit 1000 --json id,url -q '.[] | [.id, .url] | @tsv')
           done
-          echo "done: added $added new issue(s)"
+          echo "done: added $added new issue(s) across ${#REPOS[@]} repos"
