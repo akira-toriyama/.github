@@ -1,0 +1,55 @@
+name: Commit lint
+
+# Reusable gitmoji + Conventional Commits validator, called by each family
+# repo's thin caller workflow. Runs in the CALLER repo's context:
+# actions/checkout pulls the caller's commits, so the BASE..HEAD range is
+# the caller PR's. The logic lives here once (it was byte-identical across
+# facet / halo / perch / wand and drifted in chord / glance); callers only
+# trigger + `uses:` this file. Convention doc: each repo's
+# docs/commit-convention.md / local hook: scripts/hooks/commit-msg.
+#
+# Caller skeleton (.github/workflows/commit-lint.yml in each repo):
+#   on:
+#     pull_request:
+#   jobs:
+#     lint:
+#       uses: akira-toriyama/.github/.github/workflows/commit-lint.yml@main
+
+on:
+  workflow_call:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Validate commit messages
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          types='feat|fix|perf|refactor|docs|test|build|ci|chore|style|revert'
+          pattern="^:[a-z0-9][a-z0-9_+-]*: (${types})(\([^()]+\))?!?: .+"
+          fail=0
+          while IFS="$(printf '\t')" read -r sha author subject; do
+            case "$author" in
+              *"[bot]"|"github-actions"*) continue ;;
+            esac
+            case "$subject" in
+              "Merge "*|"Revert "*|"fixup! "*|"squash! "*) continue ;;
+            esac
+            if ! printf '%s' "$subject" | grep -qE "$pattern"; then
+              echo "::error::convention violation ${sha}: ${subject}"
+              fail=1
+            fi
+          done < <(git log --no-merges --format='%H%x09%an%x09%s' "${BASE}..${HEAD}")
+
+          if [ "$fail" -ne 0 ]; then
+            echo "format: <:gitmoji:> <type>(<scope>)<!>: <subject>  — see docs/commit-convention.md" >&2
+            exit 1
+          fi
+          echo "all commits OK"
