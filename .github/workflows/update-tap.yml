@@ -1,0 +1,142 @@
+name: update-tap
+
+# Reusable Homebrew-tap bumper, called by each app repo's thin caller
+# workflow. When the caller publishes a Release (or is manually
+# dispatched), this bumps the formula at akira-toriyama/homebrew-tap to
+# that tag + the fresh source-tarball sha256. Idempotent — re-running on
+# the same tag is a no-op when the formula already matches.
+#
+# The logic lived byte-near-identical in facet / halo / perch / wand;
+# it now lives here once and they only `uses:` this file. (glance /
+# chord / jig use a deliberately different tap updater — latest-fetch +
+# stricter validation + bot identity — and are NOT callers of this one.)
+# This reusable is the BEST common form: pull-rebase + a 5-min timeout
+# are baked in for everyone (facet/halo gain the robustness perch/wand
+# already had); the only knob is the formula name.
+#
+# Cross-repo write needs a PAT (GITHUB_TOKEN can only touch the caller
+# repo). Add a fine-grained PAT with `Contents: Read & write` scoped to
+# homebrew-tap, as the caller repo secret `HOMEBREW_TAP_TOKEN`.
+#
+# Caller skeleton (.github/workflows/update-tap.yml in each app repo):
+#   on:
+#     release:
+#       types: [published]
+#     workflow_dispatch:
+#       inputs:
+#         tag:
+#           description: "Tag to bump (e.g. v1.4.0). Empty → latest published."
+#           required: false
+#           default: ""
+#   jobs:
+#     bump:
+#       uses: akira-toriyama/.github/.github/workflows/update-tap.yml@main
+#       with:
+#         formula: facet
+#         tag: ${{ github.event.inputs.tag || '' }}
+#       secrets:
+#         HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+
+on:
+  workflow_call:
+    inputs:
+      formula:
+        description: "Formula basename in homebrew-tap (e.g. 'facet' → Formula/facet.rb)."
+        required: true
+        type: string
+      tag:
+        description: "Explicit tag to bump (e.g. v1.4.0). Empty → release event's tag, else latest published."
+        required: false
+        type: string
+        default: ""
+    secrets:
+      HOMEBREW_TAP_TOKEN:
+        description: "Fine-grained PAT with Contents: Read & write on homebrew-tap."
+        required: true
+
+concurrency:
+  group: update-tap
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    # Bounded so a stuck `git push` against the tap repo can't hang
+    # forever — the whole job is a few short network ops.
+    timeout-minutes: 5
+    steps:
+      - name: Resolve tag
+        id: tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          if [ -n "${INPUT_TAG}" ]; then
+            t="${INPUT_TAG}"
+          elif [ "${{ github.event_name }}" = "release" ]; then
+            t="${{ github.event.release.tag_name }}"
+          else
+            t="$(gh release view --repo ${{ github.repository }} \
+                  --json tagName --jq .tagName)"
+          fi
+          echo "tag=$t" >> "$GITHUB_OUTPUT"
+          echo "::notice::Target tag = $t"
+
+      - name: Download source tarball + compute sha256
+        id: sha
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          set -euo pipefail
+          url="https://github.com/${{ github.repository }}/archive/refs/tags/${TAG}.tar.gz"
+          curl -fsSL -o src.tgz "$url"
+          s="$(sha256sum src.tgz | awk '{print $1}')"
+          echo "sha=$s" >> "$GITHUB_OUTPUT"
+          echo "::notice::sha256 = $s"
+
+      - name: Checkout homebrew-tap (PAT)
+        uses: actions/checkout@v6
+        with:
+          repository: akira-toriyama/homebrew-tap
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          path: tap
+
+      - name: Bump Formula (idempotent)
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+          NEW_SHA: ${{ steps.sha.outputs.sha }}
+          FORMULA: ${{ inputs.formula }}
+        run: |
+          set -euo pipefail
+          f="tap/Formula/${FORMULA}.rb"
+          # No-op when the formula already matches.
+          if grep -q "archive/refs/tags/${TAG}.tar.gz" "$f" \
+             && grep -q "sha256 \"${NEW_SHA}\"" "$f"; then
+            echo "::notice::Formula already at ${TAG} — nothing to do."
+            exit 0
+          fi
+          sed -i -E "s|archive/refs/tags/v[0-9]+\.[0-9]+\.[0-9]+\.tar\.gz|archive/refs/tags/${TAG}.tar.gz|g" "$f"
+          sed -i -E "s|sha256 \"[0-9a-f]{64}\"|sha256 \"${NEW_SHA}\"|g" "$f"
+          # On any version bump, drop a leftover `revision N` line. Revision
+          # only matters when REbuilding the same upstream version (e.g. an
+          # install-script fix at the same tag); a fresh tag naturally resets
+          # it. Without this, a revision bumped while fixing a prior release
+          # follows the formula forward and produces e.g. `1.5.0_2` when the
+          # natural display is `1.5.0`.
+          sed -i -E '/^  revision [0-9]+$/d' "$f"
+          cd tap
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "Formula/${FORMULA}.rb"
+          git commit -m "homebrew: bump ${FORMULA} to ${TAG}"
+          # Pull-rebase before push: if the tap got a manual edit in the
+          # meantime, a plain push would fail non-fast-forward and leave the
+          # release published but the tap stale. Rebasing keeps the auto-bump
+          # on top.
+          git pull --rebase
+          git push
+          echo "::notice::Bumped tap to ${TAG} (sha ${NEW_SHA:0:12}…)."
