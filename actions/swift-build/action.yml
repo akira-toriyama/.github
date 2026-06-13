@@ -1,0 +1,61 @@
+name: Swift build
+description: >-
+  Shared Swift build steps for the atelier app family — pins the latest
+  stable Xcode, warms the SPM cache, builds, and (optionally) runs tests.
+  Consumed as a STEP (not a reusable workflow) so the caller's job keeps
+  its name: the `build` required check is unaffected (no branch-protection
+  surgery) and the caller appends its own app-specific package / smoke step.
+
+inputs:
+  build-cmd:
+    description: >-
+      Build command. Default builds release in-tree; override for repos that
+      drive the build through a script (e.g. `./build.sh`).
+    required: false
+    default: swift build -c release
+  run-tests:
+    description: >-
+      Whether to run `swift test`. Set "false" for repos without a test
+      target (XCTest needs full Xcode, absent in the CLT-only local flow).
+    required: false
+    default: "true"
+
+runs:
+  using: composite
+  steps:
+    # macos runners default to an older Xcode (Swift 5.x); the package
+    # needs the Swift 6 toolchain. Pin the latest stable Xcode.
+    - uses: maxim-lobanov/setup-xcode@v1
+      with:
+        xcode-version: latest-stable
+
+    # SPM cache. Keeps the resolved dependency checkout + compiled module
+    # artefacts warm, shaving the cold-build cost. Key invalidates on
+    # Package.swift / Package.resolved edits (a dependency bump changes the
+    # lockfile); the restore-key warm-starts across minor toolchain changes.
+    # Repo name is in the key because the runner workspace path is
+    # `/Users/runner/work/<repo>/<repo>` — after a rename, old-path PCHs
+    # break with "PCH compiled with module cache path …". hashFiles tolerates
+    # a missing Package.resolved (deps-free repos), hashing Package.swift alone.
+    - uses: actions/cache@v5
+      with:
+        path: |
+          .build
+          ~/Library/Caches/org.swift.swiftpm
+        key: ${{ runner.os }}-spm-${{ github.event.repository.name }}-${{ hashFiles('Package.swift', 'Package.resolved') }}
+        restore-keys: ${{ runner.os }}-spm-${{ github.event.repository.name }}-
+
+    - name: Show toolchain
+      shell: bash
+      run: swift --version
+
+    - name: Build (release)
+      shell: bash
+      run: ${{ inputs.build-cmd }}
+
+    # XCTest needs full Xcode (CommandLineTools has none) — tests run here,
+    # not in the CLT-only local dev flow (CLAUDE.md).
+    - name: Test
+      if: ${{ inputs.run-tests == 'true' }}
+      shell: bash
+      run: swift test
