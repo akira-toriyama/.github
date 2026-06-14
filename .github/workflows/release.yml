@@ -57,6 +57,11 @@ on:
         required: false
         type: boolean
         default: false
+      smoke-cmd:
+        description: "Post-build smoke args, e.g. 'config --validate' — runs `./<App>.app/Contents/MacOS/<app> <smoke-cmd>`. Takes precedence over `smoke` (use for yabai-style `wand config --validate` etc.); empty falls back to `smoke`."
+        required: false
+        type: string
+        default: ""
       dry-run:
         description: "Preview only — no draft, no version consumed (thread the caller's workflow_dispatch input)."
         required: false
@@ -137,11 +142,17 @@ jobs:
           CODESIGN_ID: "-"
           APP: ${{ inputs.app }}
           SMOKE: ${{ inputs.smoke }}
+          SMOKE_CMD: ${{ inputs.smoke-cmd }}
         run: |
           set -euo pipefail
           ./package.sh
-          if [ "$SMOKE" = "true" ]; then
-            bin="$(echo "$APP" | tr '[:upper:]' '[:lower:]')"
+          bin="$(echo "$APP" | tr '[:upper:]' '[:lower:]')"
+          # `smoke-cmd` (e.g. `config --validate`) takes precedence; else
+          # the legacy boolean `smoke` runs `--validate`. Unquoted on
+          # purpose so multi-word args split.
+          if [ -n "$SMOKE_CMD" ]; then
+            "./${APP}.app/Contents/MacOS/${bin}" $SMOKE_CMD
+          elif [ "$SMOKE" = "true" ]; then
             "./${APP}.app/Contents/MacOS/${bin}" --validate
           fi
           mkdir -p artifacts
