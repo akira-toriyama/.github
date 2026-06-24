@@ -23,6 +23,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: taplo lint
-        # Syntax + semantic checks now; validates against per-repo `#:schema` once added.
-        # `fmt --check` (style enforcement) can be added here later — one central edit.
+        # Syntax + semantic checks; validates against per-repo `#:schema` when present.
         run: npx --yes @taplo/cli@0.7.0 lint
+      - name: taplo fmt --check
+        # Style enforcement (the central edit the lint comment anticipated). All
+        # caller repos' *.toml are normalized to taplo's default style; a drifting
+        # file fails here. Regenerate with `npx @taplo/cli@0.7.0 fmt`.
+        run: npx --yes @taplo/cli@0.7.0 fmt --check
