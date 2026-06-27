@@ -111,11 +111,47 @@ jobs:
               echo "needs-sync: $full $dest"
               changed=$((changed + 1))
               [ "$DRY" = "true" ] && continue
+
+              # Try a direct commit to the default branch.
               args=(-X PUT "repos/$full/contents/$dest"
                 -f "message=:robot: chore(fleet): sync $dest"
                 -f "content=$local_b64")
               [ -n "$sha" ] && args+=(-f "sha=$sha")
-              gh api "${args[@]}" >/dev/null && echo "synced: $full $dest"
+              if gh api "${args[@]}" >/dev/null 2>/dev/null; then
+                echo "synced: $full $dest"
+                continue
+              fi
+
+              # Rejected (e.g. a protected default branch -> HTTP 409): land it as a PR.
+              echo "direct commit rejected for $full $dest — using a PR"
+              db="$(gh api "repos/$full" --jq .default_branch)"
+              branch="fleet-sync/task-status"
+              if ! gh api "repos/$full/git/ref/heads/$branch" >/dev/null 2>/dev/null; then
+                bsha="$(gh api "repos/$full/git/ref/heads/$db" --jq .object.sha)"
+                gh api -X POST "repos/$full/git/refs" -f "ref=refs/heads/$branch" -f "sha=$bsha" >/dev/null
+              fi
+              # Update the branch file only if it differs (no empty commits on re-runs).
+              bsha2=""; need_put=1
+              if bjson="$(gh api "repos/$full/contents/$dest?ref=$branch" 2>/dev/null)"; then
+                bb64="$(printf '%s' "$bjson" | jq -r '.content' | tr -d '\n')"
+                bsha2="$(printf '%s' "$bjson" | jq -r '.sha')"
+                [ "$bb64" = "$local_b64" ] && need_put=0
+              fi
+              if [ "$need_put" = 1 ]; then
+                pargs=(-X PUT "repos/$full/contents/$dest"
+                  -f "message=:robot: chore(fleet): sync $dest"
+                  -f "content=$local_b64" -f "branch=$branch")
+                [ -n "$bsha2" ] && pargs+=(-f "sha=$bsha2")
+                gh api "${pargs[@]}" >/dev/null
+              fi
+              if gh pr create --repo "$full" --base "$db" --head "$branch" \
+                   --title ":robot: chore(fleet): sync $dest" \
+                   --body "Automated standard-file sync from akira-toriyama/.github (fleet-sync). The default branch is protected, so this lands as a PR." \
+                   >/dev/null 2>/dev/null; then
+                echo "pr-opened: $full $dest"
+              else
+                echo "pr-exists: $full $dest"
+              fi
             done
 
             # 2) fan out the App secrets the stub needs (idempotent overwrite)
