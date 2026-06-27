@@ -1,0 +1,135 @@
+name: fleet-sync
+
+# Repo standardizer (fleet file-sync). Ensures a set of STANDARD files exists in
+# every owned, non-fork, non-archived repo, and distributes the GitHub App
+# secrets those files need. New repos are picked up automatically (the repo list
+# is fetched at run time), so there is never a "this repo has it / that one
+# doesn't" gap. `task-status` is the first managed file, but this is deliberately
+# GENERAL — add more (src:dest) pairs to MANIFEST to standardize more files.
+#
+# Secrets to set on THIS repo (.github) — fleet-sync is DORMANT until FLEET_SYNC_PAT exists:
+#   FLEET_SYNC_PAT            classic PAT, scopes `repo` + `workflow`
+#                            (workflow scope is REQUIRED to write .github/workflows/* cross-repo)
+#   PROJECTS_APP_CLIENT_ID   furrow-status-bot App Client ID  (fanned out to each repo)
+#   PROJECTS_APP_PRIVATE_KEY furrow-status-bot App private key (fanned out to each repo)
+#
+# Safety: workflow_dispatch defaults to DRY-RUN (log only). Scheduled runs apply.
+# Note: distributing the App private key to many repos widens its blast radius —
+# trim EXCLUDE (or scope the secret step) if that matters more than uniformity.
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: Log what would change without applying it.
+        type: boolean
+        default: true
+      only-repo:
+        description: Limit to a single repo name (optional).
+        type: string
+        default: ''
+  schedule:
+    - cron: '0 6 * * *' # daily — a new repo onboards within a day
+
+concurrency:
+  group: fleet-sync
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Gate (dormant until configured)
+        id: gate
+        env:
+          PAT: ${{ secrets.FLEET_SYNC_PAT }}
+        run: |
+          set -euo pipefail
+          if [ -z "${PAT:-}" ]; then
+            echo "::notice::FLEET_SYNC_PAT not set — fleet-sync is dormant until configured."
+            echo "go=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "go=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout (.github holds the canonical files)
+        if: steps.gate.outputs.go == 'true'
+        uses: actions/checkout@v4
+
+      - name: Sync standard files + App secrets across the fleet
+        if: steps.gate.outputs.go == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.FLEET_SYNC_PAT }}
+          OWNER: ${{ github.repository_owner }}
+          EVENT: ${{ github.event_name }}
+          DRY_RUN: ${{ inputs.dry-run }}
+          ONLY_REPO: ${{ inputs.only-repo }}
+          APP_CLIENT_ID: ${{ secrets.PROJECTS_APP_CLIENT_ID }}
+          APP_PRIVATE_KEY: ${{ secrets.PROJECTS_APP_PRIVATE_KEY }}
+          # Repos to skip (space-separated). .github is the hub itself.
+          EXCLUDE: '.github'
+        run: |
+          set -euo pipefail
+
+          # Scheduled runs always apply; manual runs honor the dry-run input.
+          DRY="${DRY_RUN:-false}"
+          [ "$EVENT" = "schedule" ] && DRY=false
+          echo "event=$EVENT dry-run=$DRY"
+
+          # Manifest: "<src in this repo>:<dest in each target repo>". Add lines to
+          # standardize more files. v1 = the task-status caller stub.
+          MANIFEST="fleet/task-status.yml:.github/workflows/task-status.yml"
+
+          # Target repos: owned, non-fork, non-archived (new repos auto-included).
+          mapfile -t REPOS < <(gh repo list "$OWNER" --no-archived --source --limit 200 \
+            --json name,isFork -q '.[] | select(.isFork==false) | .name' | sort)
+          echo "candidate repos: ${#REPOS[@]}"
+
+          changed=0
+          for repo in "${REPOS[@]}"; do
+            case " $EXCLUDE " in *" $repo "*) echo "skip(excluded): $repo"; continue;; esac
+            if [ -n "$ONLY_REPO" ] && [ "$repo" != "$ONLY_REPO" ]; then continue; fi
+            full="$OWNER/$repo"
+
+            # 1) sync each manifest file (create or update on the default branch)
+            for pair in $MANIFEST; do
+              src="${pair%%:*}"; dest="${pair##*:}"
+              local_b64="$(base64 < "$src" | tr -d '\n')"
+              if remote_json="$(gh api "repos/$full/contents/$dest" 2>/dev/null)"; then
+                remote_b64="$(printf '%s' "$remote_json" | jq -r '.content' | tr -d '\n')"
+                sha="$(printf '%s' "$remote_json" | jq -r '.sha')"
+                if [ "$remote_b64" = "$local_b64" ]; then
+                  echo "ok(up-to-date): $full $dest"
+                  continue
+                fi
+              else
+                sha=""
+              fi
+              echo "needs-sync: $full $dest"
+              changed=$((changed + 1))
+              [ "$DRY" = "true" ] && continue
+              args=(-X PUT "repos/$full/contents/$dest"
+                -f "message=:robot: chore(fleet): sync $dest"
+                -f "content=$local_b64")
+              [ -n "$sha" ] && args+=(-f "sha=$sha")
+              gh api "${args[@]}" >/dev/null && echo "synced: $full $dest"
+            done
+
+            # 2) fan out the App secrets the stub needs (idempotent overwrite)
+            if [ -n "${APP_CLIENT_ID:-}" ] && [ -n "${APP_PRIVATE_KEY:-}" ]; then
+              if [ "$DRY" = "true" ]; then
+                echo "would-set-secrets: $full (PROJECTS_APP_CLIENT_ID, PROJECTS_APP_PRIVATE_KEY)"
+              else
+                gh secret set PROJECTS_APP_CLIENT_ID --repo "$full" --body "$APP_CLIENT_ID"
+                printf '%s' "$APP_PRIVATE_KEY" | gh secret set PROJECTS_APP_PRIVATE_KEY --repo "$full"
+                echo "secrets-set: $full"
+              fi
+            else
+              echo "::warning::App secrets not set on .github; skipping secret fan-out for $full"
+            fi
+          done
+
+          echo "done: $changed file change(s); dry-run=$DRY across ${#REPOS[@]} repo(s)"
