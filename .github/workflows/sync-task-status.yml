@@ -45,9 +45,9 @@ on:
         type: string
         default: in-progress
       furrow-version:
-        description: A go-installable furrow ref (tag, branch, or commit).
+        description: A go-installable furrow ref (tag, branch, commit, or `latest`).
         type: string
-        default: v0.2.1
+        default: latest
     secrets:
       PROJECTS_APP_CLIENT_ID:
         required: false
