@@ -47,7 +47,7 @@ on:
       furrow-version:
         description: A go-installable furrow ref (tag, branch, or commit).
         type: string
-        default: v0.2.0
+        default: v0.2.1
     secrets:
       PROJECTS_APP_CLIENT_ID:
         required: false
