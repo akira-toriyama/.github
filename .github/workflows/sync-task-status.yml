@@ -17,11 +17,12 @@ name: sync-task-status
 #       uses: akira-toriyama/.github/.github/workflows/sync-task-status.yml@main
 #       secrets: inherit
 #
-# Auth is a GitHub App (credential only — no server). Set its App ID + private
-# key as secrets on each calling repo: PROJECTS_APP_ID, PROJECTS_APP_PRIVATE_KEY
-# (akira-toriyama is a personal account, so these are repo secrets, not org).
+# Auth is a GitHub App (credential only — no server). Set its credentials as
+# secrets on each calling repo (fleet-sync distributes them):
+#   PROJECTS_APP_CLIENT_ID   (preferred) + PROJECTS_APP_PRIVATE_KEY
+#   PROJECTS_APP_ID          (legacy fallback) + PROJECTS_APP_PRIVATE_KEY
 # The App needs Contents: Read & write and must be installed on the tracker repo.
-# Until the secret exists the workflow is DORMANT: it skips cleanly (green).
+# Until a credential exists the workflow is DORMANT: it skips cleanly (green).
 #
 # A PR open (incl. draft) nudges the task to in-progress; a merge applies the
 # directive's lane. Validation is NON-blocking: an invalid directive comments on
@@ -48,6 +49,8 @@ on:
         type: string
         default: v0.2.0
     secrets:
+      PROJECTS_APP_CLIENT_ID:
+        required: false
       PROJECTS_APP_ID:
         required: false
       PROJECTS_APP_PRIVATE_KEY:
@@ -61,11 +64,12 @@ jobs:
   sync:
     runs-on: ubuntu-latest
     steps:
-      - name: Gate — resolve event mode and App configuration
+      - name: Gate — resolve event mode and App auth
         id: gate
         env:
           ACTION: ${{ github.event.action }}
           MERGED: ${{ github.event.pull_request.merged }}
+          CLIENT_ID: ${{ secrets.PROJECTS_APP_CLIENT_ID }}
           APP_ID: ${{ secrets.PROJECTS_APP_ID }}
         run: |
           set -euo pipefail
@@ -74,19 +78,35 @@ jobs:
             closed) if [ "$MERGED" = "true" ]; then mode=merge; else mode=skip; fi ;;
             *) mode=skip ;;
           esac
+          # Prefer client-id (modern); fall back to app-id (deprecated but works).
+          auth=none
+          if [ -n "${CLIENT_ID:-}" ]; then auth=client
+          elif [ -n "${APP_ID:-}" ]; then auth=app
+          fi
           proceed=true
           [ "$mode" = skip ] && proceed=false
-          if [ -z "$APP_ID" ]; then
+          if [ "$auth" = none ]; then
             proceed=false
-            echo "::notice::PROJECTS_APP_ID is not set — task-status sync is dormant until the GitHub App is configured."
+            echo "::notice::No App credential (PROJECTS_APP_CLIENT_ID / PROJECTS_APP_ID) — task-status sync is dormant until configured."
           fi
           echo "mode=$mode" >> "$GITHUB_OUTPUT"
+          echo "auth=$auth" >> "$GITHUB_OUTPUT"
           echo "proceed=$proceed" >> "$GITHUB_OUTPUT"
-          echo "action=$ACTION merged=$MERGED mode=$mode proceed=$proceed"
+          echo "action=$ACTION merged=$MERGED mode=$mode auth=$auth proceed=$proceed"
 
-      - name: Mint a token for the tracker repo
-        if: steps.gate.outputs.proceed == 'true'
-        id: token
+      - name: Mint a token (client-id)
+        if: steps.gate.outputs.proceed == 'true' && steps.gate.outputs.auth == 'client'
+        id: token-client
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ secrets.PROJECTS_APP_CLIENT_ID }}
+          private-key: ${{ secrets.PROJECTS_APP_PRIVATE_KEY }}
+          owner: ${{ inputs.tracker-owner }}
+          repositories: ${{ inputs.tracker-repo }}
+
+      - name: Mint a token (app-id fallback)
+        if: steps.gate.outputs.proceed == 'true' && steps.gate.outputs.auth == 'app'
+        id: token-app
         uses: actions/create-github-app-token@v3
         with:
           app-id: ${{ secrets.PROJECTS_APP_ID }}
@@ -99,7 +119,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: ${{ inputs.tracker-owner }}/${{ inputs.tracker-repo }}
-          token: ${{ steps.token.outputs.token }}
+          token: ${{ steps.token-client.outputs.token || steps.token-app.outputs.token }}
           path: tracker
           fetch-depth: 0
 
@@ -148,7 +168,7 @@ jobs:
         env:
           REF: ${{ github.event.repository.name }}#${{ github.event.pull_request.number }}
           MODE: ${{ steps.gate.outputs.mode }}
-          BOT: ${{ steps.token.outputs.app-slug }}
+          BOT: ${{ steps.token-client.outputs.app-slug || steps.token-app.outputs.app-slug }}
         run: |
           set -euo pipefail
           git config user.name  "${BOT}[bot]"
