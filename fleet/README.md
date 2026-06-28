@@ -41,3 +41,23 @@ Manual runs **default to dry-run** (log only). Use `only-repo` to target one rep
   in one place but trades away real-time updates — see the design notes.)
 - The furrow-status-bot App only needs to be installed on the **tracker repo**
   (`projects`); code repos do not need the App installed.
+
+## Rotating the App private key (every 90 days)
+
+The App private key is copied into every repo's secrets, so its blast radius is
+wide. Rotation bounds the damage window — a leaked key stops working once the old
+key is deleted. (A `projects` workflow auto-files a quarterly reminder task.)
+
+1. **Generate** a new key: GitHub → Settings → Developer settings → GitHub Apps →
+   **furrow-status-bot** → *Private keys* → **Generate a private key** (downloads a `.pem`).
+2. **Update** the hub secret:
+   `gh secret set PROJECTS_APP_PRIVATE_KEY --repo akira-toriyama/.github < new.pem`
+3. **Redistribute**: run `fleet-sync` (Actions → Run workflow, or wait for the daily
+   run) so every repo gets the new key.
+4. **Delete the OLD key** in the App's *Private keys* page. **This is the step that
+   matters** — deleting it **immediately invalidates every old copy everywhere**
+   (even leaked/stale ones). Skipping it means rotation achieved nothing.
+
+**Audit**: the App's *Private keys* page lists each key's fingerprint + creation
+date (spot stale/unexpected keys); `gh secret list --repo <r>` shows where the
+secret exists per repo.
