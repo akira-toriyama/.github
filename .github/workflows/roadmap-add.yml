@@ -19,6 +19,9 @@ concurrency:
   group: roadmap-add
   cancel-in-progress: false
 
+permissions:
+  contents: read
+
 jobs:
   add:
     runs-on: ubuntu-latest
