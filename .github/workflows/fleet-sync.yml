@@ -81,7 +81,7 @@ jobs:
 
           # Manifest: "<src in this repo>:<dest in each target repo>". Add lines to
           # standardize more files. v1 = the task-status caller stub.
-          MANIFEST="fleet/task-status.yml:.github/workflows/task-status.yml"
+          MANIFEST="fleet/task-status.yml:.github/workflows/task-status.yml fleet/dependabot.yml:.github/dependabot.yml"
 
           # Target repos: owned, non-fork, non-archived (new repos auto-included).
           mapfile -t REPOS < <(gh repo list "$OWNER" --no-archived --source --limit 200 \
@@ -125,7 +125,7 @@ jobs:
               # Rejected (e.g. a protected default branch -> HTTP 409): land it as a PR.
               echo "direct commit rejected for $full $dest — using a PR"
               db="$(gh api "repos/$full" --jq .default_branch)"
-              branch="fleet-sync/task-status"
+              branch="fleet-sync/$(basename "$dest" .yml)"
               if ! gh api "repos/$full/git/ref/heads/$branch" >/dev/null 2>/dev/null; then
                 bsha="$(gh api "repos/$full/git/ref/heads/$db" --jq .object.sha)"
                 gh api -X POST "repos/$full/git/refs" -f "ref=refs/heads/$branch" -f "sha=$bsha" >/dev/null
