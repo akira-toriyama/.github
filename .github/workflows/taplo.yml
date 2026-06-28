@@ -17,11 +17,14 @@ name: taplo
 on:
   workflow_call:
 
+permissions:
+  contents: read
+
 jobs:
   taplo:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: taplo lint
         # Syntax + semantic checks; validates against per-repo `#:schema` when present.
         run: npx --yes @taplo/cli@0.7.0 lint

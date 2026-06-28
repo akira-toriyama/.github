@@ -116,7 +116,7 @@ jobs:
 
       - name: Checkout the tracker repo
         if: steps.gate.outputs.proceed == 'true'
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           repository: ${{ inputs.tracker-owner }}/${{ inputs.tracker-repo }}
           token: ${{ steps.token-client.outputs.token || steps.token-app.outputs.token }}
