@@ -15,6 +15,9 @@ line to `MANIFEST` in [`.github/workflows/fleet-sync.yml`](../.github/workflows/
   (the thin caller stub for the [`sync-task-status`](../.github/workflows/sync-task-status.yml)
   reusable). **Edit this canonical copy, never the per-repo copies** — fleet-sync
   overwrites them.
+- `dependabot.yml` → synced to each repo's `.github/dependabot.yml` (keeps
+  github-actions deps fresh fleet-wide). Edit this canonical copy, never the
+  per-repo copies.
 
 ## How it runs
 
