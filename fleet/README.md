@@ -27,37 +27,42 @@ until its secrets exist:
 | Secret (on this `.github` repo) | What it is |
 |---|---|
 | `FLEET_SYNC_PAT` | classic PAT with `repo` + `workflow` scopes. `workflow` is **required** to write `.github/workflows/*` in other repos; the default `GITHUB_TOKEN` cannot. |
-| `PROJECTS_APP_CLIENT_ID` | furrow-status-bot App **Client ID** — fanned out to each repo as `PROJECTS_APP_CLIENT_ID`. |
-| `PROJECTS_APP_PRIVATE_KEY` | furrow-status-bot App **private key** — fanned out to each repo as `PROJECTS_APP_PRIVATE_KEY`. |
+| `PROJECTS_WRITE_PAT` | fine-grained PAT scoped to the tracker repo (`projects`) with **Contents: Read & write only**, auto-expiring — fanned out to each repo as `PROJECTS_WRITE_PAT`. Replaces the retired furrow-status-bot App master key (t-ke0v): a leak now reaches only the tracker and expires on its own. |
 
 Manual runs **default to dry-run** (log only). Use `only-repo` to target one repo.
 
 ## Notes
 
 - **Idempotent**: a file is rewritten only when it differs; secrets are set every run (cheap, overwrite).
-- **Security trade-off**: distributing the App private key to many repos widens its
-  blast radius. If that matters more than uniformity, add repos to `EXCLUDE` or
-  scope the secret-fan-out step. (The centralized-sweep alternative keeps the key
-  in one place but trades away real-time updates — see the design notes.)
-- The furrow-status-bot App only needs to be installed on the **tracker repo**
-  (`projects`); code repos do not need the App installed.
+- **Security trade-off**: the fanned-out `PROJECTS_WRITE_PAT` is least-privilege
+  (tracker `Contents: Read & write` only) and auto-expiring, so its blast radius is
+  narrow — a leak reaches only the tracker and stops working on expiry. It is still
+  copied into many repos; if that matters more than uniformity, add repos to
+  `EXCLUDE` or gate the secret-fan-out on the repo actually carrying the task-status
+  stub.
+- No GitHub App is involved any more (the furrow-status-bot App master key was
+  retired in t-ke0v). Auth is the credential-only PAT above — no App install, no
+  server, no token minting.
 
-## Rotating the App private key (every 90 days)
+## Rotating `PROJECTS_WRITE_PAT`
 
-The App private key is copied into every repo's secrets, so its blast radius is
-wide. Rotation bounds the damage window — a leaked key stops working once the old
-key is deleted. (A `projects` workflow auto-files a quarterly reminder task.)
+The PAT is copied into every repo's secrets, so rotation matters — but because it is
+fine-grained (tracker `Contents:RW` only) and auto-expiring, the blast radius is
+small and the deadline is bounded automatically. `projects`'s `pat-expiry-reminder`
+workflow auto-files a furrow task when the PAT is within ~30 days of expiry, so this
+is never forgotten.
 
-1. **Generate** a new key: GitHub → Settings → Developer settings → GitHub Apps →
-   **furrow-status-bot** → *Private keys* → **Generate a private key** (downloads a `.pem`).
+1. **Generate** a new fine-grained PAT: GitHub → Settings → Developer settings →
+   Fine-grained tokens → **Generate new token**, scoped to **only**
+   `akira-toriyama/projects` with **Contents: Read and write**, and a sensible
+   expiry (e.g. 1 year).
 2. **Update** the hub secret:
-   `gh secret set PROJECTS_APP_PRIVATE_KEY --repo akira-toriyama/.github < new.pem`
+   `gh secret set PROJECTS_WRITE_PAT --repo akira-toriyama/.github` (paste the token).
 3. **Redistribute**: run `fleet-sync` (Actions → Run workflow, or wait for the daily
-   run) so every repo gets the new key.
-4. **Delete the OLD key** in the App's *Private keys* page. **This is the step that
-   matters** — deleting it **immediately invalidates every old copy everywhere**
-   (even leaked/stale ones). Skipping it means rotation achieved nothing.
+   run) so every repo gets the new PAT.
+4. **Revoke the OLD token** in the Fine-grained tokens page once step 3 has run —
+   that invalidates any leaked/stale copy. (Leave the old one valid until the new
+   PAT is redistributed, so sync never breaks mid-rotation.)
 
-**Audit**: the App's *Private keys* page lists each key's fingerprint + creation
-date (spot stale/unexpected keys); `gh secret list --repo <r>` shows where the
-secret exists per repo.
+**Audit**: the Fine-grained tokens page lists each token's expiry; `gh secret list --repo <r>`
+shows where `PROJECTS_WRITE_PAT` exists per repo.
