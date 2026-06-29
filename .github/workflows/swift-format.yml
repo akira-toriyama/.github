@@ -7,6 +7,9 @@ name: swift-format
 # The logic lives here once; callers only trigger + `uses:` this file — the caller's
 # trigger is opt-in and paths-limited, so the lint only runs when Swift sources change.
 #
+# Adopting it in a new Swift repo needs a house `.swift-format` + a one-time reformat
+# (a config alone can't make `lint --strict` pass) — see docs/swift-format-adoption.md.
+#
 # `swift format` ships with the Swift 6 toolchain, so this runs on macOS with the
 # pinned latest-stable Xcode — the same toolchain pin as the swift-build action and
 # release.yml (macos runners default to an older Swift 5.x Xcode).
