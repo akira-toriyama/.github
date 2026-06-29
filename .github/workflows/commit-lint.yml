@@ -36,6 +36,14 @@ jobs:
           HEAD: ${{ github.event.pull_request.head.sha }}
         run: |
           set -euo pipefail
+          # PR-context guard: this reusable lints the PR's BASE..HEAD range. In a
+          # non-PR context base/head are empty, so `..` collapses to an empty range
+          # and every commit "passes" silently. Fail loudly instead — call this from
+          # a pull_request-triggered caller.
+          if [ -z "${BASE:-}" ] || [ -z "${HEAD:-}" ]; then
+            echo "::error::commit-lint requires a pull_request context (empty base/head SHA)."
+            exit 1
+          fi
           types='feat|fix|perf|refactor|docs|test|build|ci|chore|style|revert'
           pattern="^:[a-z0-9][a-z0-9_+-]*: (${types})(\([^()]+\))?!?: .+"
           fail=0

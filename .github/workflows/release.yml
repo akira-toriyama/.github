@@ -87,15 +87,18 @@ jobs:
         with:
           xcode-version: latest-stable
 
-      # Same SPM cache as build.yml — `package.sh` runs `swift build`
-      # underneath, so the warm artefacts help here too.
+      # Same SPM cache as the swift-build action — `package.sh` runs `swift build`
+      # underneath, so the warm artefacts help here too. Key matches the action's:
+      # the repo name guards against stale PCH module-cache paths after a rename,
+      # and Package.resolved is hashed so a dependency bump invalidates the cache
+      # (hashFiles tolerates a missing Package.resolved for deps-free repos).
       - uses: actions/cache@v6
         with:
           path: |
             .build
             ~/Library/Caches/org.swift.swiftpm
-          key: ${{ runner.os }}-spm-${{ hashFiles('Package.swift') }}
-          restore-keys: ${{ runner.os }}-spm-
+          key: ${{ runner.os }}-spm-${{ github.event.repository.name }}-${{ hashFiles('Package.swift', 'Package.resolved') }}
+          restore-keys: ${{ runner.os }}-spm-${{ github.event.repository.name }}-
 
       - name: Install git-cliff
         uses: taiki-e/install-action@9bcaee1dcae34154180f412e2fa69355a7cda9f6 # v2
