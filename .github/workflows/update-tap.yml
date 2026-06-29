@@ -7,9 +7,9 @@ name: update-tap
 # the same tag is a no-op when the formula already matches.
 #
 # The logic lived byte-near-identical in facet / halo / perch / wand;
-# it now lives here once and they only `uses:` this file. (glance /
-# chord / jig use a deliberately different tap updater — latest-fetch +
-# stricter validation + bot identity — and are NOT callers of this one.)
+# it now lives here once and they only `uses:` this file. (glance still uses a
+# custom tap updater pending migration to this reusable; chord converged here,
+# jig was removed. See docs/release-tap-unification.md.)
 # This reusable is the BEST common form: pull-rebase + a 5-min timeout
 # are baked in for everyone (facet/halo gain the robustness perch/wand
 # already had); the only knob is the formula name.

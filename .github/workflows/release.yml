@@ -12,9 +12,10 @@ name: Release
 # The version-compute + dry-run + rolling-draft bash logic lived
 # byte-near-identical in facet / halo / perch / wand (~140 lines × 4);
 # it now lives here once and they only `uses:` this file with their app
-# name + install prose. (glance / chord / jig deliberately differ —
-# `[released]` tag flow / latest-fetch / dedicated bot — and are NOT
-# callers.) BEST common form: the SPM cache + a 30-min timeout are baked
+# name + install prose. (glance is NOT a caller — it ships a bare CLI binary
+# rather than an .app, a load-bearing divergence; chord converged onto this
+# reusable, jig was removed. See docs/release-tap-unification.md.) BEST common
+# form: the SPM cache + a 30-min timeout are baked
 # in for everyone (facet/halo gain what perch/wand already had); the
 # build is the uniform `package.sh` (it runs `swift build -c release`
 # itself), so no per-app build script is passed in — only an optional
