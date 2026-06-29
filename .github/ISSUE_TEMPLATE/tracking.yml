@@ -1,0 +1,44 @@
+name: Tracking issue
+description: Track a piece of work whose checklist is the living source of truth for its progress.
+title: "track: "
+labels: ["tracking"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this when the **progress checklist below is the canonical record** of where the
+        work stands — keep it up to date as things land, rather than scattering status across
+        comments. (Most day-to-day work lives in the private `projects` tracker; reach for this
+        when the work is tracked in this repo's issues.)
+
+  - type: textarea
+    id: goal
+    attributes:
+      label: Goal
+      description: What outcome does this produce, and why does it matter? One short paragraph.
+      placeholder: |
+        Ship X so that Y. Today Z is painful because …
+    validations:
+      required: true
+
+  - type: textarea
+    id: progress
+    attributes:
+      label: Progress (source of truth)
+      description: |
+        One checkbox per unit of work. This list **is** the progress record — edit it in place as
+        items land; don't bury status in comments. Each `- [ ] …` is an interactive checkbox.
+      value: |
+        - [ ] First step
+        - [ ] Next step
+        - [ ] …
+    validations:
+      required: true
+
+  - type: textarea
+    id: notes
+    attributes:
+      label: Notes / decisions / blockers
+      description: Optional. Decisions made, useful links, things deliberately deferred — anything future-you needs.
+    validations:
+      required: false

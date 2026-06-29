@@ -1,0 +1,3 @@
+# Keep the plain "Open a blank issue" path available alongside the tracking form —
+# quick bug reports and questions shouldn't have to fit the tracking template.
+blank_issues_enabled: true
