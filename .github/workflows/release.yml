@@ -24,6 +24,16 @@ name: Release
 # Same-repo release writes use the workflow's own GITHUB_TOKEN
 # (contents: write), so no caller secret is needed.
 #
+# Immutable releases (when enabled on the repo): immutability is conferred at
+# Publish, so the rolling DRAFT stays mutable and this flow is unaffected. Two
+# safeguards keep it deadlock-free: (1) the next version must be strictly greater
+# than the latest PUBLISHED release — a deleted-then-recomputed immutable tag is
+# permanently burned and can never be re-Published, so we fail loud instead of
+# drafting it; (2) stale-draft cleanup deletes DRAFTS by release id, never by tag
+# name, so it can't hit a published release (cli/cli#9367) or burn a tag.
+# Discipline: never delete a published release or its tag. See
+# docs/immutable-releases-hardening.md.
+#
 # Caller skeleton (.github/workflows/release.yml in each app repo):
 #   on:
 #     push: { branches: [main] }
@@ -111,18 +121,42 @@ jobs:
       # Published version and the computed `next` is stable across merges.
       - name: Compute next version
         id: ver
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           next="$(git-cliff --config cliff.toml --bumped-version | tr -d '[:space:]')"
           last="$(git tag --sort=-v:refname | head -n1)"
-          echo "next=$next last=${last:-<none>}"
+          # Floor on PUBLISHED GitHub releases, not just local git tags: an
+          # immutable release's tag can't vanish while the release exists, but
+          # this also catches a tag deleted out-of-band (release kept) or any
+          # git-cliff/config regression that fails to advance the version.
+          # BSD-portable numeric sort (inputs are strict vX.Y.Z) — macos-15's
+          # sort has no reliable `-V`.
+          pub_latest="$(gh release list --limit 100 --json tagName,isDraft \
+            --jq '.[] | select(.isDraft==false and (.tagName|test("^v[0-9]+\\.[0-9]+\\.[0-9]+$"))) | .tagName' \
+            2>/dev/null | sed 's/^v//' | sort -t. -k1,1n -k2,2n -k3,3n | tail -n1 || true)"
+          if [ -n "$pub_latest" ]; then pub_latest="v$pub_latest"; fi
+          echo "next=$next last=${last:-<none>} pub_latest=${pub_latest:-<none>}"
           if [ -z "$next" ] || [ "$next" = "$last" ]; then
             echo "release=false" >> "$GITHUB_OUTPUT"
             echo "::notice::No release-worthy changes (feat/fix/perf/breaking) since ${last:-<none>}; nothing to do."
-          else
-            echo "release=true"  >> "$GITHUB_OUTPUT"
-            echo "version=$next" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
+          # Deadlock guard (immutable-releases safe): never draft a version that
+          # can't be Published. If `next` is not strictly greater than the latest
+          # published release, the tag/release state is off (e.g. a deleted-then-
+          # recomputed version whose immutable tag is permanently burned). Fail
+          # loud rather than create an unpublishable draft.
+          if [ -n "$pub_latest" ]; then
+            top="v$(printf '%s\n%s\n' "${next#v}" "${pub_latest#v}" | sort -t. -k1,1n -k2,2n -k3,3n | tail -n1)"
+            if [ "$next" = "$pub_latest" ] || [ "$top" != "$next" ]; then
+              echo "::error::Computed version $next is not greater than the latest published release $pub_latest — refusing to create a draft (it would collide with or regress below a published immutable release). Investigate the tag/release state; if a published release was deleted, its tag is permanently burned — bump past it."
+              exit 1
+            fi
+          fi
+          echo "release=true"  >> "$GITHUB_OUTPUT"
+          echo "version=$next" >> "$GITHUB_OUTPUT"
 
       - name: Generate release notes
         if: steps.ver.outputs.release == 'true'
@@ -186,10 +220,13 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
-      # Normal run (push:main, not dry_run): create/update the single
-      # rolling DRAFT. No tag is created (GitHub tags the target commit on
-      # Publish). Same-version draft is overwritten; stale auto-drafts of
-      # other versions are discarded. Published releases are never touched.
+      # Normal run (push:main, not dry_run): create/update the single rolling
+      # DRAFT. No tag is created (GitHub tags the target commit on Publish).
+      # Stale auto-drafts of other versions are discarded BY RELEASE ID, never by
+      # tag name: gh resolves a draft by its *intended* publish tag, so a
+      # tag-name delete can hit a published release that shares that name
+      # (cli/cli#9367) — which, under immutable releases, would burn the tag.
+      # Published / immutable releases are never touched, and no tags are deleted.
       - name: Create or update rolling DRAFT release
         if: steps.ver.outputs.release == 'true' && !inputs.dry-run
         env:
@@ -197,30 +234,34 @@ jobs:
           VERSION: ${{ steps.ver.outputs.version }}
           SHA: ${{ github.sha }}
           APP: ${{ inputs.app }}
+          REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
 
-          # List existing AUTO drafts (unpublished, semver tag).
-          # Published releases (isDraft=false) are excluded — never
-          # touched. bash 3.2 safe (no mapfile).
-          gh release list --limit 100 --json tagName,isDraft \
-            --jq '.[] | select(.isDraft==true and (.tagName|test("^v[0-9]+\\.[0-9]+\\.[0-9]+$"))) | .tagName' \
-            > /tmp/drafts.txt || true
+          # Enumerate releases via REST — it exposes the release id (gh release
+          # list --json does not). Only unpublished DRAFTS with a semver
+          # intended-tag are candidates; published/immutable releases (draft=false)
+          # are excluded outright. bash 3.2 safe (no mapfile).
+          gh api "repos/$REPO/releases" --paginate \
+            --jq '.[] | select(.draft==true and (.tag_name|test("^v[0-9]+\\.[0-9]+\\.[0-9]+$"))) | [.id, .tag_name] | @tsv' \
+            > /tmp/drafts.tsv || true
 
-          have_current=0
-          while IFS= read -r t; do
-            [ -z "$t" ] && continue
-            if [ "$t" = "$VERSION" ]; then
-              have_current=1
+          # Keep exactly one current-version draft (its id); delete every other
+          # auto-draft — and any duplicate current-version drafts — by id, so the
+          # subsequent update resolves unambiguously.
+          have_current_id=""
+          while IFS=$'\t' read -r id tag; do
+            [ -z "${id:-}" ] && continue
+            if [ "$tag" = "$VERSION" ] && [ -z "$have_current_id" ]; then
+              have_current_id="$id"
             else
-              echo "::notice::Superseding stale auto-draft $t -> $VERSION"
-              gh release delete "$t" --yes || true
-              git push origin ":refs/tags/$t" 2>/dev/null || true
+              echo "::notice::Discarding stale auto-draft $tag (id $id)"
+              gh api -X DELETE "repos/$REPO/releases/$id" || true
             fi
-          done < /tmp/drafts.txt
+          done < /tmp/drafts.tsv
 
           assets="artifacts/${APP}.zip"
-          if [ "$have_current" -eq 1 ]; then
+          if [ -n "$have_current_id" ]; then
             gh release upload "$VERSION" $assets --clobber
             gh release edit "$VERSION" --draft \
               --title "$VERSION" --notes-file RELEASE_NOTES.md --target "$SHA"

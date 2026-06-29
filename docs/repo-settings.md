@@ -28,8 +28,8 @@ Opt-in (need per-repo judgement, hence flags):
   already requires it (e.g. `canon`) are skipped. `PROTECT_REPOS` is an allowlist so
   the merge-blocking check stays on the intended app repos, not every repo that
   gained a commit-lint caller via a fleet-sync gap-fill.
-- `WITH_IMMUTABLE=1` — enable immutable releases on the release repos.
-  **Deferred** — see below.
+- `WITH_IMMUTABLE=1` — enable immutable releases on the release repos
+  (`RELEASE_REPOS`). Now safe: `release.yml` was hardened first — see below.
 
 ## Usage
 
@@ -44,14 +44,21 @@ ONLY=facet APPLY=1 ./scripts/apply-repo-settings.sh   # one repo
 
 New repos are picked up automatically (the repo list is fetched at run time).
 
-## Immutable releases — deferred
+## Immutable releases — enabled (hardened)
 
-Compatible with the rolling-DRAFT flow in normal operation (immutability is
-conferred at *publish*; drafts stay mutable). But an adversarial review found a
-reachable footgun: if a *published* immutable release is ever deleted, its tag is
-**permanently** burned, yet `release.yml`'s git-cliff version-compute (tag-based)
-would recompute that version, auto-create a draft, and the manual Publish would be
-hard-blocked. The stale-draft cleanup also collides with delete-protection
-(cli/cli#9367). Harden `release.yml` (track published versions independent of
-deletable tags; make stale-draft cleanup immutable-aware) before enabling, or run
-strictly under a "never delete a published release" discipline.
+Compatible with the rolling-DRAFT flow: immutability is conferred at *publish*, so
+drafts stay mutable. An adversarial review found a reachable footgun — if a
+*published* immutable release is ever deleted, its tag is **permanently** burned,
+yet a tag-based version-compute would recompute that version, auto-create a draft,
+and the manual Publish would be hard-blocked; the stale-draft cleanup also collided
+with delete-protection (cli/cli#9367). `release.yml` was hardened before enabling:
+the next version must be strictly greater than the latest *published* release (fail
+loud otherwise), and stale-draft cleanup deletes drafts **by release id**, never by
+tag name. Full rationale: [`immutable-releases-hardening.md`](immutable-releases-hardening.md).
+
+**Discipline (still required):** never delete a published immutable release or its
+tag. The full "delete release *and* tag" case leaves no trace in either `git tag`
+or the releases API, so the guard can't auto-detect it — if it ever happens, that
+version is permanently burned; bump past it manually. Scope is `RELEASE_REPOS`
+(`chord facet halo perch wand`); `glance` runs a custom release flow and is **not**
+covered (separate follow-up).
