@@ -20,7 +20,7 @@ name: swift-format
 #     workflow_dispatch:
 #   jobs:
 #     swift-format:
-#       uses: akira-toriyama/.github/.github/workflows/swift-format.yml@main
+#       uses: akira-toriyama/.github/.github/workflows/swift-format.yml@v1
 
 on:
   workflow_call:

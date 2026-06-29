@@ -14,7 +14,7 @@ name: sync-task-status
 #     pull-requests: write
 #   jobs:
 #     sync:
-#       uses: akira-toriyama/.github/.github/workflows/sync-task-status.yml@main
+#       uses: akira-toriyama/.github/.github/workflows/sync-task-status.yml@v1
 #       secrets: inherit
 #
 # Auth is a fine-grained PAT (credential only — no server, no token minting). Set

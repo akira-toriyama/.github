@@ -14,7 +14,7 @@ name: Commit lint
 #     pull_request:
 #   jobs:
 #     lint:
-#       uses: akira-toriyama/.github/.github/workflows/commit-lint.yml@main
+#       uses: akira-toriyama/.github/.github/workflows/commit-lint.yml@v1
 
 on:
   workflow_call:
