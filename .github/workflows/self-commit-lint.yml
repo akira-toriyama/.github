@@ -1,0 +1,14 @@
+name: self commit-lint
+
+# The hub lints its OWN commits too. This thin caller runs the reusable
+# commit-lint.yml (which lives in this repo) on every PR, so .github's own
+# history follows the same gitmoji + Conventional Commits convention it enforces
+# fleet-wide — and gives main a required status check for branch protection.
+# (App repos call the reusable cross-repo; the hub calls it locally via `./`.)
+
+on:
+  pull_request:
+
+jobs:
+  commit-lint:
+    uses: ./.github/workflows/commit-lint.yml
