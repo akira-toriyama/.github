@@ -1,0 +1,78 @@
+name: swift-format
+
+# Reusable Swift formatting lint (`swift format`), called by each Swift-package
+# repo's thin caller workflow. Runs in the CALLER repo's context: actions/checkout
+# pulls the caller's code, so `swift format lint` validates the caller's sources —
+# against its own `.swift-format` config when present, else swift-format's defaults.
+# The logic lives here once; callers only trigger + `uses:` this file — the caller's
+# trigger is opt-in and paths-limited, so the lint only runs when Swift sources change.
+#
+# `swift format` ships with the Swift 6 toolchain, so this runs on macOS with the
+# pinned latest-stable Xcode — the same toolchain pin as the swift-build action and
+# release.yml (macos runners default to an older Swift 5.x Xcode).
+#
+# Caller skeleton (.github/workflows/swift-format.yml in each Swift repo):
+#   on:
+#     # Trigger paths match the lint scope (Sources/Tests) so the gate only fires
+#     # for files it will actually lint. Widen both these paths AND the `paths:`
+#     # input below for a non-standard source layout.
+#     pull_request: { paths: ['Sources/**/*.swift', 'Tests/**/*.swift'] }
+#     workflow_dispatch:
+#   jobs:
+#     swift-format:
+#       uses: akira-toriyama/.github/.github/workflows/swift-format.yml@main
+
+on:
+  workflow_call:
+    inputs:
+      paths:
+        description: >-
+          Space-separated dirs/files to lint recursively. Default `Sources Tests`;
+          entries that don't exist are skipped so a single-target package (Sources
+          only) or a custom layout doesn't fail on a missing path.
+        required: false
+        type: string
+        default: Sources Tests
+
+permissions:
+  contents: read
+
+jobs:
+  swift-format:
+    runs-on: macos-15
+    # Lint is fast; bound it so a hung toolchain step can't burn macOS minutes.
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      # macos runners default to an older Xcode (Swift 5.x); `swift format` ships
+      # with the Swift 6 toolchain. Pin the latest stable Xcode — same pin as the
+      # swift-build action and release.yml.
+      - uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Show toolchain
+        run: swift --version
+
+      - name: swift format lint --strict
+        env:
+          PATHS: ${{ inputs.paths }}
+        run: |
+          set -euo pipefail
+          # Lint only the paths that exist, so a repo without a Tests dir (or with a
+          # custom layout) doesn't fail on a missing path.
+          paths=""
+          for p in $PATHS; do
+            if [ -e "$p" ]; then
+              paths="$paths $p"
+            else
+              echo "::warning::swift-format: skipping missing lint path '$p'"
+            fi
+          done
+          if [ -z "$paths" ]; then
+            echo "::notice::No lint paths present (${PATHS}); nothing to check."
+            exit 0
+          fi
+          echo "Linting:$paths"
+          swift format lint --strict --recursive $paths
