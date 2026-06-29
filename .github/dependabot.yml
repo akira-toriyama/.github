@@ -1,6 +1,13 @@
 version: 2
 updates:
   - package-ecosystem: github-actions
-    directory: /
+    # `/` scans .github/workflows + the ROOT action.yml only; the composite action
+    # lives nested, so it needs its own directory entry to get bumped too.
+    directories:
+      - "/"
+      - "/actions/swift-build"
     schedule:
       interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
