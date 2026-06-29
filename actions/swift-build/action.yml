@@ -37,7 +37,7 @@ runs:
     # `/Users/runner/work/<repo>/<repo>` — after a rename, old-path PCHs
     # break with "PCH compiled with module cache path …". hashFiles tolerates
     # a missing Package.resolved (deps-free repos), hashing Package.swift alone.
-    - uses: actions/cache@v5
+    - uses: actions/cache@v6
       with:
         path: |
           .build

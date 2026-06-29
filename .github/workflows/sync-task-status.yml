@@ -86,7 +86,7 @@ jobs:
 
       - name: Checkout the tracker repo
         if: steps.gate.outputs.proceed == 'true'
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           repository: ${{ inputs.tracker-owner }}/${{ inputs.tracker-repo }}
           token: ${{ secrets.PROJECTS_WRITE_PAT }}
@@ -95,7 +95,7 @@ jobs:
 
       - name: Set up Go
         if: steps.gate.outputs.proceed == 'true'
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version: stable
 
@@ -163,7 +163,7 @@ jobs:
 
       - name: Comment validation failures on the PR
         if: steps.gate.outputs.proceed == 'true' && steps.apply.outputs.code != '0'
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         env:
           REPORT: ${{ steps.apply.outputs.report }}
         with:
