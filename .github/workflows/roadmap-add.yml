@@ -4,7 +4,7 @@ name: roadmap-add
 # The built-in "Auto-add to project" workflow is capped at 1 repo (Free) / 5 (Pro-Team), so it
 # cannot cover all repos. This sweeps them for free and discovers the repo list dynamically
 # (gh repo list), so new repos are picked up automatically — the README's "全 repo / 迷子ゼロ".
-# Triggers: every 15 min (GitHub may delay scheduled runs) and on-demand via
+# Triggers: hourly (GitHub may delay scheduled runs) and on-demand via
 #   gh workflow run roadmap-add.yml -R akira-toriyama/.github
 #
 # Uses gh api graphql directly (not `gh project`, which needs owner-type resolution and
@@ -12,7 +12,7 @@ name: roadmap-add
 
 on:
   schedule:
-    - cron: '*/15 * * * *'
+    - cron: '0 * * * *'
   workflow_dispatch:
 
 concurrency:
