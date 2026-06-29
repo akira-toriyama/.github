@@ -48,7 +48,7 @@ on:
       furrow-version:
         description: A go-installable furrow ref (tag, branch, commit, or `latest`).
         type: string
-        default: latest
+        default: v0.2.1
     secrets:
       PROJECTS_WRITE_PAT:
         required: false
