@@ -154,11 +154,13 @@ for line in "${REPOS[@]}"; do
     fi
   fi
 
-  # 7) immutable releases (opt-in; release repos only; verify rolling-draft compat first)
+  # 7) immutable releases (opt-in; release repos only; release.yml hardened in #47).
+  #    Toggle endpoint like vulnerability-alerts: bare PUT enables, DELETE disables —
+  #    no body. (`enabled` is a GET-response field, not a writable key → 422.)
   if [ "$WITH_IMMUTABLE" = "1" ] && in_list "$R" "$RELEASE_REPOS"; then
     cur=$(gh api "repos/$full/immutable-releases" --jq '.enabled' 2>/dev/null || echo "?")
     [ "$cur" = "true" ] || run "immutable-releases=on" \
-      gh api -X PUT "repos/$full/immutable-releases" -F enabled=true
+      gh api -X PUT "repos/$full/immutable-releases"
   fi
 done
 
