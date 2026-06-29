@@ -5,8 +5,9 @@ name: Commit lint
 # actions/checkout pulls the caller's commits, so the BASE..HEAD range is
 # the caller PR's. The logic lives here once (it was byte-identical across
 # facet / halo / perch / wand and drifted in chord / glance); callers only
-# trigger + `uses:` this file. Convention doc: each repo's
-# docs/commit-convention.md / local hook: scripts/hooks/commit-msg.
+# trigger + `uses:` this file. The convention is documented once in the canonical
+# CONTRIBUTING.md (https://github.com/akira-toriyama/.github/blob/main/CONTRIBUTING.md);
+# repos also ship a local hook at scripts/hooks/commit-msg.
 #
 # Caller skeleton (.github/workflows/commit-lint.yml in each repo):
 #   on:
@@ -52,7 +53,7 @@ jobs:
           done < <(git log --no-merges --format='%H%x09%an%x09%s' "${BASE}..${HEAD}")
 
           if [ "$fail" -ne 0 ]; then
-            echo "format: <:gitmoji:> <type>(<scope>)<!>: <subject>  — see docs/commit-convention.md" >&2
+            echo "format: <:gitmoji:> <type>(<scope>)<!>: <subject>  — see https://github.com/akira-toriyama/.github/blob/main/CONTRIBUTING.md" >&2
             exit 1
           fi
           echo "all commits OK"
