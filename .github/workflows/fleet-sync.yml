@@ -1,21 +1,23 @@
 name: fleet-sync
 
 # Repo standardizer (fleet file-sync). Ensures a set of STANDARD files exists in
-# every owned, non-fork, non-archived repo, and distributes the GitHub App
-# secrets those files need. New repos are picked up automatically (the repo list
+# every owned, non-fork, non-archived repo, and distributes the tracker-write PAT
+# those files need. New repos are picked up automatically (the repo list
 # is fetched at run time), so there is never a "this repo has it / that one
 # doesn't" gap. `task-status` is the first managed file, but this is deliberately
 # GENERAL — add more (src:dest) pairs to MANIFEST to standardize more files.
 #
 # Secrets to set on THIS repo (.github) — fleet-sync is DORMANT until FLEET_SYNC_PAT exists:
-#   FLEET_SYNC_PAT            classic PAT, scopes `repo` + `workflow`
-#                            (workflow scope is REQUIRED to write .github/workflows/* cross-repo)
-#   PROJECTS_APP_CLIENT_ID   furrow-status-bot App Client ID  (fanned out to each repo)
-#   PROJECTS_APP_PRIVATE_KEY furrow-status-bot App private key (fanned out to each repo)
+#   FLEET_SYNC_PAT      classic PAT, scopes `repo` + `workflow`
+#                       (workflow scope is REQUIRED to write .github/workflows/* cross-repo)
+#   PROJECTS_WRITE_PAT  fine-grained PAT, scoped to the tracker repo (projects) with
+#                       Contents: Read & write ONLY, auto-expiring (fanned out to each repo).
+#                       This REPLACES the old furrow-status-bot App master key: a leak now
+#                       reaches only the tracker, and expires on its own. (t-ke0v)
 #
 # Safety: workflow_dispatch defaults to DRY-RUN (log only). Scheduled runs apply.
-# Note: distributing the App private key to many repos widens its blast radius —
-# trim EXCLUDE (or scope the secret step) if that matters more than uniformity.
+# Blast radius: the fanned-out secret is a least-privilege, self-expiring PAT (tracker
+# Contents:RW only) — far narrower than the retired App private key it replaces.
 
 on:
   workflow_dispatch:
@@ -59,7 +61,7 @@ jobs:
         if: steps.gate.outputs.go == 'true'
         uses: actions/checkout@v6
 
-      - name: Sync standard files + App secrets across the fleet
+      - name: Sync standard files + the tracker-write PAT across the fleet
         if: steps.gate.outputs.go == 'true'
         env:
           GH_TOKEN: ${{ secrets.FLEET_SYNC_PAT }}
@@ -67,8 +69,7 @@ jobs:
           EVENT: ${{ github.event_name }}
           DRY_RUN: ${{ inputs.dry-run }}
           ONLY_REPO: ${{ inputs.only-repo }}
-          APP_CLIENT_ID: ${{ secrets.PROJECTS_APP_CLIENT_ID }}
-          APP_PRIVATE_KEY: ${{ secrets.PROJECTS_APP_PRIVATE_KEY }}
+          WRITE_PAT: ${{ secrets.PROJECTS_WRITE_PAT }}
           # Repos to skip (space-separated). .github is the hub itself.
           EXCLUDE: '.github'
         run: |
@@ -154,17 +155,16 @@ jobs:
               fi
             done
 
-            # 2) fan out the App secrets the stub needs (idempotent overwrite)
-            if [ -n "${APP_CLIENT_ID:-}" ] && [ -n "${APP_PRIVATE_KEY:-}" ]; then
+            # 2) fan out the tracker-write PAT the stub needs (idempotent overwrite)
+            if [ -n "${WRITE_PAT:-}" ]; then
               if [ "$DRY" = "true" ]; then
-                echo "would-set-secrets: $full (PROJECTS_APP_CLIENT_ID, PROJECTS_APP_PRIVATE_KEY)"
+                echo "would-set-secrets: $full (PROJECTS_WRITE_PAT)"
               else
-                gh secret set PROJECTS_APP_CLIENT_ID --repo "$full" --body "$APP_CLIENT_ID"
-                printf '%s' "$APP_PRIVATE_KEY" | gh secret set PROJECTS_APP_PRIVATE_KEY --repo "$full"
+                printf '%s' "$WRITE_PAT" | gh secret set PROJECTS_WRITE_PAT --repo "$full"
                 echo "secrets-set: $full"
               fi
             else
-              echo "::warning::App secrets not set on .github; skipping secret fan-out for $full"
+              echo "::warning::PROJECTS_WRITE_PAT not set on .github; skipping secret fan-out for $full"
             fi
           done
 

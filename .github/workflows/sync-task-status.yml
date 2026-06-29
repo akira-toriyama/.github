@@ -17,12 +17,13 @@ name: sync-task-status
 #       uses: akira-toriyama/.github/.github/workflows/sync-task-status.yml@main
 #       secrets: inherit
 #
-# Auth is a GitHub App (credential only — no server). Set its credentials as
-# secrets on each calling repo (fleet-sync distributes them):
-#   PROJECTS_APP_CLIENT_ID   (preferred) + PROJECTS_APP_PRIVATE_KEY
-#   PROJECTS_APP_ID          (legacy fallback) + PROJECTS_APP_PRIVATE_KEY
-# The App needs Contents: Read & write and must be installed on the tracker repo.
-# Until a credential exists the workflow is DORMANT: it skips cleanly (green).
+# Auth is a fine-grained PAT (credential only — no server, no token minting). Set
+# it as a secret on each calling repo (fleet-sync distributes it):
+#   PROJECTS_WRITE_PAT   fine-grained PAT scoped to the tracker repo (projects) with
+#                        Contents: Read & write ONLY, auto-expiring.
+# This replaces the old furrow-status-bot App master key (t-ke0v): a leak now reaches
+# only the tracker and expires on its own; pat-expiry-reminder files a rotation task.
+# Until the PAT exists the workflow is DORMANT: it skips cleanly (green).
 #
 # A PR open (incl. draft) nudges the task to in-progress; a merge applies the
 # directive's lane. Validation is NON-blocking: an invalid directive comments on
@@ -49,11 +50,7 @@ on:
         type: string
         default: latest
     secrets:
-      PROJECTS_APP_CLIENT_ID:
-        required: false
-      PROJECTS_APP_ID:
-        required: false
-      PROJECTS_APP_PRIVATE_KEY:
+      PROJECTS_WRITE_PAT:
         required: false
 
 permissions:
@@ -64,13 +61,12 @@ jobs:
   sync:
     runs-on: ubuntu-latest
     steps:
-      - name: Gate — resolve event mode and App auth
+      - name: Gate — resolve event mode and PAT auth
         id: gate
         env:
           ACTION: ${{ github.event.action }}
           MERGED: ${{ github.event.pull_request.merged }}
-          CLIENT_ID: ${{ secrets.PROJECTS_APP_CLIENT_ID }}
-          APP_ID: ${{ secrets.PROJECTS_APP_ID }}
+          WRITE_PAT: ${{ secrets.PROJECTS_WRITE_PAT }}
         run: |
           set -euo pipefail
           case "$ACTION" in
@@ -78,48 +74,22 @@ jobs:
             closed) if [ "$MERGED" = "true" ]; then mode=merge; else mode=skip; fi ;;
             *) mode=skip ;;
           esac
-          # Prefer client-id (modern); fall back to app-id (deprecated but works).
-          auth=none
-          if [ -n "${CLIENT_ID:-}" ]; then auth=client
-          elif [ -n "${APP_ID:-}" ]; then auth=app
-          fi
           proceed=true
           [ "$mode" = skip ] && proceed=false
-          if [ "$auth" = none ]; then
+          if [ -z "${WRITE_PAT:-}" ]; then
             proceed=false
-            echo "::notice::No App credential (PROJECTS_APP_CLIENT_ID / PROJECTS_APP_ID) — task-status sync is dormant until configured."
+            echo "::notice::No PROJECTS_WRITE_PAT — task-status sync is dormant until configured."
           fi
           echo "mode=$mode" >> "$GITHUB_OUTPUT"
-          echo "auth=$auth" >> "$GITHUB_OUTPUT"
           echo "proceed=$proceed" >> "$GITHUB_OUTPUT"
-          echo "action=$ACTION merged=$MERGED mode=$mode auth=$auth proceed=$proceed"
-
-      - name: Mint a token (client-id)
-        if: steps.gate.outputs.proceed == 'true' && steps.gate.outputs.auth == 'client'
-        id: token-client
-        uses: actions/create-github-app-token@v3
-        with:
-          client-id: ${{ secrets.PROJECTS_APP_CLIENT_ID }}
-          private-key: ${{ secrets.PROJECTS_APP_PRIVATE_KEY }}
-          owner: ${{ inputs.tracker-owner }}
-          repositories: ${{ inputs.tracker-repo }}
-
-      - name: Mint a token (app-id fallback)
-        if: steps.gate.outputs.proceed == 'true' && steps.gate.outputs.auth == 'app'
-        id: token-app
-        uses: actions/create-github-app-token@v3
-        with:
-          app-id: ${{ secrets.PROJECTS_APP_ID }}
-          private-key: ${{ secrets.PROJECTS_APP_PRIVATE_KEY }}
-          owner: ${{ inputs.tracker-owner }}
-          repositories: ${{ inputs.tracker-repo }}
+          echo "action=$ACTION merged=$MERGED mode=$mode proceed=$proceed"
 
       - name: Checkout the tracker repo
         if: steps.gate.outputs.proceed == 'true'
         uses: actions/checkout@v6
         with:
           repository: ${{ inputs.tracker-owner }}/${{ inputs.tracker-repo }}
-          token: ${{ steps.token-client.outputs.token || steps.token-app.outputs.token }}
+          token: ${{ secrets.PROJECTS_WRITE_PAT }}
           path: tracker
           fetch-depth: 0
 
@@ -168,11 +138,10 @@ jobs:
         env:
           REF: ${{ github.event.repository.name }}#${{ github.event.pull_request.number }}
           MODE: ${{ steps.gate.outputs.mode }}
-          BOT: ${{ steps.token-client.outputs.app-slug || steps.token-app.outputs.app-slug }}
         run: |
           set -euo pipefail
-          git config user.name  "${BOT}[bot]"
-          git config user.email "${BOT}[bot]@users.noreply.github.com"
+          git config user.name  "furrow-status[bot]"
+          git config user.email "furrow-status@users.noreply.github.com"
           if [ -z "$(git status --porcelain)" ]; then
             echo "no task changes to commit"
             exit 0
