@@ -99,7 +99,7 @@ jobs:
           echo "::notice::sha256 = $s"
 
       - name: Checkout homebrew-tap (PAT)
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           repository: akira-toriyama/homebrew-tap
           token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
