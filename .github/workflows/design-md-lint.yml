@@ -1,0 +1,87 @@
+name: design.md lint
+
+# Reusable DESIGN.md validator (`@google/design.md lint`), called by each repo that
+# ships a DESIGN.md (Google `design.md` format) via a thin caller workflow. Runs in
+# the CALLER repo's context: actions/checkout pulls the caller's code, so it lints the
+# caller's DESIGN.md. The logic lives here once; callers only trigger + `uses:` this
+# file — the caller's trigger is opt-in and paths-limited, so the lint only runs when
+# the DESIGN.md changes.
+#
+# Severity policy — the tool exits 1 ONLY when it finds `error` findings (currently
+# just `broken-ref`: a `{path.to.token}` reference that resolves to nothing). All other
+# rules are `warning`/`info` (WCAG contrast, orphaned tokens, missing-primary,
+# section-order, …) and exit 0. So this gate fails on broken token references and
+# tolerates the advisory warnings by design — verified against v0.3.0. The full JSON
+# report is always printed, so warnings/info stay visible in the log even on success.
+#
+# Not fleet-distributed: only repos that adopt the DESIGN.md format have a DESIGN.md
+# (study-engine, glossary-site), so this is wired per-repo via the caller skeleton
+# below — fleet would litter every other repo with a dead caller.
+#
+# Caller skeleton (.github/workflows/design-md-lint.yml in a DESIGN.md repo):
+#   on:
+#     # Match the trigger paths to where the DESIGN.md lives so the gate only fires
+#     # when it changes. Pass non-default locations via the `paths` input below.
+#     pull_request: { paths: ['DESIGN.md'] }
+#     workflow_dispatch:
+#   jobs:
+#     design-md-lint:
+#       uses: akira-toriyama/.github/.github/workflows/design-md-lint.yml@v1
+#       # glossary-site keeps its DESIGN.md under packages/viewer:
+#       # with: { paths: packages/viewer/DESIGN.md }
+
+on:
+  workflow_call:
+    inputs:
+      paths:
+        description: >-
+          Space-separated DESIGN.md file paths to lint. Default `DESIGN.md` (repo
+          root); paths that don't exist are skipped with a warning so deleting a
+          DESIGN.md in a PR doesn't fail the gate.
+        required: false
+        type: string
+        default: DESIGN.md
+
+permissions:
+  contents: read
+
+jobs:
+  design-md-lint:
+    runs-on: ubuntu-latest
+    # Lint is fast (npx fetch + parse); bound it so a hung step can't run away.
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: design.md lint
+        env:
+          PATHS: ${{ inputs.paths }}
+        run: |
+          set -uo pipefail
+          # Lint every existing path individually (the CLI takes one FILE per call).
+          # Don't `set -e`: collect all failures so one broken file doesn't hide the
+          # findings of the others, then fail once at the end.
+          fail=0
+          linted=0
+          for p in $PATHS; do
+            if [ ! -e "$p" ]; then
+              echo "::warning::design.md lint: skipping missing path '$p'"
+              continue
+            fi
+            linted=$((linted + 1))
+            echo "Linting $p"
+            if ! npx --yes @google/design.md@0.3.0 lint --format json "$p"; then
+              echo "::error::design.md lint found error findings in $p"
+              fail=1
+            fi
+          done
+
+          if [ "$linted" -eq 0 ]; then
+            echo "::notice::No DESIGN.md paths present (${PATHS}); nothing to lint."
+            exit 0
+          fi
+          if [ "$fail" -ne 0 ]; then
+            echo "design.md lint failed — fix the 'error' findings above (warnings/info do not fail). See https://github.com/google-labs-code/design.md" >&2
+            exit 1
+          fi
+          echo "design.md lint OK (no error findings)"
