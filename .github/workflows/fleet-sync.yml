@@ -171,19 +171,25 @@ jobs:
               fi
             done
 
-            # 2) fan out the tracker-write PAT the stub needs (idempotent overwrite)
-            if [ -n "${WRITE_PAT:-}" ]; then
-              if [ "$DRY" = "true" ]; then
-                echo "would-set-secrets: $full (PROJECTS_WRITE_PAT)"
-              else
-                if printf '%s' "$WRITE_PAT" | gh secret set PROJECTS_WRITE_PAT --repo "$full"; then
-                  echo "secrets-set: $full"
-                else
-                  echo "::warning::fleet: secret fan-out failed for $full"
-                fi
-              fi
-            else
+            # 2) fan out the tracker-write PAT — ONLY to repos that actually carry
+            #    the task-status stub on their default branch (idempotent overwrite).
+            #    Least privilege: a repo holds the tracker-write PAT only once it
+            #    runs the workflow that needs it. A stub that landed as a PR (a
+            #    protected default branch) is not yet on the default branch, so its
+            #    secret waits for the next run after that PR merges. This only gates
+            #    NEW fan-out; it does not prune an already-set secret.
+            if [ -z "${WRITE_PAT:-}" ]; then
               echo "::warning::PROJECTS_WRITE_PAT not set on .github; skipping secret fan-out for $full"
+            elif ! gh api "repos/$full/contents/.github/workflows/task-status.yml" >/dev/null 2>/dev/null; then
+              echo "skip-secret(no task-status stub on default branch): $full"
+            elif [ "$DRY" = "true" ]; then
+              echo "would-set-secrets: $full (PROJECTS_WRITE_PAT)"
+            else
+              if printf '%s' "$WRITE_PAT" | gh secret set PROJECTS_WRITE_PAT --repo "$full"; then
+                echo "secrets-set: $full"
+              else
+                echo "::warning::fleet: secret fan-out failed for $full"
+              fi
             fi
           done
 
