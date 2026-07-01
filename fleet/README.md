@@ -11,13 +11,23 @@ line to `MANIFEST` in [`.github/workflows/fleet-sync.yml`](../.github/workflows/
 
 ## Files
 
-- `task-status.yml` → synced to each repo's `.github/workflows/task-status.yml`
-  (the thin caller stub for the [`sync-task-status`](../.github/workflows/sync-task-status.yml)
-  reusable). **Edit this canonical copy, never the per-repo copies** — fleet-sync
-  overwrites them.
-- `dependabot.yml` → synced to each repo's `.github/dependabot.yml` (keeps
-  github-actions deps fresh fleet-wide). Edit this canonical copy, never the
-  per-repo copies.
+- `task-status.yml` → each repo's `.github/workflows/task-status.yml` (the thin
+  caller stub for the [`sync-task-status`](../.github/workflows/sync-task-status.yml)
+  reusable).
+- `dependabot.yml` → each repo's `.github/dependabot.yml` (keeps github-actions
+  deps fresh fleet-wide).
+- `commit-lint.yml` → each repo's `.github/workflows/commit-lint.yml` (caller
+  stub for the shared [`commit-lint`](../.github/workflows/commit-lint.yml)
+  reusable; enforces the commit convention on every PR).
+- `taplo.yml` → each repo's `.github/workflows/taplo.yml` (caller stub for the
+  shared [`taplo`](../.github/workflows/taplo.yml) reusable; a no-op on repos
+  without any `*.toml`).
+- `commit-convention.md` → each repo's `docs/commit-convention.md` (a universal
+  pointer to the canonical [`CONTRIBUTING.md`](../CONTRIBUTING.md); carries no
+  local-hook assumptions, so it fits hook-less repos too).
+
+**Edit these canonical copies, never the per-repo copies** — fleet-sync overwrites
+them on the next run.
 
 ## How it runs
 
