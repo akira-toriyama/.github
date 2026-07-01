@@ -82,7 +82,7 @@ jobs:
 
           # Manifest: "<src in this repo>:<dest in each target repo>". Add lines to
           # standardize more files. v1 = the task-status caller stub.
-          MANIFEST="fleet/task-status.yml:.github/workflows/task-status.yml fleet/dependabot.yml:.github/dependabot.yml fleet/commit-lint.yml:.github/workflows/commit-lint.yml fleet/taplo.yml:.github/workflows/taplo.yml"
+          MANIFEST="fleet/task-status.yml:.github/workflows/task-status.yml fleet/dependabot.yml:.github/dependabot.yml fleet/commit-lint.yml:.github/workflows/commit-lint.yml fleet/taplo.yml:.github/workflows/taplo.yml fleet/commit-convention.md:docs/commit-convention.md"
 
           # Target repos: owned, non-fork, non-archived (new repos auto-included).
           mapfile -t REPOS < <(gh repo list "$OWNER" --no-archived --source --limit 200 \
@@ -132,7 +132,9 @@ jobs:
               # this file for this repo and carry on (the next run is idempotent).
               db="$(gh api "repos/$full" --jq .default_branch)" \
                 || { echo "::warning::fleet: cannot read default branch for $full; skipping $dest"; continue; }
-              branch="fleet-sync/$(basename "$dest" .yml)"
+              # Strip whatever extension the dest has (.yml, .md, …) for a clean branch name.
+              destbase="$(basename "$dest")"
+              branch="fleet-sync/${destbase%.*}"
               if ! gh api "repos/$full/git/ref/heads/$branch" >/dev/null 2>/dev/null; then
                 bsha="$(gh api "repos/$full/git/ref/heads/$db" --jq .object.sha)" \
                   || { echo "::warning::fleet: cannot read $db tip for $full; skipping $dest"; continue; }
