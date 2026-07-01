@@ -36,20 +36,23 @@ until its secrets exist:
 
 | Secret (on this `.github` repo) | What it is |
 |---|---|
-| `FLEET_SYNC_PAT` | classic PAT with `repo` + `workflow` scopes. `workflow` is **required** to write `.github/workflows/*` in other repos; the default `GITHUB_TOKEN` cannot. |
+| `FLEET_SYNC_PAT` | classic PAT with `repo` + `workflow` scopes. `workflow` is **required** to write `.github/workflows/*` in other repos; the default `GITHUB_TOKEN` cannot. It is the widest-privilege secret here, so give it a bounded **expiry** (e.g. 1 year); the `fleet-sync-pat-expiry-reminder` workflow files a rotation task ~30 days before it lapses. |
 | `PROJECTS_WRITE_PAT` | fine-grained PAT scoped to the tracker repo (`projects`) with **Contents: Read & write only**, auto-expiring — fanned out to each repo as `PROJECTS_WRITE_PAT`. Replaces the retired furrow-status-bot App master key (t-ke0v): a leak now reaches only the tracker and expires on its own. |
 
 Manual runs **default to dry-run** (log only). Use `only-repo` to target one repo.
 
 ## Notes
 
-- **Idempotent**: a file is rewritten only when it differs; secrets are set every run (cheap, overwrite).
+- **Idempotent**: a file is rewritten only when it differs; the tracker PAT is
+  overwritten every run, but only on repos that already carry the `task-status` stub
+  on their default branch (least privilege — a repo holds the PAT only once it runs
+  the workflow that needs it).
 - **Security trade-off**: the fanned-out `PROJECTS_WRITE_PAT` is least-privilege
   (tracker `Contents: Read & write` only) and auto-expiring, so its blast radius is
-  narrow — a leak reaches only the tracker and stops working on expiry. It is still
-  copied into many repos; if that matters more than uniformity, add repos to
-  `EXCLUDE` or gate the secret-fan-out on the repo actually carrying the task-status
-  stub.
+  narrow — a leak reaches only the tracker and stops working on expiry. Fan-out is
+  **gated on the `task-status` stub** existing on the target's default branch, so the
+  PAT lands only in repos that actually use it (a stub still in an open fleet-sync PR
+  waits for merge). Narrow it further via `EXCLUDE` if needed.
 - No GitHub App is involved any more (the furrow-status-bot App master key was
   retired in t-ke0v). Auth is the credential-only PAT above — no App install, no
   server, no token minting.
@@ -76,3 +79,19 @@ is never forgotten.
 
 **Audit**: the Fine-grained tokens page lists each token's expiry; `gh secret list --repo <r>`
 shows where `PROJECTS_WRITE_PAT` exists per repo.
+
+## Rotating `FLEET_SYNC_PAT`
+
+`FLEET_SYNC_PAT` is a **classic** PAT (`repo` + `workflow`) and the widest-privilege
+secret in this system — it writes files and sets secrets across every repo. Give it a
+bounded **expiry**; `.github`'s `fleet-sync-pat-expiry-reminder` workflow then files a
+furrow task ~30 days before it lapses so rotation is never forgotten. (While the token
+is non-expiring the reminder stays quiet — reissue it *with* an expiry to arm it.)
+
+1. **Generate** a new classic PAT: GitHub → Settings → Developer settings → Tokens
+   (classic) → **Generate new token**, scopes `repo` + `workflow`, expiry e.g. 1 year.
+2. **Update** the hub secret:
+   `gh secret set FLEET_SYNC_PAT --repo akira-toriyama/.github` (paste the token).
+3. **Verify**: run `fleet-sync` (Actions → Run workflow, dry-run) — it should list
+   candidate repos instead of the "dormant" notice.
+4. **Revoke the OLD token** in the Tokens (classic) page once step 3 passes.

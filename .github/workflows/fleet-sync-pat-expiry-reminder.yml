@@ -1,0 +1,159 @@
+name: fleet-sync-pat-expiry-reminder
+
+# Auto-files a furrow task when FLEET_SYNC_PAT (the classic PAT — scopes `repo` +
+# `workflow` — that fleet-sync uses to standardize files and fan out secrets across
+# the fleet) is within EXPIRY_WARN_DAYS of expiring. FLEET_SYNC_PAT is the
+# widest-privilege secret in the system (classic, cross-repo write, workflow scope),
+# so a silent expiry would freeze the whole fleet-sync engine. Generating/rotating
+# the PAT is GitHub-UI only (not automatable) — this just makes sure the reminder is
+# never forgotten. Sibling of the projects repo's pat-expiry-reminder.yml (which
+# watches the fine-grained PROJECTS_WRITE_PAT).
+#
+# Expiry is read from the `GitHub-Authentication-Token-Expiration` response header
+# returned for PAT-authenticated REST calls. A classic PAT with NO expiry returns no
+# header, so this stays QUIET until FLEET_SYNC_PAT is reissued WITH an expiry — which
+# is the point of the security task (a non-expiring master token is the risk). Runs
+# weekly; files a task ONLY when expiring soon AND no open rotation task exists (no
+# duplicates; a delayed/skipped tick is recovered next week, inside the warning
+# window).
+#
+# It reads its own expiry with FLEET_SYNC_PAT but writes the reminder task to the
+# furrow tracker (akira-toriyama/projects) with PROJECTS_WRITE_PAT — both secrets
+# already live on this repo. No write to .github itself, so contents: read suffices.
+
+on:
+  schedule:
+    - cron: '0 9 * * 1' # 09:00 UTC every Monday
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fleet-sync-pat-expiry-reminder
+  cancel-in-progress: false
+
+jobs:
+  remind:
+    runs-on: ubuntu-latest
+    env:
+      EXPIRY_WARN_DAYS: '30'
+      MARKER: 'FLEET_SYNC_PAT'
+    steps:
+      - name: Gate — both PATs present?
+        id: gate
+        env:
+          FLEET_PAT: ${{ secrets.FLEET_SYNC_PAT }}
+          WRITE_PAT: ${{ secrets.PROJECTS_WRITE_PAT }}
+        run: |
+          set -euo pipefail
+          # FLEET_SYNC_PAT: the token whose expiry we watch. PROJECTS_WRITE_PAT: how
+          # we write the reminder to the tracker. Missing either -> dormant.
+          if [ -z "${FLEET_PAT:-}" ] || [ -z "${WRITE_PAT:-}" ]; then
+            echo "::notice::FLEET_SYNC_PAT or PROJECTS_WRITE_PAT not set — reminder dormant until both configured."
+            echo "proceed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "proceed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Read PAT expiry from API response header
+        id: expiry
+        if: steps.gate.outputs.proceed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.FLEET_SYNC_PAT }}
+        run: |
+          set -euo pipefail
+          # Probe the API with the PAT; treat a transient fetch failure differently
+          # from a genuinely absent header so we never misread "API hiccup" as
+          # "non-expiring" and silently stay quiet on a real upcoming expiry.
+          if ! raw="$(gh api -i /rate_limit 2>/dev/null)"; then
+            echo "::notice::API probe failed (transient?) — skipping this run; retries next week."
+            echo "due=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          hdr="$(printf '%s' "$raw" | tr -d '\r' \
+            | awk -F': ' 'tolower($1)=="github-authentication-token-expiration"{print $2; exit}')"
+          if [ -z "$hdr" ]; then
+            echo "::notice::No expiration header — FLEET_SYNC_PAT is non-expiring. Reissue it WITH an expiry to arm this reminder."
+            echo "due=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          exp_s="$(date -u -d "$hdr" +%s 2>/dev/null || true)"
+          if [ -z "$exp_s" ]; then
+            echo "::notice::could not parse expiry '$hdr' — skipping this run."
+            echo "due=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          now_s="$(date -u +%s)"
+          days=$(( (exp_s - now_s) / 86400 ))
+          echo "PAT expires: $hdr (${days} days from now)"
+          echo "days=$days" >> "$GITHUB_OUTPUT"
+          if [ "$days" -le "${EXPIRY_WARN_DAYS}" ]; then
+            echo "due=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "due=false (>${EXPIRY_WARN_DAYS}d) — nothing to do"
+            echo "due=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout the furrow tracker
+        if: steps.expiry.outputs.due == 'true'
+        uses: actions/checkout@v7
+        with:
+          repository: akira-toriyama/projects
+          token: ${{ secrets.PROJECTS_WRITE_PAT }}
+          path: tracker
+          fetch-depth: 0
+
+      - name: Set up Go
+        if: steps.expiry.outputs.due == 'true'
+        uses: actions/setup-go@v6
+        with:
+          go-version: stable
+
+      - name: Install furrow
+        if: steps.expiry.outputs.due == 'true'
+        run: go install github.com/akira-toriyama/furrow/cmd/furrow@v0.2.1
+
+      - name: File a rotation reminder if none is open
+        if: steps.expiry.outputs.due == 'true'
+        working-directory: tracker
+        env:
+          DAYS: ${{ steps.expiry.outputs.days }}
+        run: |
+          set -euo pipefail
+          gobin="$(go env GOPATH)/bin"
+          export PATH="$gobin:$PATH"
+
+          tasks="$(furrow ls -l security --json || echo '[]')"
+
+          # Already an open (not-done) FLEET_SYNC_PAT-rotation task? -> nothing to do.
+          open="$(printf '%s' "$tasks" | jq --arg m "$MARKER" \
+            '[.[] | select(.status != "done" and (.title | contains($m)))] | length')"
+          if [ "$open" -gt 0 ]; then
+            echo "open FLEET_SYNC_PAT-rotation task exists — skip"; exit 0
+          fi
+
+          body="$(printf '%s\n' \
+            '# FLEET_SYNC_PAT を更新（失効が近い）' '' \
+            "fleet-sync が全 repo の標準ファイル配布 + secret fan-out に使う classic PAT (scopes repo + workflow) があと約 ${DAYS} 日で失効する。" \
+            '失効すると fleet-sync が全 repo で静かに止まる（standard-file 同期も PAT fan-out も）ため、期限内にローテーションする。' '' \
+            '1. 新しい classic PAT を作成（scope: **repo + workflow**・期限1年）' \
+            '2. akira-toriyama/.github の secret **FLEET_SYNC_PAT** を更新' \
+            '3. fleet-sync を workflow_dispatch (dry-run) で実行して疎通確認' \
+            '4. 旧 PAT を **失効/削除**（GitHub Settings → Developer settings → Tokens (classic)）' '' \
+            '監査: Tokens (classic) 一覧の有効期限。' '' \
+            '(このタスクは .github の fleet-sync-pat-expiry-reminder workflow が自動起票。)')"
+
+          furrow add "${MARKER} を更新（失効 ${DAYS} 日前）" -s ready -l shared -l security --body "$body"
+
+          git config user.name  'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m ':robot: chore(tracker): auto-file FLEET_SYNC_PAT expiry reminder'
+          # Match sync-task-status / pat-expiry-reminder: rebase-retry so a concurrent
+          # push from another tracker writer doesn't drop this week's reminder.
+          for i in 1 2 3; do
+            if git push origin HEAD:main; then echo "pushed"; break; fi
+            echo "push rejected (race); rebasing (attempt $i)"
+            git pull --rebase origin main
+          done

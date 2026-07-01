@@ -15,7 +15,8 @@ name: sync-task-status
 #   jobs:
 #     sync:
 #       uses: akira-toriyama/.github/.github/workflows/sync-task-status.yml@v1
-#       secrets: inherit
+#       secrets:
+#         PROJECTS_WRITE_PAT: ${{ secrets.PROJECTS_WRITE_PAT }}
 #
 # Auth is a fine-grained PAT (credential only — no server, no token minting). Set
 # it as a secret on each calling repo (fleet-sync distributes it):
