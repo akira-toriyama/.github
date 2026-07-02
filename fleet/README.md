@@ -12,8 +12,10 @@ line to `MANIFEST` in [`.github/workflows/fleet-sync.yml`](../.github/workflows/
 ## Files
 
 - `task-status.yml` → each repo's `.github/workflows/task-status.yml` (the thin
-  caller stub for the [`sync-task-status`](../.github/workflows/sync-task-status.yml)
-  reusable).
+  caller stub for furrow's bundled
+  [`sync-task-status`](https://github.com/akira-toriyama/furrow/blob/main/.github/workflows/sync-task-status.yml)
+  reusable — pinned to a concrete furrow release tag; bump the pin here per
+  furrow release).
 - `dependabot.yml` → each repo's `.github/dependabot.yml` (keeps github-actions
   deps fresh fleet-wide).
 - `commit-lint.yml` → each repo's `.github/workflows/commit-lint.yml` (caller
