@@ -1,9 +1,17 @@
 # Versioning the shared reusables
 
 The reusable workflows in this repo (`commit-lint`, `taplo`, `release`,
-`update-tap`, `sync-task-status`, `swift-format`) are consumed by every owned
-repo via `uses: akira-toriyama/.github/.github/workflows/<name>.yml@<ref>`. This
-is the ref policy.
+`update-tap`, `swift-format`) are consumed by every owned repo via
+`uses: akira-toriyama/.github/.github/workflows/<name>.yml@<ref>`. This is the
+ref policy.
+
+> `sync-task-status` RETIRED from this repo (2026-07-02): it ships with furrow
+> itself (`akira-toriyama/furrow/.github/workflows/sync-task-status.yml`) and is
+> pinned to a **concrete furrow release tag** (e.g. `@v0.5.0`), NOT a moving
+> `v1` — the workflow installs the furrow release binary of the same version,
+> so workflow and binary cannot skew, and moving tags would collide with
+> GoReleaser's semver tag space. The old `@v1` tag here still serves stragglers
+> until fleet-sync repoints them; do not move it.
 
 ## The scheme — moving `v1` + immutable `v1.x.y`
 
