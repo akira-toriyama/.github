@@ -10,12 +10,13 @@
 #   APPLY=1 WITH_TOKEN_FLIP=1 ...            # also flip default token -> read (see SKIP_TOKEN_FLIP)
 #   APPLY=1 WITH_PROTECTION=1 ...            # also add the commit-lint required check (additive)
 #   APPLY=1 WITH_IMMUTABLE=1 ...             # also enable immutable releases on release repos
+#   APPLY=1 WITH_CODEQL_GO=1 ...             # also add CodeQL "go" (build) on GO_REPOS
 #   ONLY=facet APPLY=1 ...                   # limit to one repo
 #
 # Safe baseline (always): delete_branch_on_merge, private vuln reporting (public
 # repos), code scanning default setup (CodeQL "actions", public repos), Dependabot
 # alerts, Dependabot security updates. Token-flip / branch protection / immutable
-# releases are opt-in because they need per-repo judgement.
+# releases / CodeQL-go are opt-in because they need per-repo judgement.
 set -uo pipefail
 
 OWNER=akira-toriyama
@@ -24,6 +25,7 @@ ONLY="${ONLY:-}"
 WITH_TOKEN_FLIP="${WITH_TOKEN_FLIP:-0}"
 WITH_PROTECTION="${WITH_PROTECTION:-0}"
 WITH_IMMUTABLE="${WITH_IMMUTABLE:-0}"
+WITH_CODEQL_GO="${WITH_CODEQL_GO:-0}"
 
 # Repos to skip entirely (space-separated).
 EXCLUDE="${EXCLUDE:-}"
@@ -36,6 +38,8 @@ EXCLUDE="${EXCLUDE:-}"
 SKIP_TOKEN_FLIP="${SKIP_TOKEN_FLIP:-}"
 # Repos that run the rolling-DRAFT release flow (immutable-releases candidates).
 RELEASE_REPOS="${RELEASE_REPOS:-chord facet halo perch wand}"
+# Go repos to enable CodeQL `go` (compiled) analysis on, when WITH_CODEQL_GO=1.
+GO_REPOS="${GO_REPOS:-cifail pare furrow}"
 # Branch-protection allowlist. Empty = every repo with a commit-lint caller. Set it
 # to keep the merge-blocking "lint / lint" check on the originally-intended app
 # repos only (not every repo that gained a caller via a fleet-sync gap-fill).
@@ -67,7 +71,7 @@ mapfile -t REPOS < <(gh repo list "$OWNER" --no-archived --source --limit 200 \
   --json name,isFork,visibility -q '.[] | select(.isFork==false) | "\(.name)\t\(.visibility)"' | sort)
 [ "${#REPOS[@]}" -ge 1 ] || { echo "::error:: empty repo list (transient API failure?)"; exit 1; }
 
-echo "mode: $([ "$APPLY" = 1 ] && echo APPLY || echo DRY-RUN)  token-flip=$WITH_TOKEN_FLIP protection=$WITH_PROTECTION immutable=$WITH_IMMUTABLE"
+echo "mode: $([ "$APPLY" = 1 ] && echo APPLY || echo DRY-RUN)  token-flip=$WITH_TOKEN_FLIP protection=$WITH_PROTECTION immutable=$WITH_IMMUTABLE codeql-go=$WITH_CODEQL_GO"
 echo
 
 for line in "${REPOS[@]}"; do
@@ -126,6 +130,37 @@ for line in "${REPOS[@]}"; do
     fi
   else
     echo "    n/a: code scanning default setup (private repo; needs GH Advanced Security)"
+  fi
+
+  # 2c) CodeQL `go` — OPT-IN compiled analysis for the curated Go repos. It catches
+  #    code patterns (SQL injection / path traversal / tampering) that govulncheck
+  #    (reachable known-CVEs) does NOT — the two are complementary. Unlike the
+  #    no-build `actions` baseline (2b), `go` runs a BUILD every PR, so it is gated
+  #    behind WITH_CODEQL_GO + the GO_REPOS allowlist (a per-repo CI-cost call — the
+  #    same axis on which swift/go were kept OUT of the always-on baseline). `go` is
+  #    UNIONed into the language set, so it never clobbers the `actions` baseline. It
+  #    only unions into an ALREADY-configured setup; a not-yet-configured repo is left
+  #    for 2b to set `actions` first (that PATCH is async) and picks `go` up on the
+  #    NEXT run — never a same-run clobber of the just-set baseline.
+  if [ "$WITH_CODEQL_GO" = "1" ] && in_list "$R" "$GO_REPOS"; then
+    if [ "$VIS" != "PUBLIC" ]; then
+      echo "    n/a: CodeQL 'go' opt-in ($R is private; needs GH Advanced Security)"
+    else
+      cs=$(gh api "repos/$full/code-scanning/default-setup" 2>/dev/null) || cs='{}'
+      cs_state=$(printf '%s' "$cs" | jq -r '.state // "?"')
+      cs_has_go=$(printf '%s' "$cs" | jq -e '(.languages // [])|index("go")' >/dev/null 2>&1 && echo 1 || echo 0)
+      if [ "$cs_state" = "configured" ] && [ "$cs_has_go" = 1 ]; then
+        echo "    ok: code scanning already analyzes 'go' in $R"
+      elif [ "$cs_state" = "configured" ]; then
+        body=$(printf '%s' "$cs" | jq -c '{state:"configured", languages:((.languages // [])+["go"]|unique)}')
+        run "code-scanning: add 'go' to configured set $(printf '%s' "$cs" | jq -c '.languages') in $R" \
+          gh api -X PATCH "repos/$full/code-scanning/default-setup" --input - <<<"$body"
+      elif [ "$cs_state" = "not-configured" ]; then
+        echo "    defer: code scanning not configured in $R yet — 'go' lands after the 'actions' baseline settles (re-run)"
+      else
+        echo "    warn: code scanning state unreadable in $R (go opt-in skipped; transient API failure?)"
+      fi
+    fi
   fi
 
   # 3) Dependabot alerts
