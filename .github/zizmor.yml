@@ -25,10 +25,10 @@ rules:
     config:
       policies:
         # First-party GitHub actions (actions/checkout@v7, actions/cache@v6, …) are
-        # pinned to major-version tags, not SHAs. Whether to tighten this to blanket
-        # SHA-pinning is the open policy question tracked as t-yar4; until that's
-        # decided, zizmor reflects the status quo instead of pre-empting it. Flip
-        # `actions/*` to `hash-pin` here the day t-yar4 lands on "SHA everything".
+        # pinned to major-version tags, not SHAs — a settled decision, not an
+        # oversight: see docs/action-pinning-policy.md for the rationale (GitHub-
+        # authored + Dependabot grouped bumps make a tag pin the right trade). A full
+        # SHA stays *accepted* here (ref-pin allows it), just never *required*.
         actions/*: ref-pin
         # Our own reusables/actions are pinned to release tags (@v1, @v0.6.0) of
         # repos we control and actively roll — a SHA pin would fight the tag flow.
