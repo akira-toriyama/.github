@@ -69,6 +69,7 @@ ref policy + how to cut a release: [`docs/reusable-versioning.md`](docs/reusable
 ## Design records — [`docs/`](docs/)
 
 - [`reusable-versioning.md`](docs/reusable-versioning.md) — the moving-`v1` / immutable-`v1.x.y` ref policy and how to cut a release.
+- [`action-pinning-policy.md`](docs/action-pinning-policy.md) — how `uses:` refs are pinned (first-party tag / third-party SHA / self-owned tag) and why.
 - [`repo-settings.md`](docs/repo-settings.md) — fleet-wide repo settings applied out-of-band by [`scripts/apply-repo-settings.sh`](scripts/apply-repo-settings.sh).
 - [`immutable-releases-hardening.md`](docs/immutable-releases-hardening.md) — why `release.yml` is deadlock-hardened for GitHub immutable releases.
 - [`release-tap-unification.md`](docs/release-tap-unification.md) — whether `glance` / `chord` converge onto the shared release / tap reusables (and the divergence kept).
