@@ -13,8 +13,9 @@
 #   ONLY=facet APPLY=1 ...                   # limit to one repo
 #
 # Safe baseline (always): delete_branch_on_merge, private vuln reporting (public
-# repos), Dependabot alerts, Dependabot security updates. Token-flip / branch
-# protection / immutable releases are opt-in because they need per-repo judgement.
+# repos), code scanning default setup (CodeQL "actions", public repos), Dependabot
+# alerts, Dependabot security updates. Token-flip / branch protection / immutable
+# releases are opt-in because they need per-repo judgement.
 set -uo pipefail
 
 OWNER=akira-toriyama
@@ -88,6 +89,43 @@ for line in "${REPOS[@]}"; do
       gh api -X PUT "repos/$full/private-vulnerability-reporting"
   else
     echo "    n/a: private vuln reporting (private repo)"
+  fi
+
+  # 2b) code scanning default setup — CodeQL "actions" (workflow-YAML) analysis.
+  #    Public repos only (free; private needs GitHub Advanced Security). Scoped to
+  #    `actions` ON PURPOSE — the no-build analysis that catches the script-injection
+  #    / over-broad-permissions patterns we audit by hand. Omitting `languages` would
+  #    auto-enable EVERY *detected* language (swift/go/c-cpp/ruby/…) i.e. heavy build
+  #    jobs on every PR — a separate per-repo decision, not this baseline. The GET
+  #    returns the detectable languages even when not-configured, so we guard on it:
+  #    repos with no `actions` (no workflows: prq/rundiff) are skipped, and a repo
+  #    already configured for actions is a no-op. If configured for *other* languages
+  #    only, we ADD actions (union) rather than clobber the existing set. A GET that
+  #    fails (transient) yields state "?" -> warn+skip, never a false "no actions".
+  if [ "$VIS" = "PUBLIC" ]; then
+    # `|| cs='{}'` discards gh's error *body* (which it writes to stdout on failure)
+    # so a transient GET can't masquerade as a real not-configured / no-actions repo.
+    cs=$(gh api "repos/$full/code-scanning/default-setup" 2>/dev/null) || cs='{}'
+    cs_state=$(printf '%s' "$cs" | jq -r '.state // "?"')
+    cs_has_actions=$(printf '%s' "$cs" | jq -e '(.languages // [])|index("actions")' >/dev/null 2>&1 && echo 1 || echo 0)
+    if [ "$cs_state" = "configured" ] && [ "$cs_has_actions" = 1 ]; then
+      echo "    ok: code scanning already configured (actions) in $R"
+    elif [ "$cs_state" = "configured" ]; then
+      # configured for other languages only -> add actions, preserve the rest (no clobber)
+      body=$(printf '%s' "$cs" | jq -c '{state:"configured", languages:((.languages // [])+["actions"]|unique)}')
+      run "code-scanning: add 'actions' to configured set $(printf '%s' "$cs" | jq -c '.languages')" \
+        gh api -X PATCH "repos/$full/code-scanning/default-setup" --input - <<<"$body"
+    elif [ "$cs_state" = "not-configured" ] && [ "$cs_has_actions" = 1 ]; then
+      run "code-scanning default setup=configured (languages=[actions])" \
+        gh api -X PATCH "repos/$full/code-scanning/default-setup" \
+          --input - <<<'{"state":"configured","languages":["actions"]}'
+    elif [ "$cs_state" = "not-configured" ]; then
+      echo "    n/a: code scanning (no 'actions' language detected in $R)"
+    else
+      echo "    warn: code scanning state unreadable in $R (skipped; transient API failure?)"
+    fi
+  else
+    echo "    n/a: code scanning default setup (private repo; needs GH Advanced Security)"
   fi
 
   # 3) Dependabot alerts

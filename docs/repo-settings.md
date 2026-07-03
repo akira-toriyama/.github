@@ -12,8 +12,23 @@ Safe baseline (always, idempotent):
 |---|---|
 | auto-delete head branch on merge | `PATCH /repos/{R}` `delete_branch_on_merge=true` |
 | Private Vulnerability Reporting (public repos) | `PUT /repos/{R}/private-vulnerability-reporting` |
+| Code scanning default setup — CodeQL `actions` (public repos) | `PATCH /repos/{R}/code-scanning/default-setup` `state=configured` `languages=[actions]` |
 | Dependabot alerts | `PUT /repos/{R}/vulnerability-alerts` |
 | Dependabot security updates | `PUT /repos/{R}/automated-security-fixes` |
+
+**Code scanning is scoped to `actions` on purpose.** That is the no-build CodeQL
+analysis that machine-detects the script-injection / over-broad-`permissions:`
+patterns we otherwise audit by hand — highest value on the hub's ~1,000 lines of
+YAML-embedded bash. Omitting `languages` would auto-enable **every** language the
+repo detects (`swift`/`go`/`c-cpp`/`ruby`/…), i.e. heavy compile jobs on every PR —
+a separate per-repo decision, not this always-on baseline. The GET returns the
+detectable languages even when `not-configured`, so the step guards on it: repos
+with no workflow (`actions` not detected) are skipped, an already-`actions` config
+is a no-op, a repo configured for *other* languages gets `actions` **added**
+(union, never clobbered), and a GET that fails transiently warns and skips rather
+than misreporting "no actions". Because the PATCH kicks off an async validation
+run, re-running the script back-to-back (before state flips to `configured`) can
+transiently log a `FAILED` code-scanning line; the next run reconciles it.
 
 Opt-in (need per-repo judgement, hence flags):
 
