@@ -47,6 +47,10 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
+        with:
+          # Lint-only, never pushes — drop the persisted checkout token (zizmor
+          # artipacked); nothing downstream needs it. t-2nh8
+          persist-credentials: false
 
       # macos runners default to an older Xcode (Swift 5.x); `swift format` ships
       # with the Swift 6 toolchain. Pin the latest stable Xcode — same pin as the
