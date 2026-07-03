@@ -10,7 +10,7 @@ name: update-tap
 # it now lives here once and they only `uses:` this file. (glance still uses a
 # custom tap updater pending migration to this reusable; chord converged here,
 # jig was removed. See docs/release-tap-unification.md.)
-# This reusable is the BEST common form: pull-rebase + a 5-min timeout
+# This reusable is the BEST common form: pull-rebase retry + a 5-min timeout
 # are baked in for everyone (facet/halo gain the robustness perch/wand
 # already had); the only knob is the formula name.
 #
@@ -54,6 +54,12 @@ on:
         description: "Fine-grained PAT with Contents: Read & write on homebrew-tap."
         required: true
 
+# Serializes bump runs WITHIN one caller repo (a called workflow's top-level
+# concurrency is enforced on the caller's run, and concurrency groups are
+# repo-scoped): rapid same-repo releases apply in order instead of racing —
+# without this, an older run pushing last would roll the formula BACK. It
+# cannot serialize two DIFFERENT repos (facet vs halo) targeting the shared
+# tap; that cross-repo race is handled by the push rebase-retry below.
 concurrency:
   group: update-tap
   cancel-in-progress: false
@@ -73,14 +79,18 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           INPUT_TAG: ${{ inputs.tag }}
+          # Event data goes through env, never inline ${{ }} in run: a tag name
+          # can legally contain shell metacharacters ($, ;, …).
+          EVENT_NAME: ${{ github.event_name }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: |
           set -euo pipefail
           if [ -n "${INPUT_TAG}" ]; then
             t="${INPUT_TAG}"
-          elif [ "${{ github.event_name }}" = "release" ]; then
-            t="${{ github.event.release.tag_name }}"
+          elif [ "${EVENT_NAME}" = "release" ]; then
+            t="${RELEASE_TAG}"
           else
-            t="$(gh release view --repo ${{ github.repository }} \
+            t="$(gh release view --repo "${{ github.repository }}" \
                   --json tagName --jq .tagName)"
           fi
           echo "tag=$t" >> "$GITHUB_OUTPUT"
@@ -144,14 +154,25 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add "Formula/${FORMULA}.rb"
           git commit -m "homebrew: bump ${FORMULA} to ${TAG}"
-          # Pull-rebase before push: a manual tap edit in the meantime would make a
-          # plain push non-fast-forward and leave the release published but the tap
-          # stale. On a rebase conflict, abort cleanly and fail loudly rather than
-          # leaving the tap mid-rebase and the push erroring confusingly.
-          if ! git pull --rebase; then
-            git rebase --abort 2>/dev/null || true
-            echo "::error::tap rebase hit a conflict — aborted; ${FORMULA} not bumped to ${TAG}. Resolve the tap and re-run."
+          # Pull-rebase + push with retry: a concurrent tap writer (two app repos
+          # releasing at once — the concurrency group above is repo-scoped, so it
+          # only serializes runs within one repo) or a manual tap edit makes a
+          # plain push non-fast-forward, leaving the release published but the
+          # tap stale. On a rebase conflict, abort cleanly and fail loudly rather
+          # than leaving the tap mid-rebase; after 3 rejected pushes, fail loud —
+          # never fall through green unpushed.
+          pushed=0
+          for i in 1 2 3; do
+            if ! git pull --rebase; then
+              git rebase --abort 2>/dev/null || true
+              echo "::error::tap rebase hit a conflict — aborted; ${FORMULA} not bumped to ${TAG}. Resolve the tap and re-run."
+              exit 1
+            fi
+            if git push; then pushed=1; break; fi
+            echo "push rejected (race); retrying (attempt $i)"
+          done
+          if [ "$pushed" -ne 1 ]; then
+            echo "::error::tap push failed after 3 attempts; ${FORMULA} not bumped to ${TAG}. Re-run this workflow."
             exit 1
           fi
-          git push
           echo "::notice::Bumped tap to ${TAG} (sha ${NEW_SHA:0:12}…)."

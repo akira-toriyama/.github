@@ -78,4 +78,5 @@ jobs:
             exit 0
           fi
           echo "Linting:$paths"
+          # shellcheck disable=SC2086 # intentional word-split: $paths is a space-joined list
           swift format lint --strict --recursive $paths

@@ -36,6 +36,8 @@ concurrency:
 jobs:
   remind:
     runs-on: ubuntu-latest
+    # Bounded so a hung API probe or tracker push can't idle a runner for hours.
+    timeout-minutes: 10
     env:
       EXPIRY_WARN_DAYS: '30'
       MARKER: 'FLEET_SYNC_PAT'
@@ -152,8 +154,16 @@ jobs:
           git commit -m ':robot: chore(tracker): auto-file FLEET_SYNC_PAT expiry reminder'
           # Match sync-task-status / pat-expiry-reminder: rebase-retry so a concurrent
           # push from another tracker writer doesn't drop this week's reminder.
+          # Track success explicitly: the loop's last command is the (usually clean)
+          # rebase, so a 3-loss fall-through would otherwise exit 0 and silently
+          # drop the reminder.
+          pushed=0
           for i in 1 2 3; do
-            if git push origin HEAD:main; then echo "pushed"; break; fi
+            if git push origin HEAD:main; then pushed=1; echo "pushed"; break; fi
             echo "push rejected (race); rebasing (attempt $i)"
             git pull --rebase origin main
           done
+          if [ "$pushed" -ne 1 ]; then
+            echo "::error::tracker push failed after 3 attempts — reminder NOT filed; re-run this workflow."
+            exit 1
+          fi

@@ -189,6 +189,7 @@ jobs:
           # the legacy boolean `smoke` runs `--validate`. Unquoted on
           # purpose so multi-word args split.
           if [ -n "$SMOKE_CMD" ]; then
+            # shellcheck disable=SC2086 # intentional word-split (see above)
             "./${APP}.app/Contents/MacOS/${bin}" $SMOKE_CMD
           elif [ "$SMOKE" = "true" ]; then
             "./${APP}.app/Contents/MacOS/${bin}" --validate
@@ -262,14 +263,14 @@ jobs:
 
           assets="artifacts/${APP}.zip"
           if [ -n "$have_current_id" ]; then
-            gh release upload "$VERSION" $assets --clobber
+            gh release upload "$VERSION" "$assets" --clobber
             gh release edit "$VERSION" --draft \
               --title "$VERSION" --notes-file RELEASE_NOTES.md --target "$SHA"
             url="$(gh release view "$VERSION" --json url --jq .url)"
             action="updated"
           else
             url="$(gh release create "$VERSION" --draft --target "$SHA" \
-              --title "$VERSION" --notes-file RELEASE_NOTES.md $assets)"
+              --title "$VERSION" --notes-file RELEASE_NOTES.md "$assets")"
             action="created"
           fi
 
