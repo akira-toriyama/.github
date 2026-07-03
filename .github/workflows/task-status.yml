@@ -1,9 +1,10 @@
 # Hub's own task-status caller. fleet-sync EXCLUDEs `.github` (it IS the hub), so
 # the canonical `fleet/task-status.yml` is never synced here — this copy is
-# maintained BY HAND. Keep it byte-identical to fleet/task-status.yml. It lets
-# `SetStatus-task:` PR footers on .github PRs drive the furrow tracker
-# (akira-toriyama/projects) like every other repo. PROJECTS_WRITE_PAT already
-# exists on this repo, so it activates on merge.
+# maintained BY HAND. Keep the caller body below (the furrow pin,
+# on/permissions/secrets) identical to fleet/task-status.yml; only this provenance
+# header differs. It lets `SetStatus-task:` PR footers on .github PRs drive the
+# furrow tracker (akira-toriyama/projects) like every other repo.
+# PROJECTS_WRITE_PAT already exists on this repo, so it activates on merge.
 name: task-status
 
 on:
