@@ -1,0 +1,65 @@
+name: self test
+
+# The hub tests its OWN Actions plumbing. Its reusable workflows (release.yml,
+# taplo.yml, swift-format.yml, design-md-lint.yml, update-tap.yml, fleet-sync.yml)
+# and the actions/swift-build composite are consumed fleet-wide via @v1, but
+# until this workflow existed a change to any of them could merge GREEN WITHOUT
+# EVER RUNNING — the break surfaced only when the v1 tag moved (or, for
+# fleet-sync, the next scheduled run), by which point every caller already had
+# it. This lints the hub's own workflows with actionlint so a YAML / expression /
+# shellcheck error is caught at PR time instead.
+#
+# actionlint bundles shellcheck for `run:` blocks and validates local
+# `uses: ./...` references, so a change under actions/ is covered too (that is
+# why actions/** is in the path filter — the composite itself is not a workflow
+# file, but the workflows that consume it are re-linted when it changes).
+#
+# Precondition (t-h0sc): the two intentional word-splits carry line-scoped
+# `# shellcheck disable=SC2086` (added in the workflow-hygiene batch t-zb2r), so
+# actionlint exits 0 on a clean tree and this can act as a gate.
+#
+# NOTE — required checks: this is path-filtered, so GitHub leaves it "pending"
+# on PRs that touch neither workflows nor actions. Do NOT add it to
+# branch-protection required checks while filtered (an unrelated PR would wedge
+# on a check that never runs). Drop the `paths:` filter to make it required-safe.
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/**'
+      - 'actions/**'
+
+permissions:
+  contents: read
+
+jobs:
+  actionlint:
+    runs-on: ubuntu-latest
+    # actionlint over ~10 small workflows is sub-second; bound it anyway (house rule).
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      # rhysd/actionlint ships no first-party action, so pin the release binary
+      # and SHA256-verify it before running — the same "trust nothing mutable"
+      # posture the third-party `uses:` steps get from SHA pins, applied to a
+      # downloaded tool. Bump VERSION and SHA256 together (the hash lives in the
+      # release's actionlint_<version>_checksums.txt). Dependabot does not track
+      # this pin.
+      - name: Run actionlint
+        env:
+          VERSION: 1.7.12
+          SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
+        run: |
+          set -euo pipefail
+          tarball="actionlint_${VERSION}_linux_amd64.tar.gz"
+          url="https://github.com/rhysd/actionlint/releases/download/v${VERSION}/${tarball}"
+          curl --fail --silent --show-error --location "$url" -o "$tarball"
+          echo "${SHA256}  ${tarball}" | sha256sum -c -
+          tar -xzf "$tarball" actionlint
+          # ubuntu-latest ships shellcheck and actionlint auto-detects it; if a
+          # future runner image drops it, actionlint would SILENTLY skip its
+          # run:-block checks — fail loud instead of quietly losing that coverage.
+          command -v shellcheck >/dev/null \
+            || { echo "::error::shellcheck not on runner — actionlint would skip run: checks"; exit 1; }
+          ./actionlint -color
