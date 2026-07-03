@@ -51,7 +51,15 @@ runs:
 
     - name: Build (release)
       shell: bash
-      run: ${{ inputs.build-cmd }}
+      env:
+        # Routed through env rather than inlined ${{ }} in the script text: the
+        # input is caller-author-controlled (trusted), but the no-inline-expansion
+        # discipline holds everywhere.
+        BUILD_CMD: ${{ inputs.build-cmd }}
+      # -eo pipefail explicitly: the nested bash does NOT inherit the step
+      # shell's errexit/pipefail, and without them a multi-command or piped
+      # build-cmd could fail mid-script yet leave the step green.
+      run: bash -eo pipefail -c "$BUILD_CMD"
 
     # XCTest needs full Xcode (CommandLineTools has none) — tests run here,
     # not in the CLT-only local dev flow (CLAUDE.md).

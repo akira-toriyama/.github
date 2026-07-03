@@ -23,6 +23,8 @@ permissions:
 jobs:
   taplo:
     runs-on: ubuntu-latest
+    # Lint is fast; bound it so a hung npx fetch can't idle a runner for hours.
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
       - name: taplo lint
