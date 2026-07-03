@@ -1,0 +1,121 @@
+name: go-ci
+
+# Reusable Go CI core — build / vet / race-test / module-hygiene / golangci-lint v2.
+# Called by each Go repo's thin build.yml. Runs in the CALLER's context: checkout
+# pulls the caller's tree and its go.mod drives the toolchain, so BASE..HEAD and
+# the module graph are the caller's. Repo-specific jobs (fuzz, smoke, schema/drift
+# guards) stay in the caller. Supply-chain scanning is the companion reusable
+# go-vuln.yml (source + `-mode binary`, daily-cron capable).
+#
+# Third-party actions are SHA-pinned here ONCE (F7); Dependabot bumps them in this
+# single file instead of drifting per-repo. The pin is the newest across the fleet.
+#
+# The three inputs that carry a footgun:
+#   go-version / go-version-file — pass exactly ONE. Repos on a floor-only go.mod
+#     that want the current release pass `go-version: stable` + `go-version-file: ''`;
+#     repos that pin via go.mod leave go-version empty and use the default file.
+#   gotoolchain — leave EMPTY when go.mod has a `toolchain` line: setup-go honors it
+#     and pins that toolchain itself. A job-level `local` would make setup-go resolve
+#     go-version-file first, see `local`, skip the toolchain line and install the bare
+#     floor. Pass `local` only on a floor-only go.mod (no toolchain line) to stop a
+#     mid-run toolchain download and keep the run deterministic.
+#
+# Caller skeleton (.github/workflows/build.yml in each Go repo):
+#   on:
+#     push: { branches: [main] }
+#     pull_request:
+#   permissions:
+#     contents: read
+#   concurrency:
+#     group: build-${{ github.ref }}
+#     cancel-in-progress: true
+#   jobs:
+#     ci:
+#       uses: akira-toriyama/.github/.github/workflows/go-ci.yml@v1
+#       # with: { runners: '["ubuntu-latest"]', go-version: stable, gotoolchain: local }
+#     # + repo-specific jobs (fuzz / smoke / drift) here
+
+on:
+  workflow_call:
+    inputs:
+      runners:
+        description: 'JSON array of runner labels for the test matrix.'
+        type: string
+        default: '["ubuntu-latest", "macos-latest"]'
+      go-version:
+        description: "setup-go go-version (e.g. 'stable'). Empty defers to go-version-file."
+        type: string
+        default: ''
+      go-version-file:
+        description: "setup-go go-version-file (single source of truth). Pass '' to disable when go-version is set."
+        type: string
+        default: 'go.mod'
+      gotoolchain:
+        description: "GOTOOLCHAIN env. Empty leaves it UNSET (required when go.mod has a `toolchain` line). Pass 'local' only on a floor-only go.mod."
+        type: string
+        default: ''
+      golangci-lint-version:
+        description: 'golangci-lint v2 release to install.'
+        type: string
+        default: 'v2.12.2'
+      coverage:
+        description: 'Run tests with atomic coverage and print a func summary.'
+        type: boolean
+        default: false
+
+# Least privilege: this reusable only reads the caller's repo. A reusable's
+# permissions further scope DOWN the caller's granted token; they never widen it.
+permissions:
+  contents: read
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: ${{ fromJSON(inputs.runners) }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      # Set GOTOOLCHAIN only when asked, and BEFORE setup-go resolves the toolchain.
+      # Leaving it unset (vs an empty job-level env) is what lets setup-go honor a
+      # go.mod `toolchain` line; see the header note.
+      - if: inputs.gotoolchain != ''
+        run: echo "GOTOOLCHAIN=${{ inputs.gotoolchain }}" >> "$GITHUB_ENV"
+
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version: ${{ inputs.go-version }}
+          go-version-file: ${{ inputs.go-version-file }}
+          cache: true
+
+      # Module hygiene: go.mod/go.sum must be tidy and the deps must match go.sum.
+      # OS-independent, so one leg is enough. `-diff` is a no-op unless drift exists.
+      - name: module hygiene (go mod tidy -diff + verify)
+        if: runner.os == 'Linux'
+        run: |
+          go mod tidy -diff
+          go mod verify
+
+      - run: go build ./...
+      - run: go vet ./...
+
+      # Data-race detector on every run (F5). Coverage is an opt-in summary (no gate).
+      - name: test (-race)
+        shell: bash
+        run: |
+          if [ "${{ inputs.coverage }}" = "true" ]; then
+            go test -race -covermode=atomic -coverprofile=coverage.out ./...
+            go tool cover -func=coverage.out | tail -1
+          else
+            go test -race ./...
+          fi
+
+      # v9 installs golangci-lint v2 (repo .golangci.yml is v2 format). Lint once,
+      # on Linux only — it is OS-independent.
+      - name: golangci-lint
+        if: runner.os == 'Linux'
+        uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
+        with:
+          version: ${{ inputs.golangci-lint-version }}

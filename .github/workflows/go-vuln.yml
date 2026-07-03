@@ -1,0 +1,84 @@
+name: go-vuln
+
+# Reusable supply-chain gate — govulncheck against the Go vulnerability database.
+# Reachable-only (call-graph aware), so the signal is low-noise. Two scans:
+#   - the source packages (`./...`), and
+#   - the compiled binary (`-mode binary`, when binary-path is set), which also
+#     catches stdlib vulns reachable in the SHIPPED artifact — the class that let a
+#     stale golang.org/x/net ship with GO-2025-3595 (source mode can miss it).
+# Text mode exits non-zero on a finding, so a PR (or the daily cron) that surfaces
+# one goes red.
+#
+# Called by each Go repo's thin govulncheck.yml on push/PR AND a daily cron, so a
+# vuln DISCLOSED after merge (no code change) is caught within a day, not only at
+# the next push. `schedule` lives in the CALLER's `on:` — a reusable cannot define
+# its own trigger.
+#
+# Caller skeleton (.github/workflows/govulncheck.yml in each Go repo):
+#   on:
+#     push: { branches: [main] }
+#     pull_request:
+#     schedule:
+#       - cron: '0 2 * * *'   # daily — catches vulns disclosed after merge
+#   permissions:
+#     contents: read
+#   jobs:
+#     scan:
+#       uses: akira-toriyama/.github/.github/workflows/go-vuln.yml@v1
+#       with:
+#         binary-path: ./cmd/<bin>   # omit to scan source only
+#
+# Toolchain inputs mirror go-ci.yml — see its header for the go-version /
+# go-version-file / gotoolchain footgun.
+
+on:
+  workflow_call:
+    inputs:
+      go-version:
+        description: "setup-go go-version (e.g. 'stable'). Empty defers to go-version-file."
+        type: string
+        default: ''
+      go-version-file:
+        description: "setup-go go-version-file. Pass '' to disable when go-version is set."
+        type: string
+        default: 'go.mod'
+      gotoolchain:
+        description: "GOTOOLCHAIN env. Empty leaves it UNSET (required when go.mod has a `toolchain` line)."
+        type: string
+        default: ''
+      binary-path:
+        description: 'If set (e.g. ./cmd/foo), also scan the compiled binary with `govulncheck -mode binary`.'
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  govulncheck:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - if: inputs.gotoolchain != ''
+        run: echo "GOTOOLCHAIN=${{ inputs.gotoolchain }}" >> "$GITHUB_ENV"
+
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version: ${{ inputs.go-version }}
+          go-version-file: ${{ inputs.go-version-file }}
+          cache: true
+
+      - name: govulncheck (source + shipped binary)
+        env:
+          BINARY_PATH: ${{ inputs.binary-path }}
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck ./...
+          # Also scan the actual compiled binary — catches stdlib vulns reachable in
+          # the shipped artifact (the GO-2025-3595 class), which source mode can miss.
+          if [ -n "$BINARY_PATH" ]; then
+            bin="$(mktemp)"
+            go build -o "$bin" "$BINARY_PATH"
+            govulncheck -mode binary "$bin"
+          fi
