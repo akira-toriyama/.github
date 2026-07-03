@@ -66,6 +66,20 @@ Callers pin the **moving `@v1`** tag; merging to `main` does not reach them unti
 you move `v1` onto the release commit. Immutable `v1.x.y` tags are never moved. Full
 ref policy + how to cut a release: [`docs/reusable-versioning.md`](docs/reusable-versioning.md).
 
+## Community-health defaults
+
+This repo is GitHub's [account-level default community-health](https://docs.github.com/en/communities/setting-up-your-project-for-healthy-contributions/creating-a-default-community-health-file)
+source: a file here applies to **every** `akira-toriyama` repo that doesn't ship
+its own. Provided: [`SECURITY.md`](SECURITY.md) (private vuln reporting),
+[`SUPPORT.md`](SUPPORT.md) (where to get help), the issue templates in
+[`.github/ISSUE_TEMPLATE/`](.github/ISSUE_TEMPLATE), and
+[`pull_request_template.md`](.github/pull_request_template.md).
+
+**Intentionally omitted** (recorded so their absence reads as a decision, not a
+gap): `CODE_OF_CONDUCT.md` and `GOVERNANCE.md` — ceremonial for a solo author; and
+`FUNDING.yml` — no sponsorship is sought. Adding a one-line `FUNDING.yml` here is
+all it takes to surface a Sponsor button fleet-wide, should that ever change.
+
 ## Design records — [`docs/`](docs/)
 
 - [`reusable-versioning.md`](docs/reusable-versioning.md) — the moving-`v1` / immutable-`v1.x.y` ref policy and how to cut a release.
