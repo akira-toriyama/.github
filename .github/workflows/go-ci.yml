@@ -81,7 +81,9 @@ jobs:
       # Leaving it unset (vs an empty job-level env) is what lets setup-go honor a
       # go.mod `toolchain` line; see the header note.
       - if: inputs.gotoolchain != ''
-        run: echo "GOTOOLCHAIN=${{ inputs.gotoolchain }}" >> "$GITHUB_ENV"
+        env:
+          GOTOOLCHAIN_INPUT: ${{ inputs.gotoolchain }}
+        run: echo "GOTOOLCHAIN=$GOTOOLCHAIN_INPUT" >> "$GITHUB_ENV"
 
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
