@@ -6,20 +6,36 @@ name: self test
 # until this workflow existed a change to any of them could merge GREEN WITHOUT
 # EVER RUNNING — the break surfaced only when the v1 tag moved (or, for
 # fleet-sync, the next scheduled run), by which point every caller already had
-# it. This lints the hub's own workflows with actionlint so a YAML / expression /
-# shellcheck error is caught at PR time instead.
+# it. Three kinds of check close that gap, cheapest-first:
 #
-# actionlint bundles shellcheck for `run:` blocks and validates local
-# `uses: ./...` references, so a change under actions/ is covered too (that is
-# why actions/** is in the path filter — the composite itself is not a workflow
-# file, but the workflows that consume it are re-linted when it changes).
+#   actionlint  — static-lints the hub's own workflow files (YAML / expression /
+#                 shellcheck). It bundles shellcheck for `run:` blocks and
+#                 validates local `uses: ./...` references, so a change under
+#                 actions/ is covered too (that is why actions/** is in the path
+#                 filter — the composite itself is not a workflow file, but the
+#                 workflows that consume it are re-linted when it changes).
+#   zizmor      — Actions-specific SECURITY lint (template injection, unpinned
+#                 third-party actions, over-broad permissions, …) over the same
+#                 files, as a hard PR gate. Overlaps but doesn't subsume the CodeQL
+#                 "actions" scan (scripts/apply-repo-settings.sh, t-1f6y): CodeQL is
+#                 the deeper dataflow analysis feeding the Security tab; this is the
+#                 fast, Actions-focused gate. Policy/threshold: .github/zizmor.yml.
+#   smoke-*     — actually RUN three of the reusables (taplo, design-md-lint,
+#                 swift-format) via `uses: ./` against a tiny fixture, so a break in
+#                 the reusable's own runtime (bad tool invocation, input handling)
+#                 fails HERE, not in a caller after the tag moves — the lint jobs
+#                 only check the YAML, these exercise execution. release/update-tap/
+#                 fleet-sync stay lint-only: a runtime smoke needs a heavy fixture
+#                 (fake app / tap / fleet), deliberately out of scope. And because
+#                 the reusables skip-pass on a missing path, smoke-fixtures-present
+#                 guards against a moved fixture turning a smoke vacuously green.
 #
 # Precondition (t-h0sc): the two intentional word-splits carry line-scoped
 # `# shellcheck disable=SC2086` (added in the workflow-hygiene batch t-zb2r), so
 # actionlint exits 0 on a clean tree and this can act as a gate.
 #
 # NOTE — required checks: this is path-filtered, so GitHub leaves it "pending"
-# on PRs that touch neither workflows nor actions. Do NOT add it to
+# on PRs that touch none of the filtered paths. Do NOT add these jobs to
 # branch-protection required checks while filtered (an unrelated PR would wedge
 # on a check that never runs). Drop the `paths:` filter to make it required-safe.
 
@@ -27,7 +43,17 @@ on:
   pull_request:
     paths:
       - '.github/workflows/**'
+      # The zizmor gate's own policy lives here, NOT under workflows/ — a change to
+      # it must re-run the gate, or a policy loosening could merge unexercised.
+      - '.github/zizmor.yml'
       - 'actions/**'
+      # Fixture edits (and deletions) must re-run the smoke jobs — a malformed or
+      # moved fixture is exactly what should trip the gate.
+      - 'tests/fixtures/**'
+      # smoke-taplo lints the WHOLE repo (taplo.yml has no path input), so any
+      # *.toml change should re-run it — an unclean file then fails on ITS OWN PR
+      # rather than being admitted silently and reddening a later unrelated one.
+      - '**/*.toml'
 
 permissions:
   contents: read
@@ -63,3 +89,83 @@ jobs:
           command -v shellcheck >/dev/null \
             || { echo "::error::shellcheck not on runner — actionlint would skip run: checks"; exit 1; }
           ./actionlint -color
+
+  # Actions-specific security lint as a HARD PR gate — the action propagates
+  # zizmor's exit code, so any reported finding fails the job (verified against the
+  # action's action.sh: `exit "${exitcode}"`). advanced-security:false +
+  # annotations:true → inline PR annotations with only contents:read (no
+  # security-events:write / SARIF upload; CodeQL already feeds the Security tab).
+  # online-audits:false keeps the gate deterministic — it can't spontaneously fail
+  # an unrelated PR when an upstream advisory drops. The zizmor VERSION is pinned
+  # (the action maps it to an image digest) so CI matches what was triaged locally;
+  # the action itself is SHA-pinned like every third-party `uses:` here. The gate
+  # also runs at min-confidence:medium — a GLOBAL low-confidence floor whose
+  # rationale (and its one caveat) lives in .github/zizmor.yml.
+  zizmor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: zizmorcore/zizmor-action@192e21d79ab29983730a13d1382995c2307fbcaa # v0.5.7
+        with:
+          version: 1.26.1
+          inputs: .github/workflows actions
+          config: .github/zizmor.yml
+          online-audits: false
+          min-confidence: medium
+          advanced-security: false
+          annotations: true
+
+  # Guard against a vacuously-green smoke: design-md-lint and swift-format both
+  # `exit 0` with a `::notice::` when their input path is absent (intentional, for
+  # their real callers), and taplo lints nothing if its fixture is gone — so a
+  # moved/renamed/deleted fixture would let a smoke pass WITHOUT exercising its
+  # tool, silently losing coverage. Fail loud here instead. tests/fixtures/** is in
+  # the path filter, so a PR that removes a fixture runs this and goes red.
+  smoke-fixtures-present:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - name: Assert smoke fixtures exist
+        run: |
+          set -euo pipefail
+          missing=0
+          for f in \
+            tests/fixtures/taplo/valid.toml \
+            tests/fixtures/design/DESIGN.md \
+            tests/fixtures/swift/Fixture.swift; do
+            # -s (non-empty), not just -f: an emptied fixture is as vacuous as a
+            # missing one — taplo/design-md/swift-format would all no-op-pass on it.
+            if [ ! -s "$f" ]; then
+              echo "::error::smoke fixture missing or empty: $f — a smoke would pass vacuously without it"
+              missing=1
+            fi
+          done
+          [ "$missing" -eq 0 ] || exit 1
+          echo "all smoke fixtures present"
+
+  # Reusable smoke tests — RUN each of the three cheap/deterministic reusables via
+  # `uses: ./` against its fixture so a break in the reusable's own runtime (bad
+  # tool call, input handling) fails here at PR time, not in a caller after the v1
+  # tag moves. Each fixture is kept tool-clean and documents its contract under
+  # tests/fixtures/ (existence enforced by smoke-fixtures-present above).
+  smoke-taplo:
+    # taplo.yml takes no path input — it lints the whole checked-out repo, so the
+    # fixture at tests/fixtures/taplo/ is the one *.toml it finds today. That means
+    # this job doubles as a repo-wide taplo(-fmt) gate: a red here on some OTHER
+    # *.toml is a real unclean-TOML failure, not a reusable regression (the
+    # '**/*.toml' path trigger above makes it fire on the PR that adds it).
+    uses: ./.github/workflows/taplo.yml
+
+  smoke-design-md-lint:
+    uses: ./.github/workflows/design-md-lint.yml
+    with:
+      paths: tests/fixtures/design/DESIGN.md
+
+  smoke-swift-format:
+    # Runs on macOS (the reusable pins Xcode) — the one non-linux job here. `swift
+    # format lint` doesn't compile, so it's fast; bounded by the reusable's timeout.
+    uses: ./.github/workflows/swift-format.yml
+    with:
+      paths: tests/fixtures/swift

@@ -9,6 +9,14 @@ name: self commit-lint
 on:
   pull_request:
 
+# Cap the token the caller hands the reusable: commit-lint only checks out and
+# reads the PR's commit range, so contents:read is all it needs. Without this
+# block the job inherits the repo-default token scope (which zizmor's
+# excessive-permissions audit flags), and the reusable can't request more than
+# the caller grants.
+permissions:
+  contents: read
+
 jobs:
   commit-lint:
     uses: ./.github/workflows/commit-lint.yml

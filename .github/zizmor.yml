@@ -1,0 +1,38 @@
+# zizmor (GitHub Actions security linter) config for the hub's self-test gate.
+# Consumed by the `zizmor` job in .github/workflows/self-test.yml, which runs
+# zizmor as a PR-time gate over this repo's own workflows + composite action.
+# zizmor auto-discovers this file at .github/zizmor.yml, but the job passes it
+# explicitly via `config:` so the intent is unmissable.
+#
+# The gate also runs with `min-confidence: medium`, a GLOBAL low-confidence floor.
+# Its main effect here is dropping the low-confidence `artipacked` (checkout
+# persist-credentials) nags — hardening those across the credential-using workflows
+# (update-tap's PAT push, fleet-sync) needs per-workflow care and is tracked
+# separately, not bundled into this change. Caveat: the floor also drops ANY other
+# low-confidence finding (e.g. a low-confidence template-injection). Accepted trade —
+# zizmor rates a genuine injection High, and a PR gate must not block unrelated work
+# on likely-false-positive noise; the deeper CodeQL scan is the backstop for the tail.
+
+rules:
+  unpinned-uses:
+    # zizmor's blanket policy demands a full-length commit SHA for EVERY `uses:`.
+    # The hub deliberately pins first-party and self-owned refs to version TAGS
+    # instead, so scope the policy to match that convention rather than fail the
+    # whole tree on it. NOTE: zizmor's `ref-pin` only requires *some* git ref, so it
+    # accepts a branch ref (e.g. @main) as well as a tag — it enforces "not floating
+    # / not a bare action", not "tag-only" (zizmor has no tag-only style). The
+    # tag-only convention still rides on review; the current tree uses tags.
+    config:
+      policies:
+        # First-party GitHub actions (actions/checkout@v7, actions/cache@v6, …) are
+        # pinned to major-version tags, not SHAs. Whether to tighten this to blanket
+        # SHA-pinning is the open policy question tracked as t-yar4; until that's
+        # decided, zizmor reflects the status quo instead of pre-empting it. Flip
+        # `actions/*` to `hash-pin` here the day t-yar4 lands on "SHA everything".
+        actions/*: ref-pin
+        # Our own reusables/actions are pinned to release tags (@v1, @v0.6.0) of
+        # repos we control and actively roll — a SHA pin would fight the tag flow.
+        akira-toriyama/*: ref-pin
+        # Everything third-party MUST be a full-length commit SHA (maxim-lobanov/
+        # setup-xcode, taiki-e/install-action, zizmorcore/zizmor-action already are).
+        "*": hash-pin

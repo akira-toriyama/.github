@@ -1,0 +1,10 @@
+# Fixture consumed by the hub's self-test (smoke-taplo). taplo.yml lints the
+# WHOLE checked-out repo (it has no path input), so this is the one *.toml the
+# reusable finds — it proves taplo.yml actually runs `lint` + `fmt --check`, not
+# just that the job started. Kept taplo-clean on purpose; regenerate the style
+# with `npx @taplo/cli@0.7.0 fmt tests/fixtures/taplo/valid.toml`.
+name = "self-test fixture"
+enabled = true
+
+[section]
+value = 1
