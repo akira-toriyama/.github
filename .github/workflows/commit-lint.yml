@@ -31,6 +31,10 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
+          # git log walks the already-fetched history locally; this job never
+          # pushes, so don't leave the checkout token in .git/config (zizmor
+          # artipacked). t-2nh8
+          persist-credentials: false
 
       - name: Validate commit messages
         env:

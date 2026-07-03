@@ -52,6 +52,10 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
+        with:
+          # Lint-only, never pushes — drop the persisted checkout token (zizmor
+          # artipacked); nothing downstream needs it. t-2nh8
+          persist-credentials: false
 
       - name: design.md lint
         env:

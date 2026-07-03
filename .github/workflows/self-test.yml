@@ -65,6 +65,10 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
+        with:
+          # Lint-only, never pushes — drop the persisted checkout token (zizmor
+          # artipacked); nothing downstream needs it. t-2nh8
+          persist-credentials: false
 
       # rhysd/actionlint ships no first-party action, so pin the release binary
       # and SHA256-verify it before running — the same "trust nothing mutable"
@@ -106,6 +110,10 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
+        with:
+          # This gate only reads workflow files — never pushes; drop the persisted
+          # checkout token (zizmor artipacked). t-2nh8
+          persist-credentials: false
       - uses: zizmorcore/zizmor-action@192e21d79ab29983730a13d1382995c2307fbcaa # v0.5.7
         with:
           version: 1.26.1
@@ -127,6 +135,10 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v7
+        with:
+          # Only stats fixture files — never pushes; drop the persisted checkout
+          # token (zizmor artipacked). t-2nh8
+          persist-credentials: false
       - name: Assert smoke fixtures exist
         run: |
           set -euo pipefail
