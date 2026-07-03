@@ -45,6 +45,18 @@ Opt-in (need per-repo judgement, hence flags):
   gained a commit-lint caller via a fleet-sync gap-fill.
 - `WITH_IMMUTABLE=1` — enable immutable releases on the release repos
   (`RELEASE_REPOS`). Now safe: `release.yml` was hardened first — see below.
+- `WITH_CODEQL_GO=1` — add CodeQL **`go`** (compiled) analysis on the Go repos
+  (`GO_REPOS`, default `cifail pare furrow`). It detects code patterns — SQL
+  injection, path traversal, tampering — that `govulncheck` (reachable known-CVEs)
+  does not, so the two are **complementary**. Unlike the no-build `actions`
+  baseline, `go` runs a **build every PR**, hence opt-in + allowlisted (the same
+  CI-cost axis on which the compiled languages are kept out of the always-on
+  baseline). `go` is **union**ed into the language set — it never clobbers
+  `actions`. A repo not yet code-scanning-configured is **deferred**: the `actions`
+  baseline PATCH is async, so `go` is added on the next run rather than risking a
+  same-run clobber of the just-set baseline. If the default query suite is noisy on
+  a repo, narrow it there (`query_suite=extended`/filters) — a per-repo follow-up,
+  not baked in here.
 
 ## Usage
 
@@ -54,6 +66,7 @@ APPLY=1 ./scripts/apply-repo-settings.sh              # apply the safe baseline
 APPLY=1 WITH_TOKEN_FLIP=1 ./scripts/apply-repo-settings.sh
 APPLY=1 WITH_PROTECTION=1 PROTECT_REPOS="chord facet glance halo perch sill swift-toml-edit wand" \
   ./scripts/apply-repo-settings.sh
+APPLY=1 WITH_CODEQL_GO=1 ./scripts/apply-repo-settings.sh   # CodeQL go on GO_REPOS
 ONLY=facet APPLY=1 ./scripts/apply-repo-settings.sh   # one repo
 ```
 
