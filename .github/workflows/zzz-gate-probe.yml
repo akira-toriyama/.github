@@ -1,0 +1,12 @@
+name: zzz-gate-probe
+# TEMPORARY probe to prove the dogfooded zizmor gate BITES (t-qbp1). The unpinned
+# third-party `uses:` below violates the unpinned-uses `*: hash-pin` policy, so the
+# reusable gate must report it and go RED. Deleted after the red run is confirmed.
+on: workflow_dispatch
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: pnpm/action-setup@v4
