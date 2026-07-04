@@ -1,0 +1,82 @@
+name: zizmor
+
+# Reusable Actions-security lint (zizmor) as a hard PR gate, called by each repo's
+# thin caller workflow. Runs in the CALLER repo's context: actions/checkout pulls the
+# caller's tree, so it audits the caller's .github/workflows against the caller's own
+# .github/zizmor.yml. The logic — and, crucially, the zizmor-action SHA + the zizmor
+# version pin — live HERE once; callers only `uses:` this file at @v1. That is the
+# whole reason this is a reusable rather than a self-contained fleet workflow: a
+# self-contained copy would carry the third-party SHA into every repo, where each
+# repo's (fleet-distributed) Dependabot would open a bump PR that fleet-sync then
+# overwrites — a weekly tug-of-war. Centralized here, only THIS repo's Dependabot
+# bumps it, and callers pin `@v1` (self-owned → nothing for Dependabot to touch).
+#
+# Hard gate: the action propagates zizmor's exit code (action.sh: `exit ${exitcode}`),
+# so any finding at/above min-confidence fails the job. advanced-security:false +
+# annotations:true → inline PR annotations with only contents:read (no SARIF upload;
+# CodeQL already feeds the Security tab). online-audits:false keeps it deterministic —
+# it can't spontaneously fail an unrelated PR when an upstream advisory drops. The
+# zizmor VERSION is pinned (the action maps it to an image digest) so CI matches what
+# was triaged locally. Policy/threshold defaults match the hub's own gate; each caller
+# ships a .github/zizmor.yml (fleet-distributed) with the unpinned-uses policy.
+#
+# Caller skeleton (.github/workflows/zizmor.yml in each repo):
+#   on:
+#     pull_request:
+#   permissions:
+#     contents: read
+#   jobs:
+#     zizmor:
+#       uses: akira-toriyama/.github/.github/workflows/zizmor.yml@v1
+
+on:
+  workflow_call:
+    inputs:
+      inputs:
+        description: >-
+          Space-separated paths for zizmor to audit. Default `.github/workflows`
+          (present in every repo); the hub also passes `actions` for its composite.
+        required: false
+        type: string
+        default: .github/workflows
+      version:
+        description: 'zizmor version (the action maps it to a pinned image digest).'
+        required: false
+        type: string
+        default: 1.26.1
+      min-confidence:
+        description: >-
+          Low-confidence floor. `medium` drops the low-confidence artipacked
+          (persist-credentials) nags; see the caller's .github/zizmor.yml.
+        required: false
+        type: string
+        default: medium
+      config:
+        description: 'Path to the zizmor config in the CALLER repo.'
+        required: false
+        type: string
+        default: .github/zizmor.yml
+
+permissions:
+  contents: read
+
+jobs:
+  zizmor:
+    runs-on: ubuntu-latest
+    # Actions security lint is fast; bound it so a hung image pull can't idle a runner.
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # Lint-only, never pushes — drop the persisted checkout token (the very
+          # artipacked finding zizmor reports). t-2nh8
+          persist-credentials: false
+      - uses: zizmorcore/zizmor-action@192e21d79ab29983730a13d1382995c2307fbcaa # v0.5.7
+        with:
+          version: ${{ inputs.version }}
+          inputs: ${{ inputs.inputs }}
+          config: ${{ inputs.config }}
+          online-audits: false
+          min-confidence: ${{ inputs.min-confidence }}
+          advanced-security: false
+          annotations: true

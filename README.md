@@ -19,6 +19,7 @@ uses: akira-toriyama/.github/.github/workflows/<name>.yml@v1
 |---|---|---|
 | [`commit-lint.yml`](.github/workflows/commit-lint.yml) | gitmoji + Conventional Commits validator on every PR | fleet-sync (caller byte-identical everywhere) |
 | [`taplo.yml`](.github/workflows/taplo.yml) | TOML lint + `fmt --check` (Taplo); a no-op without `*.toml` | fleet-sync |
+| [`zizmor.yml`](.github/workflows/zizmor.yml) | Actions-security lint (zizmor) as a PR gate — unpinned actions, template injection, over-broad `permissions:` | fleet-sync (caller + `.github/zizmor.yml` config) |
 | [`swift-format.yml`](.github/workflows/swift-format.yml) | `swift format lint` for Swift packages (macOS, pinned Xcode) | per-repo caller (opt-in, paths-limited) |
 | [`design-md-lint.yml`](.github/workflows/design-md-lint.yml) | `DESIGN.md` validator (`@google/design.md`); fails on broken refs | per-repo caller (DESIGN.md repos only) |
 | [`go-ci.yml`](.github/workflows/go-ci.yml) | Go build / vet / `test -race` / module-hygiene / golangci-lint v2 | per-repo caller (repo-specific jobs) |
@@ -26,8 +27,9 @@ uses: akira-toriyama/.github/.github/workflows/<name>.yml@v1
 | [`release.yml`](.github/workflows/release.yml) | Rolling-DRAFT GitHub Release from Conventional Commits (git-cliff) | per-repo caller (Swift-app repos) |
 | [`update-tap.yml`](.github/workflows/update-tap.yml) | Bump the Homebrew formula in `homebrew-tap` on release publish | per-repo caller (app repos) |
 
-`commit-lint` / `taplo` callers are identical across repos, so **fleet-sync**
-distributes them (see [`fleet/`](fleet/)). The rest have per-repo callers you edit
+`commit-lint` / `taplo` / `zizmor` callers are identical across repos, so
+**fleet-sync** distributes them (see [`fleet/`](fleet/)); `zizmor` also ships its
+`.github/zizmor.yml` policy alongside the caller. The rest have per-repo callers you edit
 in place: the **Go** callers keep repo-specific jobs (fuzz / smoke / drift guards)
 alongside the `uses:` job; `swift-format` / `design-md-lint` are opt-in and
 paths-limited; `release` / `update-tap` carry the app name.
