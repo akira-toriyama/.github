@@ -24,6 +24,12 @@ line to `MANIFEST` in [`.github/workflows/fleet-sync.yml`](../.github/workflows/
 - `taplo.yml` → each repo's `.github/workflows/taplo.yml` (caller stub for the
   shared [`taplo`](../.github/workflows/taplo.yml) reusable; a no-op on repos
   without any `*.toml`).
+- `zizmor.yml` → each repo's `.github/workflows/zizmor.yml` (caller stub for the
+  shared [`zizmor`](../.github/workflows/zizmor.yml) reusable — Actions-security
+  lint as a PR gate). The zizmor version + action SHA live in the reusable, so this
+  caller carries no third-party pin for a per-repo Dependabot to bump.
+- `zizmor-config.yml` → each repo's `.github/zizmor.yml` (the `unpinned-uses` policy
+  the gate reads; pairs with `zizmor.yml` above).
 - `commit-convention.md` → each repo's `docs/commit-convention.md` (a universal
   pointer to the canonical [`CONTRIBUTING.md`](../CONTRIBUTING.md); carries no
   local-hook assumptions, so it fits hook-less repos too).

@@ -94,35 +94,19 @@ jobs:
             || { echo "::error::shellcheck not on runner — actionlint would skip run: checks"; exit 1; }
           ./actionlint -color
 
-  # Actions-specific security lint as a HARD PR gate — the action propagates
-  # zizmor's exit code, so any reported finding fails the job (verified against the
-  # action's action.sh: `exit "${exitcode}"`). advanced-security:false +
-  # annotations:true → inline PR annotations with only contents:read (no
-  # security-events:write / SARIF upload; CodeQL already feeds the Security tab).
-  # online-audits:false keeps the gate deterministic — it can't spontaneously fail
-  # an unrelated PR when an upstream advisory drops. The zizmor VERSION is pinned
-  # (the action maps it to an image digest) so CI matches what was triaged locally;
-  # the action itself is SHA-pinned like every third-party `uses:` here. The gate
-  # also runs at min-confidence:medium — a GLOBAL low-confidence floor whose
-  # rationale (and its one caveat) lives in .github/zizmor.yml.
+  # Actions-specific security lint as a HARD PR gate. This DOGFOODS the reusable the
+  # hub distributes to the fleet (zizmor.yml, t-qbp1): calling it via `uses: ./`
+  # exercises it at PR time, so a break in the reusable fails HERE, not in a fleet
+  # caller after @v1 moves — the same guarantee the taplo/design-md/swift-format
+  # smokes below give, applied to the hub's own security gate. The gate's mechanics
+  # (exit-code propagation, no SARIF, deterministic offline audits, pinned version)
+  # and the min-confidence:medium floor live in .github/workflows/zizmor.yml and
+  # .github/zizmor.yml. Only the hub scans `actions` too (its composite); fleet
+  # callers take the reusable's `.github/workflows` default.
   zizmor:
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          # This gate only reads workflow files — never pushes; drop the persisted
-          # checkout token (zizmor artipacked). t-2nh8
-          persist-credentials: false
-      - uses: zizmorcore/zizmor-action@192e21d79ab29983730a13d1382995c2307fbcaa # v0.5.7
-        with:
-          version: 1.26.1
-          inputs: .github/workflows actions
-          config: .github/zizmor.yml
-          online-audits: false
-          min-confidence: medium
-          advanced-security: false
-          annotations: true
+    uses: ./.github/workflows/zizmor.yml
+    with:
+      inputs: .github/workflows actions
 
   # Guard against a vacuously-green smoke: design-md-lint and swift-format both
   # `exit 0` with a `::notice::` when their input path is absent (intentional, for
