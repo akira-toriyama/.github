@@ -85,8 +85,11 @@ jobs:
           echo "event=$EVENT dry-run=$DRY"
 
           # Manifest: "<src in this repo>:<dest in each target repo>". Add lines to
-          # standardize more files. v1 = the task-status caller stub.
-          MANIFEST="fleet/task-status.yml:.github/workflows/task-status.yml fleet/dependabot.yml:.github/dependabot.yml fleet/commit-lint.yml:.github/workflows/commit-lint.yml fleet/taplo.yml:.github/workflows/taplo.yml fleet/commit-convention.md:docs/commit-convention.md"
+          # standardize more files. The zizmor pair distributes the Actions-security
+          # gate fleet-wide (t-qbp1): the caller workflow + the .github/zizmor.yml
+          # policy it reads. Rolled out only after every existing repo was pre-audited
+          # green (zizmor 1.26.1 + this config); new repos are onboarded clean.
+          MANIFEST="fleet/task-status.yml:.github/workflows/task-status.yml fleet/dependabot.yml:.github/dependabot.yml fleet/commit-lint.yml:.github/workflows/commit-lint.yml fleet/taplo.yml:.github/workflows/taplo.yml fleet/zizmor.yml:.github/workflows/zizmor.yml fleet/zizmor-config.yml:.github/zizmor.yml fleet/commit-convention.md:docs/commit-convention.md"
 
           # Target repos: owned, non-fork, non-archived (new repos auto-included).
           mapfile -t REPOS < <(gh repo list "$OWNER" --no-archived --source --limit 200 \
