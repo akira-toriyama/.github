@@ -100,13 +100,20 @@ jobs:
   # caller after @v1 moves — the same guarantee the taplo/design-md/swift-format
   # smokes below give, applied to the hub's own security gate. The gate's mechanics
   # (exit-code propagation, no SARIF, deterministic offline audits, pinned version)
-  # and the min-confidence:medium floor live in .github/workflows/zizmor.yml and
-  # .github/zizmor.yml. Only the hub scans `actions` too (its composite); fleet
-  # callers take the reusable's `.github/workflows` default.
+  # live in .github/workflows/zizmor.yml; the policy in .github/zizmor.yml. Only
+  # the hub scans `actions` too (its composite); fleet callers take the reusable's
+  # `.github/workflows` default.
   zizmor:
     uses: ./.github/workflows/zizmor.yml
     with:
       inputs: .github/workflows actions
+      # Stricter than the fleet default (medium): every hub checkout is now
+      # explicit about persist-credentials (t-2nh8), so the low-confidence
+      # artipacked findings the medium floor existed to drop are gone — low
+      # keeps artipacked ALWAYS gated on new checkouts here. Fleet callers
+      # stay at medium until re-audited at low. Waive a genuine low-confidence
+      # false positive inline with `# zizmor: ignore[rule]`.
+      min-confidence: low
 
   # Guard against a vacuously-green smoke: design-md-lint and swift-format both
   # `exit 0` with a `::notice::` when their input path is absent (intentional, for
