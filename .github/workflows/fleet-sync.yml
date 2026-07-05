@@ -64,6 +64,11 @@ jobs:
       - name: Checkout (.github holds the canonical files)
         if: steps.gate.outputs.go == 'true'
         uses: actions/checkout@v7
+        with:
+          # The checkout only feeds local reads of the canonical fleet/ files;
+          # every fleet write goes through gh + FLEET_SYNC_PAT env, never git —
+          # drop the persisted checkout token (zizmor artipacked). t-2nh8
+          persist-credentials: false
 
       - name: Sync standard files + the tracker-write PAT across the fleet
         if: steps.gate.outputs.go == 'true'

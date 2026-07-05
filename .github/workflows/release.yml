@@ -93,6 +93,12 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
+          # git-cliff and `git tag --sort` walk the already-fetched history
+          # locally; every release write goes through gh + GH_TOKEN env, never
+          # git push — drop the persisted checkout token (zizmor artipacked).
+          # SwiftPM dependency fetches never used it either (a repo-local
+          # credential doesn't apply to .build/repositories clones). t-2nh8
+          persist-credentials: false
 
       - uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1
         with:
