@@ -105,6 +105,13 @@ jobs:
           token: ${{ secrets.PROJECTS_WRITE_PAT }}
           path: tracker
           fetch-depth: 0
+          # The filing step runs plain `git push origin HEAD:main` (with
+          # pull-rebase retries) against this checkout, so the PAT must stay
+          # configured — explicit true marks the persistence as intentional
+          # (zizmor artipacked stays silent on an explicit opt-in). checkout
+          # v6+ keeps the credential under $RUNNER_TEMP, outside the workdir,
+          # and this job uploads no artifacts. t-2nh8
+          persist-credentials: true
 
       - name: Set up Go
         if: steps.expiry.outputs.due == 'true'
