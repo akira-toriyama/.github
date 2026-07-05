@@ -86,6 +86,12 @@ jobs:
         run: echo "GOTOOLCHAIN=$GOTOOLCHAIN_INPUT" >> "$GITHUB_ENV"
 
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          # Build/vet/test only, never pushes — drop the persisted checkout
+          # token (zizmor artipacked). Go module downloads can't ride on it
+          # anyway: `go` fetches via the proxy or into the module cache's own
+          # clones, where a repo-local credential never applies. t-2nh8
+          persist-credentials: false
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version: ${{ inputs.go-version }}
