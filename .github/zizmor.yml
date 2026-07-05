@@ -4,14 +4,16 @@
 # zizmor auto-discovers this file at .github/zizmor.yml, but the job passes it
 # explicitly via `config:` so the intent is unmissable.
 #
-# The gate also runs with `min-confidence: medium`, a GLOBAL low-confidence floor.
-# Its main effect here is dropping the low-confidence `artipacked` (checkout
-# persist-credentials) nags — hardening those across the credential-using workflows
-# (update-tap's PAT push, fleet-sync) needs per-workflow care and is tracked
-# separately, not bundled into this change. Caveat: the floor also drops ANY other
-# low-confidence finding (e.g. a low-confidence template-injection). Accepted trade —
-# zizmor rates a genuine injection High, and a PR gate must not block unrelated work
-# on likely-false-positive noise; the deeper CodeQL scan is the backstop for the tail.
+# The hub's gate runs at `min-confidence: low` (set in self-test.yml) — stricter
+# than the fleet callers' default `medium`. The medium floor existed to drop the
+# low-confidence `artipacked` (checkout persist-credentials) nags; those are gone
+# (t-2nh8): every hub checkout now either sets `persist-credentials: false` or
+# declares an intentional, commented `persist-credentials: true` (update-tap's tap
+# push, the expiry reminder's tracker push), which artipacked does not report.
+# Running at low keeps artipacked permanently gated on NEW checkouts. Trade-off:
+# any other low-confidence finding gates too — waive a genuine false positive
+# inline with `# zizmor: ignore[rule]` rather than re-raising the floor. Fleet
+# callers stay at medium until the fleet is re-audited clean at low.
 
 rules:
   unpinned-uses:
