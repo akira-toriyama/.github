@@ -114,6 +114,13 @@ jobs:
           repository: akira-toriyama/homebrew-tap
           token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
           path: tap
+          # The bump step's pull-rebase-push retry loop runs plain git against
+          # this checkout, so the PAT must stay configured — explicit true marks
+          # the persistence as intentional (zizmor artipacked stays silent on an
+          # explicit opt-in). checkout v6+ keeps the credential under
+          # $RUNNER_TEMP, outside the workdir, and this job uploads no
+          # artifacts. t-2nh8
+          persist-credentials: true
 
       - name: Bump Formula (idempotent)
         env:
