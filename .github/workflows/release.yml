@@ -84,7 +84,11 @@ permissions:
 
 jobs:
   release:
-    runs-on: macos-15
+    # macos-26: family apps on the macOS-26 floor (sill v2.0.0+) ship
+    # minos-26 binaries the smoke step must EXECUTE — a macos-15 host can
+    # compile them but cannot run them. The newer image's Xcode still
+    # builds the remaining floor-13 apps, so every caller is safe.
+    runs-on: macos-26
     # Bounded so a hung step (build, signing, gh upload) can't burn the
     # macOS minutes budget. Generous — a cold build + package + upload is
     # well under this.
