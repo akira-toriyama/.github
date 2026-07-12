@@ -128,9 +128,15 @@ jobs:
               changed=$((changed + 1))
               [ "$DRY" = "true" ] && continue
 
-              # Try a direct commit to the default branch.
+              # Try a direct commit to the default branch. The explicit [bot]
+              # author makes every fleet-sync commit machine-attributed, so
+              # glyph's commit-lint and release folds skip it by the *[bot]
+              # rule — ':robot:' is not a gitmoji-spec code and would otherwise
+              # hard-fail the lint on fleet-sync's own PRs (t-kbqx).
               args=(-X PUT "repos/$full/contents/$dest"
                 -f "message=:robot: chore(fleet): sync $dest"
+                -f "author[name]=fleet-sync[bot]"
+                -f "author[email]=fleet-sync[bot]@users.noreply.github.com"
                 -f "content=$local_b64")
               [ -n "$sha" ] && args+=(-f "sha=$sha")
               if gh api "${args[@]}" >/dev/null 2>/dev/null; then
@@ -161,8 +167,12 @@ jobs:
                 [ "$bb64" = "$local_b64" ] && need_put=0
               fi
               if [ "$need_put" = 1 ]; then
+                # Same [bot] author as the direct-commit path — the PR fallback's
+                # commits must also stay out of glyph's lint and release folds.
                 pargs=(-X PUT "repos/$full/contents/$dest"
                   -f "message=:robot: chore(fleet): sync $dest"
+                  -f "author[name]=fleet-sync[bot]"
+                  -f "author[email]=fleet-sync[bot]@users.noreply.github.com"
                   -f "content=$local_b64" -f "branch=$branch")
                 [ -n "$bsha2" ] && pargs+=(-f "sha=$bsha2")
                 gh api "${pargs[@]}" >/dev/null \
