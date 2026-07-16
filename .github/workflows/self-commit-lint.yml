@@ -1,15 +1,19 @@
 name: self commit-lint
 
-# The hub lints its OWN commits too. This thin caller runs the reusable
-# commit-lint.yml (which lives in this repo) on every PR, so .github's own
-# history follows the same gitmoji + Conventional Commits convention it enforces
-# fleet-wide — and gives main a required status check for branch protection.
-# (App repos call the reusable cross-repo; the hub calls it locally via `./`.)
+# The hub lints its OWN commits too — with glyph, the same engine the fleet
+# runs. This caller is MAINTAINED BY HAND: fleet-sync EXCLUDEs this repo (it is
+# the hub), so the canonical caller `fleet/commit-lint.yml` never syncs onto it.
+# Keep the glyph pin below in LOCKSTEP with fleet/commit-lint.yml — when you
+# bump the fleet pin, bump this one in the same PR.
+#
+# The job id stays `commit-lint` (not the fleet stub's `lint`) on purpose: main's
+# required status check is the context "commit-lint / lint", and renaming the
+# job would orphan it.
 
 on:
   pull_request:
 
-# Cap the token the caller hands the reusable: commit-lint only checks out and
+# Cap the token the caller hands the reusable: glyph-lint only checks out and
 # reads the PR's commit range, so contents:read is all it needs. Without this
 # block the job inherits the repo-default token scope (which zizmor's
 # excessive-permissions audit flags), and the reusable can't request more than
@@ -19,4 +23,4 @@ permissions:
 
 jobs:
   commit-lint:
-    uses: ./.github/workflows/commit-lint.yml
+    uses: akira-toriyama/glyph/.github/workflows/lint.yml@v0.2.0
