@@ -39,7 +39,9 @@ SKIP_TOKEN_FLIP="${SKIP_TOKEN_FLIP:-}"
 # Repos that run the rolling-DRAFT release flow (immutable-releases candidates).
 RELEASE_REPOS="${RELEASE_REPOS:-chord facet halo perch wand}"
 # Go repos to enable CodeQL `go` (compiled) analysis on, when WITH_CODEQL_GO=1.
-GO_REPOS="${GO_REPOS:-cifail pare furrow}"
+# This is a hand-kept allowlist (CI cost is a per-repo call) — when creating a
+# new Go repo, decide and add it here (t-tndq precedent: glyph).
+GO_REPOS="${GO_REPOS:-cifail pare furrow glyph}"
 # Branch-protection allowlist. Empty = every repo with a commit-lint caller. Set it
 # to keep the merge-blocking "lint / lint" check on the originally-intended app
 # repos only (not every repo that gained a caller via a fleet-sync gap-fill).
