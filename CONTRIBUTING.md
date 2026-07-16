@@ -1,23 +1,28 @@
 # Contributing
 
 Conventions shared across the repositories under this account. This is the
-**single source of truth for commit messages** — individual repos should link
-here rather than copy it. (Per-repo `docs/commit-convention.md` files predate
-this and have drifted; reduce them to a link over time.)
+**single source of truth for commit messages** — individual repos carry only a
+fleet-distributed pointer here (`docs/commit-convention.md`), never a copy.
 
 ## Commit messages
 
-We use **gitmoji + [Conventional Commits](https://www.conventionalcommits.org)**.
-From the messages, [git-cliff](https://git-cliff.org) computes the release
-**semver and the release notes** — so the format is enforced (the shared
-`commit-lint.yml` reusable) and consumed (the shared `release.yml` reusable +
-each repo's `cliff.toml`). **The Conventional type decides the version; gitmoji
-is for readability and changelog grouping and never affects the version.**
+We use **gitmoji-driven commits**: the leading gitmoji **is the type** and
+decides the release **semver and the release-notes grouping**. The engine is
+[glyph](https://github.com/akira-toriyama/glyph) — the format is enforced on
+every PR (the fleet-wide `commit-lint.yml` caller runs glyph's reusable
+`lint.yml`) and consumed at release time (`glyph release` / `glyph bump` /
+`glyph notes`).
+
+> Historical note: the convention used to be gitmoji + Conventional Commits
+> with the Conventional `<type>` word deciding the version (computed by
+> git-cliff). The `<type>` word is now retired — the gitmoji plays that role —
+> but the linter still accepts-and-ignores a legacy `<type>(scope)!:` token, so
+> old history keeps linting and bumping. No flag-day.
 
 ### Format
 
 ```
-<gitmoji> <type>(<scope>)<!>: <subject>
+<:gitmoji:>[(<scope>)][!] <subject>
 
 <body, optional>
 
@@ -25,30 +30,42 @@ is for readability and changelog grouping and never affects the version.**
 ```
 
 - **gitmoji** — exactly one leading gitmoji in the `:sparkles:` **text form**
-  (grep-friendly; not the emoji glyph), e.g. `:bug:`.
-- **type** — required; one of the Conventional types below. **semver is decided
-  by this.**
-- **scope** — optional, **parenthesised only**: `(cli)`, `(native)`,
-  `(homebrew)`, `(ci)`. Sub-scopes use dashes inside the parens
-  (`(grid-1f-4)`, not bracketed forms — those fail the CI lint). Multi-word
-  scopes go inside the parens too: `(commit-lint)`.
-- **!** — breaking change (or a `BREAKING CHANGE: <desc>` footer).
+  (column 0, mandatory). Textual, not the emoji glyph: pure ASCII (no
+  U+FE0F/ZWJ), grep-friendly, deterministic to author; GitHub renders the glyph
+  in its UI. An **unknown code is a hard lint error**, never a silent pass.
+- **scope** — optional, **parenthesised only**, lowercase kebab, attached
+  directly to the code (no space): `:sparkles:(cli)`, `:bug:(commit-lint)`.
+- **!** — breaking-change marker, immediately after the code or the scope
+  (or use a `BREAKING CHANGE: <desc>` footer).
 - **subject** — required; imperative, present tense, concise. **English**,
   lowercase start, no trailing period.
 
-### Type → semver
+### gitmoji → semver
 
-| Change | type / marker | version |
+Bump lattice `none < patch < minor < major`, default **none**; all 75 spec
+codes are explicitly enumerated. The **machine source of truth is glyph's
+embedded rules table** — print it with `glyph rules` (`--md` for the full
+table, mirrored at
+[glyph `docs/gitmoji-table.md`](https://github.com/akira-toriyama/glyph/blob/main/docs/gitmoji-table.md)).
+The buckets:
+
+| Change | gitmoji / marker | version |
 |---|---|---|
-| Breaking change | `<type>!` or `BREAKING CHANGE:` footer | **major** |
-| New feature | `feat` | **minor** |
-| Bug fix / performance | `fix` / `perf` | **patch** |
-| Revert | `revert` | patch |
-| Everything else | `docs` `style` `refactor` `test` `build` `ci` `chore` | **no bump** (also excluded from the changelog) |
+| Breaking change | `:boom:`, or `!`, or `BREAKING CHANGE:` footer | **major** |
+| New feature | `:sparkles:` (deliberately the only minor) | **minor** |
+| Shipped / user-observable behavior | `:bug:` `:zap:` `:lock:` `:lipstick:` `:arrow_up:` `:rewind:` … | **patch** |
+| Internal / non-shipping / meta | `:memo:` `:recycle:` `:wrench:` `:white_check_mark:` `:construction_worker:` … | **no bump** (excluded from the notes) |
 
-Non-conventional messages are not folded into a release (no version, no notes).
-Bot commits (`github-actions`, `*[bot]`) are excluded from versioning and the
-changelog (see each repo's `cliff.toml` `commit_parsers`).
+- **Breaking is an orthogonal, non-suppressible flag**, not a rung: any of the
+  three triggers forces major regardless of the code's own bump.
+- **Squash-safe**: at release time the bump is computed from **each PR's
+  individual commits** (resolved via the GitHub API) and max-folded — never
+  from `main`'s post-squash subjects — so `COMMIT_OR_PR_TITLE` squash titles
+  cannot hide or invent a bump. Order-independent and stateless.
+- Bot commits (`*[bot]`), merge commits, autosquash artifacts, and raw
+  `git revert` subjects are skipped by the lint and excluded from versioning
+  and the notes. A `:construction:` (WIP) commit in a merge candidate is a
+  lint error.
 
 ### Body (optional)
 
@@ -66,46 +83,48 @@ changelog (see each repo's `cliff.toml` `commit_parsers`).
 ### Examples
 
 ```
-:sparkles: feat(ui): add a right-click window menu (float / fullscreen / close)
+:sparkles:(ui) add a right-click window menu (float / fullscreen / close)
 ```
 
 ```
-:bug: fix(config): keep defaults when an unknown key is present
+:bug:(config) keep defaults when an unknown key is present
 
 Unknown keys used to reset the ring; now they are ignored per spec.
 
 ---（和訳）
-fix(config): 未知のキーがあってもデフォルトを保持する
+:bug:(config) 未知のキーがあってもデフォルトを保持する
 
 未知のキーは以前リングをリセットしていたが、仕様どおり無視するようにした。
 ```
 
 ```
-:boom: feat(api)!: replace the --items flag with a positional argument
+:boom:(api) replace the --items flag with a positional argument
 
 BREAKING CHANGE: `--items` is removed; pass the file as the first argument.
 ```
 
-## Release flow (rolling-draft)
+## Release flow
 
-Releases are automated by the shared `release.yml` reusable:
+Both release shapes read the same commit data; the difference is only who
+builds the artifacts. (**Verdict is glyph's; artifacts are GoReleaser's.**)
 
-1. Merge `feat:` / `fix:` / `perf:` to `main`. git-cliff computes the next
-   version and the workflow creates/updates a single **draft** GitHub Release
-   (build artifacts attached). **No tag is created yet.**
-2. Review the draft and **Publish** it in the GitHub UI — GitHub creates the
-   tag (`vX.Y.Z`) on the target commit at publish time.
-3. Non-bumping-only changes (`docs:` / `chore:` / …) ⇒ the workflow no-ops.
+- **Rolling-draft repos** (glyph's reusable `release.yml`): every push to
+  `main` recomputes the verdict from `lastPublishedTag..HEAD` and converges the
+  repo's single **draft** GitHub Release (notes + next `vX.Y.Z`). **No tag is
+  created** — review the draft and **Publish** it in the GitHub UI; GitHub
+  creates the tag at publish time. A no-bump range means no draft (and any
+  stale draft is deleted).
+- **Binary-distribution repos** (tag-driven GoReleaser): the next tag comes
+  from `glyph bump`, the release notes from `glyph notes`; GoReleaser owns the
+  artifacts, checksums, and attestation.
 
-`workflow_dispatch` with `dry_run=true` is a full preview (no draft, no version
-consumed). The initial version is each repo's `cliff.toml` `initial_tag`
-(typically `v1.0.0`). The CHANGELOG is not committed; the GitHub Release notes
-are canonical.
+Repos not yet migrated to glyph still run the git-cliff `release.yml@v1`
+reusable with a per-repo `cliff.toml`; they migrate (and drop `cliff.toml`) in
+glyph's fleet-migration phase.
 
 ## Local hook (optional, no Node)
 
-Each repo bundles a shell `commit-msg` hook. Enable it with:
-
-```sh
-git config core.hooksPath scripts/hooks
-```
+Some repos bundle a shell `commit-msg` hook (enable with
+`git config core.hooksPath scripts/hooks`). Hooks written for the legacy
+`<type>:` format may lag the glyph convention until updated per-repo — CI
+(glyph lint) is the authority, the hook is only an early warning.
