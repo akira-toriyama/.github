@@ -46,7 +46,10 @@ Opt-in (need per-repo judgement, hence flags):
 - `WITH_IMMUTABLE=1` — enable immutable releases on the release repos
   (`RELEASE_REPOS`). Now safe: `release.yml` was hardened first — see below.
 - `WITH_CODEQL_GO=1` — add CodeQL **`go`** (compiled) analysis on the Go repos
-  (`GO_REPOS`, default `cifail pare furrow`). It detects code patterns — SQL
+  (`GO_REPOS`, default `cifail pare furrow glyph`). The list is hand-kept because
+  the CI cost is a per-repo call — **when creating a new Go repo, decide and add
+  it there** (nothing auto-detects the gap; glyph slipped through until t-tndq).
+  It detects code patterns — SQL
   injection, path traversal, tampering — that `govulncheck` (reachable known-CVEs)
   does not, so the two are **complementary**. Unlike the no-build `actions`
   baseline, `go` runs a **build every PR**, hence opt-in + allowlisted (the same
