@@ -20,7 +20,7 @@ consumer index.
 
 - **`.github/workflows/task-status.yml` is maintained BY HAND.** fleet-sync
   EXCLUDEs `.github` (it *is* the hub), so the canonical `fleet/task-status.yml`
-  never syncs onto it. Keep this file's caller body — the furrow pin (`@v0.6.0`),
+  never syncs onto it. Keep this file's caller body — the furrow pin,
   `on` / `permissions` / `secrets` — identical to `fleet/task-status.yml`; only the
   top provenance comment differs. Bump the furrow pin in **both**. Nothing in CI
   guards this — the rule lives only in the two files' comments.
