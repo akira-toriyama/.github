@@ -10,7 +10,7 @@ consumer index.
 
 ## Where each topic is documented — read there, don't reinvent
 
-- **Commit convention** (gitmoji + Conventional, type → semver) → [`CONTRIBUTING.md`](CONTRIBUTING.md) (single source of truth).
+- **Commit convention** (gitmoji-driven — the leading `:code:` is the type and drives semver; enforced/consumed by glyph) → [`CONTRIBUTING.md`](CONTRIBUTING.md) (single source of truth).
 - **Ref policy + cutting a release** (moving `v1`, immutable `v1.x.y`, `v2` for breaking) → [`docs/reusable-versioning.md`](docs/reusable-versioning.md).
 - **fleet-sync mechanism + PAT rotation** → [`fleet/README.md`](fleet/README.md).
 - **Fleet-wide repo settings** (`apply-repo-settings.sh`) → [`docs/repo-settings.md`](docs/repo-settings.md).

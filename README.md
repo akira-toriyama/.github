@@ -17,7 +17,7 @@ uses: akira-toriyama/.github/.github/workflows/<name>.yml@v1
 
 | Reusable (`.github/workflows/…`) | What it does | Distribution |
 |---|---|---|
-| [`commit-lint.yml`](.github/workflows/commit-lint.yml) | gitmoji + Conventional Commits validator on every PR | fleet-sync (caller byte-identical everywhere) |
+| [`commit-lint.yml`](.github/workflows/commit-lint.yml) | **retired** shell validator — superseded by [glyph](https://github.com/akira-toriyama/glyph)'s `lint.yml` reusable, which the fleet caller now pins; `@v1` lives on for stragglers until the `@v1` retirement | fleet-sync (caller byte-identical everywhere) |
 | [`taplo.yml`](.github/workflows/taplo.yml) | TOML lint + `fmt --check` (Taplo); a no-op without `*.toml` | fleet-sync |
 | [`zizmor.yml`](.github/workflows/zizmor.yml) | Actions-security lint (zizmor) as a PR gate — unpinned actions, template injection, over-broad `permissions:` | fleet-sync (caller + `.github/zizmor.yml` config) |
 | [`swift-format.yml`](.github/workflows/swift-format.yml) | `swift format lint` for Swift packages (macOS, pinned Xcode) | per-repo caller (opt-in, paths-limited) |
@@ -28,7 +28,9 @@ uses: akira-toriyama/.github/.github/workflows/<name>.yml@v1
 | [`update-tap.yml`](.github/workflows/update-tap.yml) | Bump the Homebrew formula in `homebrew-tap` on release publish | per-repo caller (app repos) |
 
 `commit-lint` / `taplo` / `zizmor` callers are identical across repos, so
-**fleet-sync** distributes them (see [`fleet/`](fleet/)); `zizmor` also ships its
+**fleet-sync** distributes them (see [`fleet/`](fleet/)); the `commit-lint`
+caller pins glyph's reusable at a concrete release tag (workflow + binary ship
+lockstep from that one tag); `zizmor` also ships its
 `.github/zizmor.yml` policy alongside the caller. The rest have per-repo callers you edit
 in place: the **Go** callers keep repo-specific jobs (fuzz / smoke / drift guards)
 alongside the `uses:` job; `swift-format` / `design-md-lint` are opt-in and
