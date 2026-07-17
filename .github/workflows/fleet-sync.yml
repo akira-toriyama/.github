@@ -94,7 +94,11 @@ jobs:
           # gate fleet-wide (t-qbp1): the caller workflow + the .github/zizmor.yml
           # policy it reads. Rolled out only after every existing repo was pre-audited
           # green (zizmor 1.26.1 + this config); new repos are onboarded clean.
-          MANIFEST="fleet/task-status.yml:.github/workflows/task-status.yml fleet/dependabot.yml:.github/dependabot.yml fleet/commit-lint.yml:.github/workflows/commit-lint.yml fleet/taplo.yml:.github/workflows/taplo.yml fleet/zizmor.yml:.github/workflows/zizmor.yml fleet/zizmor-config.yml:.github/zizmor.yml fleet/commit-convention.md:docs/commit-convention.md"
+          # pr-verdict (t-a0eq) is fleet-wide on the same pre-audit discipline: all 29
+          # targets were surveyed first, and glyph v0.4.1 carries the release-floor
+          # guard that keeps the 11 tagless ones (projects: 1867 commits) from paying
+          # an API round-trip per commit. It comments only where PRs are opened.
+          MANIFEST="fleet/task-status.yml:.github/workflows/task-status.yml fleet/dependabot.yml:.github/dependabot.yml fleet/commit-lint.yml:.github/workflows/commit-lint.yml fleet/taplo.yml:.github/workflows/taplo.yml fleet/zizmor.yml:.github/workflows/zizmor.yml fleet/zizmor-config.yml:.github/zizmor.yml fleet/pr-verdict.yml:.github/workflows/pr-verdict.yml fleet/commit-convention.md:docs/commit-convention.md"
 
           # Target repos: owned, non-fork, non-archived (new repos auto-included).
           mapfile -t REPOS < <(gh repo list "$OWNER" --no-archived --source --limit 200 \
