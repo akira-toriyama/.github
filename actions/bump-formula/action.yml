@@ -1,0 +1,43 @@
+name: Bump Homebrew formula
+description: >-
+  Mutate a Homebrew formula file in place to a new tag + source sha256
+  (repo-qualified, first-match seds; drops a stale revision; refuses a backward
+  move unless allow-downgrade). The pure file-mutation half of update-tap.yml,
+  extracted so self-test can table-test it; the git commit/push half stays in the
+  reusable. See t-kve5.
+
+inputs:
+  formula-path:
+    description: "Path to the Formula .rb to mutate in place (e.g. tap/Formula/facet.rb)."
+    required: true
+  tag:
+    description: "Target tag, e.g. v1.4.0."
+    required: true
+  sha:
+    description: "Source-tarball sha256 (64 hex)."
+    required: true
+  repo:
+    description: "owner/repo whose archive/refs/tags tarball url is the one to move."
+    required: true
+  formula:
+    description: "Formula basename — used only in log messages."
+    required: true
+  allow-downgrade:
+    description: "'true' permits a backward move (rollback); else a backward move is refused."
+    required: false
+    default: "false"
+
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      # Inputs go through env, never inlined ${{ }} in run: a tag can legally
+      # contain shell metacharacters. formula-path is passed as the arg.
+      env:
+        TAG: ${{ inputs.tag }}
+        NEW_SHA: ${{ inputs.sha }}
+        REPO: ${{ inputs.repo }}
+        FORMULA: ${{ inputs.formula }}
+        ALLOW_DOWNGRADE: ${{ inputs.allow-downgrade }}
+        FORMULA_PATH: ${{ inputs.formula-path }}
+      run: bash "$GITHUB_ACTION_PATH/bump-formula.sh" "$FORMULA_PATH"
