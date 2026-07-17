@@ -12,17 +12,21 @@ load-bearing divergence is documented and kept, not erased.
 |---|---|---|---|
 | facet / halo / perch / wand | caller | caller | the norm |
 | **chord** | **caller** | **caller** | already converged (PRs #90 / #91) |
-| **glance** | custom | custom | release stays custom; tap migrating (t-jd81) |
-| **eventfx** | custom | custom | same custom bumper as glance (t-jd81 follow-up) |
+| **glance** | custom | **caller** | tap converged (glance#31, t-jd81); release stays custom |
+| **eventfx** | custom | custom | release dormant → migrating buys nothing; left as-is |
 | jig | — | — | repo removed |
 
 So the spike's original premise ("glance **and chord** deliberately differ") is
-**stale for chord**: chord migrated to thin callers of both reusables. The live
-question is glance — and, found while executing t-jd81, **eventfx**, whose
-`update-tap.yml` is the same custom bumper with the name swapped (same
-`[released]` + draft guard, same latest-fetch, same `2+2`, same
-`eventfx-release-bot`, same missing-token no-op). Everything this record
-concludes about glance's tap applies to it unchanged.
+**stale for chord**: chord migrated to thin callers of both reusables. It is now
+stale for glance too — its tap converged onto this reusable in glance#31 (t-jd81),
+keeping only a custom *release* (the load-bearing CLI-binary vs `.app` divergence
+below). A third custom bumper surfaced while executing t-jd81 — **eventfx**, byte
+-for-byte glance's old bumper with the name swapped (same `[released]` + draft
+guard, latest-fetch, `2+2`, `eventfx-release-bot`, missing-token no-op). Its
+release is effectively dormant, so migrating it buys none of the robustness this
+reusable adds (all of which only pays off when releases actually ship); it is
+left on its custom bumper by choice, not oversight. Everything this record
+concludes would apply to it unchanged if that ever changes.
 
 ## chord — already unified (no action)
 
@@ -83,9 +87,11 @@ asserts). glance's flagged divergences are incidental:
 - strict `2+2` diff-shape assertion — **drop it, but not for the reason first
   recorded here.** See the corrections below.
 
-**Recommendation: migrate `glance/update-tap.yml` to a thin caller** of the
-shared reusable, dropping the bot identity and the `2+2` guard. Tracked as a
-follow-up (t-jd81).
+**Done (glance#31, t-jd81):** `glance/update-tap.yml` is now a thin caller,
+dropping the bot identity and the `2+2` guard. The one deviation kept from the
+custom bumper is `types: [released]` (not the skeleton's `[published]`) — it
+excludes prereleases from the stable tap, and it does fire on a rolling-draft
+publish. The `if: draft == false` guard was dropped as dead.
 
 #### Corrections (t-jd81, 2026-07-17)
 
@@ -126,9 +132,10 @@ diffs `2+3`, so the guard would abort a valid bump whose asserts both pass
   comments in the shared reusables.
 - **glance release** — keep separate; the CLI-binary vs `.app` artifact model is
   a deliberate, load-bearing divergence.
-- **glance tap** — converge to the shared reusable (separate follow-up task).
-- **eventfx tap** — same conclusion as glance's, for the same reasons; its
-  release model (rolling draft, CLI binary) matches glance's too. Not done here.
+- **glance tap** — **converged** onto the shared reusable (glance#31, t-jd81).
+- **eventfx tap** — the analysis would match glance's, but its release is
+  dormant, so the migration buys nothing it can use; left on its custom bumper
+  by choice (t-j1bt closed won't-do). Revisit only if eventfx ships again.
 - **the shared reusable** — hardening the url sed and adding the no-downgrade
   guard were prerequisites the follow-up surfaced, not part of the original
   spike; they ship ahead of any caller migration because they fix a latent bug

@@ -6,10 +6,11 @@ name: update-tap
 # that tag + the fresh source-tarball sha256. Idempotent — re-running on
 # the same tag is a no-op when the formula already matches.
 #
-# The logic lived byte-near-identical in facet / halo / perch / wand;
-# it now lives here once and they only `uses:` this file. (glance and eventfx
-# still run custom tap updaters pending migration to this reusable; chord
-# converged here, jig was removed. See docs/release-tap-unification.md.)
+# The logic lived byte-near-identical in facet / halo / perch / wand; it now
+# lives here once and they only `uses:` this file. chord and glance converged
+# here too; jig was removed; eventfx keeps its own custom bumper (its release
+# is effectively dormant, so migrating buys nothing — see the decision record).
+# See docs/release-tap-unification.md.
 # This reusable is the BEST common form: pull-rebase retry, a 5-min timeout,
 # repo-qualified first-match seds and a no-downgrade guard are baked in for
 # everyone; the only knobs are the formula name and an explicit rollback opt-in.
