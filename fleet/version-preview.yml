@@ -1,6 +1,13 @@
 # Canonical standard file managed by fleet-sync (.github/workflows/fleet-sync.yml).
 # Do NOT edit per-repo copies — edit THIS file; fleet-sync propagates it to every
-# owned, non-fork, non-archived repo. Synced to: .github/workflows/pr-verdict.yml
+# owned, non-fork, non-archived repo. Synced to: .github/workflows/version-preview.yml
+#
+# NOT named pr-verdict.yml, though that is what it calls: glyph is itself in the
+# fleet, and .github/workflows/pr-verdict.yml THERE is the reusable definition —
+# syncing a caller to that path overwrote it with this stub on 2026-07-17. A
+# distributed caller must never share a filename with a glyph reusable; that is
+# why the commit-lint caller is not named lint.yml either. fleet-sync now
+# refuses this class of collision outright (see its reusable-collision guard).
 #
 # Merge preview: one sticky PR comment saying what merging this PR does to the
 # version, computed by glyph from the PR's INDIVIDUAL (pre-squash) commits —
@@ -19,7 +26,7 @@
 # The pin is a CONCRETE glyph release tag — the workflow and the binary it
 # installs ship lockstep from that one tag, so never a moving ref. Bump the pin
 # here (one fleet-sync PR) per adopted glyph release.
-name: pr-verdict
+name: version-preview
 
 on:
   pull_request:
@@ -31,7 +38,7 @@ on:
 # A push mid-run makes the older verdict stale; drop it rather than race the
 # newer one to the same sticky comment.
 concurrency:
-  group: pr-verdict-${{ github.event.pull_request.number }}
+  group: version-preview-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
 permissions:
