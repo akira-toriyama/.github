@@ -46,11 +46,16 @@ on:
         default: 1.26.1
       min-confidence:
         description: >-
-          Low-confidence floor. `medium` drops the low-confidence artipacked
-          (persist-credentials) nags; see the caller's .github/zizmor.yml.
+          Low-confidence floor. The default is `low`: every fleet checkout now
+          declares `persist-credentials` explicitly (t-yaxa), so the artipacked
+          nags the old `medium` floor existed to drop are gone and low keeps the
+          rule permanently gated on NEW checkouts. Waive a genuine low-confidence
+          false positive inline with `# zizmor: ignore[rule]` rather than raising
+          this floor back — a caller that passes `medium` silently stops gating
+          artipacked.
         required: false
         type: string
-        default: medium
+        default: low
       config:
         description: 'Path to the zizmor config in the CALLER repo.'
         required: false

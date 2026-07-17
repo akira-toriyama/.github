@@ -107,13 +107,14 @@ jobs:
     uses: ./.github/workflows/zizmor.yml
     with:
       inputs: .github/workflows actions
-      # Stricter than the fleet default (medium): every hub checkout is now
-      # explicit about persist-credentials (t-2nh8), so the low-confidence
-      # artipacked findings the medium floor existed to drop are gone — low
-      # keeps artipacked ALWAYS gated on new checkouts here. Fleet callers
-      # stay at medium until re-audited at low. Waive a genuine low-confidence
-      # false positive inline with `# zizmor: ignore[rule]`.
-      min-confidence: low
+      # No `min-confidence:` on purpose — the hub takes the reusable's default,
+      # which is `low` since t-yaxa flipped it (the hub itself went explicit
+      # about persist-credentials in t-2nh8; the fleet followed). Restating the
+      # value here would duplicate house policy in a second place AND leave the
+      # default itself untested — inheriting it makes this self-test the
+      # regression test for the floor every fleet caller actually gets. Waive a
+      # genuine low-confidence false positive inline with `# zizmor: ignore[rule]`
+      # rather than raising the floor.
 
   # Guard against a vacuously-green smoke: design-md-lint and swift-format both
   # `exit 0` with a `::notice::` when their input path is absent (intentional, for
