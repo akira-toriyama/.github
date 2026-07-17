@@ -101,6 +101,19 @@ jobs:
           # dest is version-preview.yml, NOT pr-verdict.yml — see the collision guard.
           MANIFEST="fleet/task-status.yml:.github/workflows/task-status.yml fleet/dependabot.yml:.github/dependabot.yml fleet/commit-lint.yml:.github/workflows/commit-lint.yml fleet/taplo.yml:.github/workflows/taplo.yml fleet/zizmor.yml:.github/workflows/zizmor.yml fleet/zizmor-config.yml:.github/zizmor.yml fleet/version-preview.yml:.github/workflows/version-preview.yml fleet/commit-convention.md:docs/commit-convention.md"
 
+          # PRUNE: paths to DELETE from every target repo if present — how a canonical
+          # is retired. Renaming one (fleet/x.yml -> fleet/y.yml) otherwise leaves the
+          # old copy behind in ~30 repos, still running, and there is no per-repo hand
+          # to remove it: editing .github/workflows/* over the API needs a token with
+          # the workflow scope, which is exactly what this job's PAT has and a human's
+          # gh login does not. Entries are removed from this list once a run reports
+          # every repo already clean.
+          #
+          # pr-verdict.yml: renamed to version-preview.yml after it overwrote glyph's
+          # reusable (see the collision guard). Leaving it would race the new caller
+          # for the same sticky comment.
+          PRUNE=".github/workflows/pr-verdict.yml"
+
           # REUSABLE-COLLISION GUARD. glyph is inside this fleet, and the workflows it
           # ships as reusable DEFINITIONS live at the same kind of path a caller syncs
           # to. On 2026-07-17 fleet/pr-verdict.yml:.github/workflows/pr-verdict.yml
@@ -223,7 +236,68 @@ jobs:
               fi
             done
 
-            # 2) fan out the tracker-write PAT — ONLY to repos that actually carry
+            # 2) prune retired paths — delete what a rename left behind.
+            for dead in $PRUNE; do
+              dead_json="$(gh api "repos/$full/contents/$dead" 2>/dev/null)" || continue # already clean
+              # NEVER prune a reusable DEFINITION. glyph keeps its reusables at the
+              # same kind of path a caller occupies everywhere else, and this list
+              # exists precisely BECAUSE a caller once landed on one — pruning must
+              # not finish the job that collision started. Decided on CONTENT, not on
+              # a repo name: a workflow_call file is something callers pin, whoever
+              # owns it, and no fleet operation may delete one by accident.
+              if printf '%s' "$dead_json" | jq -r '.content' | base64 -d 2>/dev/null | grep -q "workflow_call"; then
+                echo "skip(reusable): $full $dead defines a reusable — not a caller; refusing to prune"
+                continue
+              fi
+              echo "needs-prune: $full $dead"
+              changed=$((changed + 1))
+              [ "$DRY" = "true" ] && continue
+              dead_sha="$(printf '%s' "$dead_json" | jq -r '.sha')"
+              dargs=(-X DELETE "repos/$full/contents/$dead"
+                -f "message=:robot: chore(fleet): drop retired $dead"
+                -f "author[name]=fleet-sync[bot]"
+                -f "author[email]=fleet-sync[bot]@users.noreply.github.com"
+                -f "sha=$dead_sha")
+              if gh api "${dargs[@]}" >/dev/null 2>/dev/null; then
+                echo "pruned: $full $dead"
+                continue
+              fi
+              # Protected default branch: land the deletion as a PR, mirroring the
+              # sync path's fallback. Per-repo failures warn and carry on.
+              echo "direct delete rejected for $full $dead — using a PR"
+              db="$(gh api "repos/$full" --jq .default_branch)" \
+                || { echo "::warning::fleet: cannot read default branch for $full; skipping prune of $dead"; continue; }
+              deadbase="$(basename "$dead")"
+              branch="fleet-sync/prune-${deadbase%.*}"
+              if ! gh api "repos/$full/git/ref/heads/$branch" >/dev/null 2>/dev/null; then
+                bsha="$(gh api "repos/$full/git/ref/heads/$db" --jq .object.sha)" \
+                  || { echo "::warning::fleet: cannot read $db tip for $full; skipping prune of $dead"; continue; }
+                gh api -X POST "repos/$full/git/refs" -f "ref=refs/heads/$branch" -f "sha=$bsha" >/dev/null \
+                  || { echo "::warning::fleet: cannot create branch $branch on $full; skipping prune of $dead"; continue; }
+              fi
+              # Only delete on the branch if it is still there (a re-run must not fail
+              # on an already-pruned branch).
+              if bjson="$(gh api "repos/$full/contents/$dead?ref=$branch" 2>/dev/null)"; then
+                gh api -X DELETE "repos/$full/contents/$dead" \
+                  -f "message=:robot: chore(fleet): drop retired $dead" \
+                  -f "author[name]=fleet-sync[bot]" \
+                  -f "author[email]=fleet-sync[bot]@users.noreply.github.com" \
+                  -f "sha=$(printf '%s' "$bjson" | jq -r '.sha')" -f "branch=$branch" >/dev/null \
+                  || { echo "::warning::fleet: cannot delete $dead on $full@$branch; skipping"; continue; }
+              fi
+              if pr_err="$(gh pr create --repo "$full" --base "$db" --head "$branch" \
+                   --title ":robot: chore(fleet): drop retired $dead" \
+                   --body "Automated retirement of a standard file from akira-toriyama/.github (fleet-sync). The default branch is protected, so this lands as a PR." 2>&1)"; then
+                echo "prune-pr-opened: $full $dead"
+              else
+                case "$pr_err" in
+                  *"already exists"*) echo "prune-pr-exists: $full $dead" ;;
+                  *) echo "::warning::fleet: prune pr-create failed for $full $dead: $pr_err" ;;
+                esac
+              fi
+            done
+
+            # 3) fan out the tracker-write PAT — ONLY to repos that actually carry
             #    the task-status stub on their default branch (idempotent overwrite).
             #    Least privilege: a repo holds the tracker-write PAT only once it
             #    runs the workflow that needs it. A stub that landed as a PR (a
