@@ -20,14 +20,19 @@ name: self test
 #                 "actions" scan (scripts/apply-repo-settings.sh, t-1f6y): CodeQL is
 #                 the deeper dataflow analysis feeding the Security tab; this is the
 #                 fast, Actions-focused gate. Policy/threshold: .github/zizmor.yml.
-#   smoke-*     — actually RUN three of the reusables (taplo, design-md-lint,
-#                 swift-format) via `uses: ./` against a tiny fixture, so a break in
-#                 the reusable's own runtime (bad tool invocation, input handling)
-#                 fails HERE, not in a caller after the tag moves — the lint jobs
-#                 only check the YAML, these exercise execution. release/update-tap/
-#                 fleet-sync stay lint-only: a runtime smoke needs a heavy fixture
-#                 (fake app / tap / fleet), deliberately out of scope. And because
-#                 the reusables skip-pass on a missing path, smoke-fixtures-present
+#   smoke-*     — actually RUN the reusables/actions against tiny fixtures, so a
+#                 break in their own runtime (bad tool call, input handling) fails
+#                 HERE, not in a caller after the tag moves — the lint jobs only
+#                 check the YAML, these exercise execution. taplo / design-md-lint /
+#                 swift-format run via `uses: ./`. update-tap's formula-mutation
+#                 half (actions/bump-formula) and release's version-decision half
+#                 (actions/next-version-guard) are EXTRACTED into composites and
+#                 table-tested: {bump-formula,next-version-guard}-test run the real
+#                 .sh over a case table, *-smoke run the composite wrapper once.
+#                 Their I/O halves — the tap git push, git-cliff/gh reads — and
+#                 fleet-sync stay lint-only: a runtime smoke there needs a heavy
+#                 fixture (fake tap / fleet), deliberately out of scope. And because
+#                 a reusable skip-passes on a missing path, smoke-fixtures-present
 #                 guards against a moved fixture turning a smoke vacuously green.
 #
 # Precondition (t-h0sc): the two intentional word-splits carry line-scoped
@@ -47,9 +52,10 @@ on:
       # it must re-run the gate, or a policy loosening could merge unexercised.
       - '.github/zizmor.yml'
       - 'actions/**'
-      # Fixture edits (and deletions) must re-run the smoke jobs — a malformed or
-      # moved fixture is exactly what should trip the gate.
-      - 'tests/fixtures/**'
+      # Fixture edits/deletions AND the extracted test scripts (tests/*.test.sh)
+      # must re-run the smoke/unit jobs — a malformed or moved fixture, or an
+      # edited test, is exactly what should trip the gate.
+      - 'tests/**'
       # smoke-taplo lints the WHOLE repo (taplo.yml has no path input), so any
       # *.toml change should re-run it — an unclean file then fails on ITS OWN PR
       # rather than being admitted silently and reddening a later unrelated one.
@@ -138,7 +144,12 @@ jobs:
           for f in \
             tests/fixtures/taplo/valid.toml \
             tests/fixtures/design/DESIGN.md \
-            tests/fixtures/swift/Fixture.swift; do
+            tests/fixtures/swift/Fixture.swift \
+            tests/fixtures/tap/plain.rb \
+            tests/fixtures/tap/with-resource.rb \
+            tests/fixtures/tap/with-revision.rb \
+            tests/fixtures/tap/with-head.rb \
+            tests/fixtures/tap/mismatched-url.rb; do
             # -s (non-empty), not just -f: an emptied fixture is as vacuous as a
             # missing one — taplo/design-md/swift-format would all no-op-pass on it.
             if [ ! -s "$f" ]; then
@@ -173,3 +184,82 @@ jobs:
     uses: ./.github/workflows/swift-format.yml
     with:
       paths: tests/fixtures/swift
+
+  # RUN the extracted formula-mutation logic over a case table (the real .sh,
+  # drift-free) so a break fails HERE, not in a caller after @v1 moves. This is
+  # the coverage #98 lacked — actionlint/zizmor never executed the sed, so the
+  # resource-block-poisoning bug merged green.
+  bump-formula-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # Reads fixtures + runs the script; never pushes — drop the persisted
+          # checkout token (zizmor artipacked). t-2nh8
+          persist-credentials: false
+      - name: Table-test bump-formula
+        run: bash tests/bump-formula.test.sh
+
+  # Exercise the composite WRAPPER (action.yml's input→env→arg mapping) once via
+  # `uses: ./`, so a wrapper break fails here too — the table test above calls the
+  # .sh directly and would miss it. Mutates the checked-out fixture copy in place.
+  bump-formula-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Run the composite on a fixture
+        uses: ./actions/bump-formula
+        with:
+          formula-path: tests/fixtures/tap/plain.rb
+          tag: v2.0.0
+          sha: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+          repo: akira-toriyama/facet
+          formula: facet
+      - name: Assert the wrapper mutated the fixture
+        run: |
+          set -euo pipefail
+          grep -q "github.com/akira-toriyama/facet/archive/refs/tags/v2.0.0.tar.gz" tests/fixtures/tap/plain.rb
+          grep -q 'sha256 "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"' tests/fixtures/tap/plain.rb
+
+  # RUN the extracted version-decision over a triple table (the real .sh) so a
+  # break fails HERE, not in a caller after @v1 moves. Covers the t-fqhx class:
+  # a version regressing below the published floor must deadlock, not draft.
+  next-version-guard-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Table-test next-version-guard
+        run: bash tests/next-version-guard.test.sh
+
+  # Exercise the composite WRAPPER (input→env mapping + output plumbing) once via
+  # `uses: ./`, asserting the action's release/version outputs — the table test
+  # above calls the .sh directly and would miss the wrapper.
+  next-version-guard-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Run the guard composite
+        id: guard
+        uses: ./actions/next-version-guard
+        with:
+          next: v1.2.0
+          last: v1.1.0
+          pub-latest: v1.1.0
+      - name: Assert composite outputs
+        env:
+          REL: ${{ steps.guard.outputs.release }}
+          VER: ${{ steps.guard.outputs.version }}
+        run: |
+          set -euo pipefail
+          [ "$REL" = "true" ] || { echo "expected release=true, got '$REL'"; exit 1; }
+          [ "$VER" = "v1.2.0" ] || { echo "expected version=v1.2.0, got '$VER'"; exit 1; }

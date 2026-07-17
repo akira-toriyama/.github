@@ -129,8 +129,11 @@ jobs:
       # Next version via git-cliff directly (official recommendation).
       # Unpublished drafts create no tag, so `last` stays at the last
       # Published version and the computed `next` is stable across merges.
-      - name: Compute next version
-        id: ver
+      # This step is I/O only (git-cliff + git tag + gh); the release/deadlock
+      # DECISION lives in the next-version-guard composite so self-test can
+      # table-test it (t-kve5). The guard's rationale comments live there.
+      - name: Compute next version inputs
+        id: compute
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -147,26 +150,23 @@ jobs:
             --jq '.[] | select(.isDraft==false and (.tagName|test("^v[0-9]+\\.[0-9]+\\.[0-9]+$"))) | .tagName' \
             2>/dev/null | sed 's/^v//' | sort -t. -k1,1n -k2,2n -k3,3n | tail -n1 || true)"
           if [ -n "$pub_latest" ]; then pub_latest="v$pub_latest"; fi
-          echo "next=$next last=${last:-<none>} pub_latest=${pub_latest:-<none>}"
-          if [ -z "$next" ] || [ "$next" = "$last" ]; then
-            echo "release=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::No release-worthy changes (feat/fix/perf/breaking) since ${last:-<none>}; nothing to do."
-            exit 0
-          fi
-          # Deadlock guard (immutable-releases safe): never draft a version that
-          # can't be Published. If `next` is not strictly greater than the latest
-          # published release, the tag/release state is off (e.g. a deleted-then-
-          # recomputed version whose immutable tag is permanently burned). Fail
-          # loud rather than create an unpublishable draft.
-          if [ -n "$pub_latest" ]; then
-            top="v$(printf '%s\n%s\n' "${next#v}" "${pub_latest#v}" | sort -t. -k1,1n -k2,2n -k3,3n | tail -n1)"
-            if [ "$next" = "$pub_latest" ] || [ "$top" != "$next" ]; then
-              echo "::error::Computed version $next is not greater than the latest published release $pub_latest — refusing to create a draft (it would collide with or regress below a published immutable release). Investigate the tag/release state; if a published release was deleted, its tag is permanently burned — bump past it."
-              exit 1
-            fi
-          fi
-          echo "release=true"  >> "$GITHUB_OUTPUT"
-          echo "version=$next" >> "$GITHUB_OUTPUT"
+          {
+            echo "next=$next"
+            echo "last=$last"
+            echo "pub_latest=$pub_latest"
+          } >> "$GITHUB_OUTPUT"
+
+      # Pure release/deadlock decision, extracted so self-test table-tests it (the
+      # class of bug t-fqhx hit — a version regressing below the published floor
+      # must deadlock, not draft). Keeps id `ver` so the downstream steps'
+      # steps.ver.outputs.release/version references are unchanged.
+      - name: Version guard
+        id: ver
+        uses: akira-toriyama/.github/actions/next-version-guard@v1
+        with:
+          next: ${{ steps.compute.outputs.next }}
+          last: ${{ steps.compute.outputs.last }}
+          pub-latest: ${{ steps.compute.outputs.pub_latest }}
 
       - name: Generate release notes
         if: steps.ver.outputs.release == 'true'
