@@ -7,12 +7,12 @@ name: update-tap
 # the same tag is a no-op when the formula already matches.
 #
 # The logic lived byte-near-identical in facet / halo / perch / wand;
-# it now lives here once and they only `uses:` this file. (glance still uses a
-# custom tap updater pending migration to this reusable; chord converged here,
-# jig was removed. See docs/release-tap-unification.md.)
-# This reusable is the BEST common form: pull-rebase retry + a 5-min timeout
-# are baked in for everyone (facet/halo gain the robustness perch/wand
-# already had); the only knob is the formula name.
+# it now lives here once and they only `uses:` this file. (glance and eventfx
+# still run custom tap updaters pending migration to this reusable; chord
+# converged here, jig was removed. See docs/release-tap-unification.md.)
+# This reusable is the BEST common form: pull-rebase retry, a 5-min timeout,
+# repo-qualified first-match seds and a no-downgrade guard are baked in for
+# everyone; the only knobs are the formula name and an explicit rollback opt-in.
 #
 # Cross-repo write needs a PAT (GITHUB_TOKEN can only touch the caller
 # repo). Add a fine-grained PAT with `Contents: Read & write` scoped to
@@ -49,6 +49,11 @@ on:
         required: false
         type: string
         default: ""
+      allow-downgrade:
+        description: "Permit bumping the formula BACKWARD (e.g. rolling back a bad release). Default false — a backward move is refused."
+        required: false
+        type: boolean
+        default: false
     secrets:
       HOMEBREW_TAP_TOKEN:
         description: "Fine-grained PAT with Contents: Read & write on homebrew-tap."
@@ -127,16 +132,47 @@ jobs:
           TAG: ${{ steps.tag.outputs.tag }}
           NEW_SHA: ${{ steps.sha.outputs.sha }}
           FORMULA: ${{ inputs.formula }}
+          REPO: ${{ github.repository }}
+          ALLOW_DOWNGRADE: ${{ inputs.allow-downgrade }}
         run: |
           set -euo pipefail
           f="tap/Formula/${FORMULA}.rb"
+          # Match ONLY this repo's source tarball. A `resource` block vendoring a
+          # third-party tarball carries the same bare archive/refs/tags/vX.Y.Z.tar.gz
+          # shape, so an unqualified sed rewrites ITS url to this repo's tag —
+          # poisoning the formula (that resource tag doesn't exist) while both
+          # asserts below still pass, because they only check that the NEW values
+          # are present, never that nothing else moved. Repo-qualified + first-match
+          # scoped makes the collateral hit impossible rather than merely detected.
+          url_re="github\.com/${REPO}/archive/refs/tags/v[0-9]+\.[0-9]+\.[0-9]+\.tar\.gz"
+          new_url="github.com/${REPO}/archive/refs/tags/${TAG}.tar.gz"
           # No-op when the formula already matches.
-          if grep -q "archive/refs/tags/${TAG}.tar.gz" "$f" \
+          if grep -qE "github\.com/${REPO}/archive/refs/tags/${TAG//./\\.}\.tar\.gz" "$f" \
              && grep -q "sha256 \"${NEW_SHA}\"" "$f"; then
             echo "::notice::Formula already at ${TAG} — nothing to do."
             exit 0
           fi
-          sed -i -E "s|archive/refs/tags/v[0-9]+\.[0-9]+\.[0-9]+\.tar\.gz|archive/refs/tags/${TAG}.tar.gz|g" "$f"
+          # Refuse to move the formula BACKWARD. Nothing upstream guarantees the
+          # resolved tag is newer than what the tap already ships: the release path
+          # trusts the event payload (publishing an older release moves it back),
+          # and the latest-fetch fallback resolves the newest PUBLISHED release,
+          # which lags the tap whenever a shipped release gets re-drafted. Either
+          # way the bump below would rewrite url+sha, pass both asserts and push a
+          # silent `brew upgrade` DOWNGRADE, green. Rolling a bad release back is a
+          # real need, so it stays possible — but only when asked for explicitly.
+          cur="$(grep -oE "$url_re" "$f" | head -1 | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' || true)"
+          if [ -n "$cur" ] && [ "$cur" != "${TAG}" ]; then
+            newest="$(printf '%s\n%s\n' "$cur" "${TAG}" | sort -V | tail -1)"
+            if [ "$newest" != "${TAG}" ]; then
+              if [ "${ALLOW_DOWNGRADE}" = "true" ]; then
+                echo "::warning::${FORMULA}: ${cur} → ${TAG} moves the tap BACKWARD; proceeding (allow-downgrade=true)."
+              else
+                echo "::error::Refusing to move ${FORMULA} BACKWARD (${cur} → ${TAG}). Re-run with allow-downgrade=true if this rollback is intended."
+                exit 1
+              fi
+            fi
+          fi
+          sed -i -E "0,\|${url_re}| s|${url_re}|${new_url}|" "$f"
           # Replace ONLY the first sha256 (the source tarball's, at the top of the
           # formula). `0,/re/` scopes the substitution to the first match in the file,
           # so a later resource/bottle sha256 is left untouched. Dropping `/g` alone
@@ -151,8 +187,10 @@ jobs:
           sed -i -E '/^  revision [0-9]+$/d' "$f"
           # Assert the bump actually landed — catches a formula whose url/sha format
           # drifted so a sed matched nothing (better to fail than commit a no-op or
-          # a half-updated formula).
-          grep -q "archive/refs/tags/${TAG}.tar.gz" "$f" \
+          # a half-updated formula). These assert PRESENCE of the new values only;
+          # they cannot see collateral damage elsewhere in the file, which is why
+          # the seds above are scoped rather than merely checked afterwards.
+          grep -qE "github\.com/${REPO}/archive/refs/tags/${TAG//./\\.}\.tar\.gz" "$f" \
             || { echo "::error::tap bump failed: ${TAG} tarball URL missing in ${f} after sed."; exit 1; }
           grep -q "sha256 \"${NEW_SHA}\"" "$f" \
             || { echo "::error::tap bump failed: sha256 not updated in ${f} after sed."; exit 1; }
