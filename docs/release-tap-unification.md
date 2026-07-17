@@ -12,12 +12,17 @@ load-bearing divergence is documented and kept, not erased.
 |---|---|---|---|
 | facet / halo / perch / wand | caller | caller | the norm |
 | **chord** | **caller** | **caller** | already converged (PRs #90 / #91) |
-| **glance** | custom | custom | the only remaining divergence |
+| **glance** | custom | custom | release stays custom; tap migrating (t-jd81) |
+| **eventfx** | custom | custom | same custom bumper as glance (t-jd81 follow-up) |
 | jig | — | — | repo removed |
 
 So the spike's original premise ("glance **and chord** deliberately differ") is
 **stale for chord**: chord migrated to thin callers of both reusables. The live
-question is glance only.
+question is glance — and, found while executing t-jd81, **eventfx**, whose
+`update-tap.yml` is the same custom bumper with the name swapped (same
+`[released]` + draft guard, same latest-fetch, same `2+2`, same
+`eventfx-release-bot`, same missing-token no-op). Everything this record
+concludes about glance's tap applies to it unchanged.
 
 ## chord — already unified (no action)
 
@@ -59,22 +64,61 @@ protects. **Recommendation: keep `glance/release.yml` custom.**
 
 ### Tap: **unify-feasible** (follow-up)
 
-The opposite holds for the tap. The shared `update-tap.yml` is a strict
-**robustness superset** of glance's custom bumper (timeout, pull-rebase with
-clean abort, first-match `sha256` scoping, stale-`revision` drop, idempotency +
-post-sed asserts). glance's flagged divergences are incidental:
+The opposite holds for the tap. The shared `update-tap.yml` is a **robustness
+superset** of glance's custom bumper (timeout, pull-rebase with clean abort,
+first-match `sha256` scoping, stale-`revision` drop, idempotency + post-sed
+asserts). glance's flagged divergences are incidental:
 
 - `[released]` + `draft == false` vs `[published]` — a caller-level trigger
-  choice; expressible in glance's caller stub.
-- latest-fetch (`gh api …/releases/latest`) — *more* fragile than the shared
-  event-tag resolution (which already falls back to latest).
+  choice; expressible in glance's caller stub. `[released]` is the *stricter*
+  of the two (it excludes prereleases, so a "Set as a pre-release" tick in the
+  publish UI can't land a prerelease in the stable tap), and it does fire on a
+  rolling-draft publish. Keep it in the stub rather than flattening to the
+  fleet's `[published]`. The `draft == false` guard is dead and can go: Actions
+  does not deliver release events for drafts at all.
 - `glance-release-bot` identity — cosmetic git author string (auth is the PAT).
-- strict `2+2` diff-shape assertion — covered by the shared post-sed grep asserts.
+  Not a GitHub account; the tap has no branch protection, ruleset, or CODEOWNERS
+  keyed on author, and `github-actions[bot]` bumps from facet/chord already land
+  there. Drop it.
+- strict `2+2` diff-shape assertion — **drop it, but not for the reason first
+  recorded here.** See the corrections below.
 
 **Recommendation: migrate `glance/update-tap.yml` to a thin caller** of the
-shared reusable. The bot identity and the `2+2` guard can be preserved by adding
-two optional inputs to the shared reusable (`committer`, `strict-diff-shape`), or
-simply dropped as covered by the shared asserts. Tracked as a follow-up.
+shared reusable, dropping the bot identity and the `2+2` guard. Tracked as a
+follow-up (t-jd81).
+
+#### Corrections (t-jd81, 2026-07-17)
+
+Executing the follow-up falsified two claims made above. Both were load-bearing
+for "just drop the guard", so they are corrected here rather than quietly fixed:
+
+1. **"`2+2` is covered by the shared post-sed grep asserts" was false.** The
+   asserts only check that the *new* url/sha are present; they cannot see
+   collateral damage elsewhere in the file. The `sha256` sed was first-match
+   scoped but the **url sed was unanchored, un-repo-qualified and carried `/g`** —
+   so bumping a formula with a `resource` block rewrote the third-party tarball's
+   url to *this* repo's tag, poisoning the tap with both asserts passing and CI
+   green. `2+2` was the only thing catching that class, in glance's bumper and
+   nowhere in the shared one. Reproduced under `ubuntu:24.04` / GNU sed 4.9.
+   The url sed is now repo-qualified and first-match scoped, which makes the
+   class *impossible* rather than *detected* — and only that fix makes the `2+2`
+   guard genuinely redundant. This was a latent bug for **every** caller
+   (chord / facet / halo / perch / wand), not a glance-migration concern; it had
+   never fired only because no formula in the tap carries a `resource` line.
+2. **"latest-fetch is *more* fragile than the shared event-tag resolution" was
+   backwards.** `gh api …/releases/latest` always resolves the newest *published*
+   release, so it is accidentally order-*independent*: publishing an older release
+   is a self-correcting no-op. The shared reusable trusts the event payload, which
+   is order-*dependent* — publishing an older release moves the tap backward, and
+   the latest-fetch fallback rolls it backward too whenever a shipped release gets
+   re-drafted (glance's rolling-draft model does exactly that). Nothing guarded
+   this. A **no-downgrade guard** (`allow-downgrade` to opt out) now restores, by
+   design, the protection glance's bumper had by accident — for all callers.
+
+Rejected outright: a `strict-diff-shape` input. It is incompatible with the
+reusable's own stale-`revision` drop — a bump that removes a `revision` line
+diffs `2+3`, so the guard would abort a valid bump whose asserts both pass
+(measured). A `committer` input was rejected as cosmetic (see above).
 
 ## Decision
 
@@ -83,3 +127,9 @@ simply dropped as covered by the shared asserts. Tracked as a follow-up.
 - **glance release** — keep separate; the CLI-binary vs `.app` artifact model is
   a deliberate, load-bearing divergence.
 - **glance tap** — converge to the shared reusable (separate follow-up task).
+- **eventfx tap** — same conclusion as glance's, for the same reasons; its
+  release model (rolling draft, CLI binary) matches glance's too. Not done here.
+- **the shared reusable** — hardening the url sed and adding the no-downgrade
+  guard were prerequisites the follow-up surfaced, not part of the original
+  spike; they ship ahead of any caller migration because they fix a latent bug
+  in the five repos already on the reusable.
