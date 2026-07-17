@@ -4,16 +4,16 @@
 # zizmor auto-discovers this file at .github/zizmor.yml, but the job passes it
 # explicitly via `config:` so the intent is unmissable.
 #
-# The hub's gate runs at `min-confidence: low` (set in self-test.yml) — stricter
-# than the fleet callers' default `medium`. The medium floor existed to drop the
-# low-confidence `artipacked` (checkout persist-credentials) nags; those are gone
-# (t-2nh8): every hub checkout now either sets `persist-credentials: false` or
-# declares an intentional, commented `persist-credentials: true` (update-tap's tap
-# push, the expiry reminder's tracker push), which artipacked does not report.
-# Running at low keeps artipacked permanently gated on NEW checkouts. Trade-off:
-# any other low-confidence finding gates too — waive a genuine false positive
-# inline with `# zizmor: ignore[rule]` rather than re-raising the floor. Fleet
-# callers stay at medium until the fleet is re-audited clean at low.
+# The gate runs at `min-confidence: low` — the reusable's default since t-yaxa,
+# which self-test.yml inherits rather than restates. The old `medium` floor existed
+# to drop the low-confidence `artipacked` (checkout persist-credentials) nags; those
+# are gone hub-first (t-2nh8) and fleet-wide (t-yaxa): every checkout now either sets
+# `persist-credentials: false` or declares an intentional, commented
+# `persist-credentials: true` (update-tap's tap push, the expiry reminder's tracker
+# push), which artipacked does not report. Running at low keeps artipacked permanently
+# gated on NEW checkouts. Trade-off: any other low-confidence finding gates too —
+# waive a genuine false positive inline with `# zizmor: ignore[rule]` rather than
+# re-raising the floor.
 
 rules:
   unpinned-uses:
