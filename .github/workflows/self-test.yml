@@ -25,14 +25,15 @@ name: self test
 #                 HERE, not in a caller after the tag moves — the lint jobs only
 #                 check the YAML, these exercise execution. taplo / design-md-lint /
 #                 swift-format run via `uses: ./`. update-tap's formula-mutation
-#                 half is EXTRACTED into the actions/bump-formula composite and
-#                 table-tested: bump-formula-test runs the real .sh over a case
-#                 table, bump-formula-smoke runs the composite wrapper once. Its
-#                 git-push half, release's version step, and fleet-sync stay
-#                 lint-only: a runtime smoke there needs a heavy fixture (fake tap /
-#                 fleet), deliberately out of scope. And because a reusable
-#                 skip-passes on a missing path, smoke-fixtures-present guards
-#                 against a moved fixture turning a smoke vacuously green.
+#                 half (actions/bump-formula) and release's version-decision half
+#                 (actions/next-version-guard) are EXTRACTED into composites and
+#                 table-tested: {bump-formula,next-version-guard}-test run the real
+#                 .sh over a case table, *-smoke run the composite wrapper once.
+#                 Their I/O halves — the tap git push, git-cliff/gh reads — and
+#                 fleet-sync stay lint-only: a runtime smoke there needs a heavy
+#                 fixture (fake tap / fleet), deliberately out of scope. And because
+#                 a reusable skip-passes on a missing path, smoke-fixtures-present
+#                 guards against a moved fixture turning a smoke vacuously green.
 #
 # Precondition (t-h0sc): the two intentional word-splits carry line-scoped
 # `# shellcheck disable=SC2086` (added in the workflow-hygiene batch t-zb2r), so
@@ -223,3 +224,42 @@ jobs:
           set -euo pipefail
           grep -q "github.com/akira-toriyama/facet/archive/refs/tags/v2.0.0.tar.gz" tests/fixtures/tap/plain.rb
           grep -q 'sha256 "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"' tests/fixtures/tap/plain.rb
+
+  # RUN the extracted version-decision over a triple table (the real .sh) so a
+  # break fails HERE, not in a caller after @v1 moves. Covers the t-fqhx class:
+  # a version regressing below the published floor must deadlock, not draft.
+  next-version-guard-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Table-test next-version-guard
+        run: bash tests/next-version-guard.test.sh
+
+  # Exercise the composite WRAPPER (input→env mapping + output plumbing) once via
+  # `uses: ./`, asserting the action's release/version outputs — the table test
+  # above calls the .sh directly and would miss the wrapper.
+  next-version-guard-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Run the guard composite
+        id: guard
+        uses: ./actions/next-version-guard
+        with:
+          next: v1.2.0
+          last: v1.1.0
+          pub-latest: v1.1.0
+      - name: Assert composite outputs
+        env:
+          REL: ${{ steps.guard.outputs.release }}
+          VER: ${{ steps.guard.outputs.version }}
+        run: |
+          set -euo pipefail
+          [ "$REL" = "true" ] || { echo "expected release=true, got '$REL'"; exit 1; }
+          [ "$VER" = "v1.2.0" ] || { echo "expected version=v1.2.0, got '$VER'"; exit 1; }
