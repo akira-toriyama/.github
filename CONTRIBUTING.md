@@ -54,7 +54,7 @@ The buckets:
 | Breaking change | `:boom:`, or `!`, or `BREAKING CHANGE:` footer | **major** |
 | New feature | `:sparkles:` (deliberately the only minor) | **minor** |
 | Shipped / user-observable behavior | `:bug:` `:zap:` `:lock:` `:lipstick:` `:arrow_up:` `:rewind:` … | **patch** |
-| Internal / non-shipping / meta | `:memo:` `:recycle:` `:wrench:` `:white_check_mark:` `:construction_worker:` … | **no bump** (excluded from the notes) |
+| Internal / non-shipping / meta | `:memo:` `:recycle:` `:wrench:` `:white_check_mark:` `:construction_worker:` … | **no bump** (excluded from the notes — except deletions/renames, see below) |
 
 - **Breaking is an orthogonal, non-suppressible flag**, not a rung: any of the
   three triggers forces major regardless of the code's own bump.
@@ -66,6 +66,34 @@ The buckets:
   `git revert` subjects are skipped by the lint and excluded from versioning
   and the notes. A `:construction:` (WIP) commit in a merge candidate is a
   lint error.
+
+### Deletions & renames (public API)
+
+A deletion or rename is literally `:fire:` (remove), `:coffin:` (remove dead
+code), or `:truck:` (move / rename) — all **no bump**. That is correct for
+internal, dead, or non-public assets. But in a **library repo** (one whose API
+other repos depend on), silently removing or renaming a *public* element is a
+breaking change that the literal gitmoji hides from semver.
+
+**Rule:** in a library repo, a commit that removes or renames a **public**
+element — an exported type or function, a catalog / preset name, a configuration
+key, a resource slug, anything another repo can reference — uses `:boom:` (or
+`!`), even when `:fire:`/`:truck:`/`:coffin:` would fit the letter. Reserve
+`:fire:`/`:truck:`/`:coffin:` for internal, dead-code, or non-public changes.
+
+- **Library vs app.** A *library repo* ships a reusable product other repos
+  depend on — it exposes a SwiftPM `library` product, or appears in another
+  repo's `Package.swift`. An *app repo* is a leaf nothing depends on; there its
+  removals are genuinely `no bump`.
+- **Safety net, not a substitute.** glyph surfaces `:fire:`/`:truck:`/`:coffin:`
+  under a **Removals** section in the release notes (still `no bump`), so an
+  honest deletion or rename is visible to a downstream pin-bump audit even if
+  this rule was missed. The notes are the backstop; the `:boom:` call is yours.
+
+*Why this exists:* sill pruned the public preset `catppuccin-latte` under
+`:fire:` and shipped it as a minor; a downstream consumer broke on its next pin
+bump because the removal carried no major signal and — until the Removals
+section — no notes signal either.
 
 ### Body (optional)
 
