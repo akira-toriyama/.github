@@ -99,7 +99,9 @@ jobs:
           # guard that keeps the 11 tagless ones (projects: 1867 commits) from paying
           # an API round-trip per commit. It comments only where PRs are opened. Its
           # dest is version-preview.yml, NOT pr-verdict.yml — see the collision guard.
-          MANIFEST="fleet/task-status.yml:.github/workflows/task-status.yml fleet/dependabot.yml:.github/dependabot.yml fleet/commit-lint.yml:.github/workflows/commit-lint.yml fleet/taplo.yml:.github/workflows/taplo.yml fleet/zizmor.yml:.github/workflows/zizmor.yml fleet/zizmor-config.yml:.github/zizmor.yml fleet/version-preview.yml:.github/workflows/version-preview.yml fleet/commit-convention.md:docs/commit-convention.md"
+          # dependabot.yml is NOT in this list — it is variant-selected per repo
+          # inside the loop below (gomod only where a root go.mod exists; t-s3fp).
+          MANIFEST="fleet/task-status.yml:.github/workflows/task-status.yml fleet/commit-lint.yml:.github/workflows/commit-lint.yml fleet/taplo.yml:.github/workflows/taplo.yml fleet/zizmor.yml:.github/workflows/zizmor.yml fleet/zizmor-config.yml:.github/zizmor.yml fleet/version-preview.yml:.github/workflows/version-preview.yml fleet/commit-convention.md:docs/commit-convention.md"
 
           # PRUNE: paths to DELETE from every target repo if present — how a canonical
           # is retired. Renaming one (fleet/x.yml -> fleet/y.yml) otherwise leaves the
@@ -153,8 +155,17 @@ jobs:
             if [ -n "$ONLY_REPO" ] && [ "$repo" != "$ONLY_REPO" ]; then continue; fi
             full="$OWNER/$repo"
 
+            # dependabot.yml is VARIANT-selected per repo: the gomod ecosystem is
+            # included only where a ROOT go.mod exists. gomod on a go-mod-less repo
+            # is NOT a no-op — Dependabot records a failing run ("No go.mod files
+            # found") every week (t-s3fp). Both variants live in fleet/.
+            dep_src="fleet/dependabot.yml"
+            if gh api "repos/$full/contents/go.mod" >/dev/null 2>/dev/null; then
+              dep_src="fleet/dependabot-go.yml"
+            fi
+
             # 1) sync each manifest file (create or update on the default branch)
-            for pair in $MANIFEST; do
+            for pair in $MANIFEST "$dep_src:.github/dependabot.yml"; do
               src="${pair%%:*}"; dest="${pair##*:}"
               local_b64="$(base64 < "$src" | tr -d '\n')"
               if remote_json="$(gh api "repos/$full/contents/$dest" 2>/dev/null)"; then
