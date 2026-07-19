@@ -1,0 +1,199 @@
+name: homebrew-tap-token-expiry-reminder
+
+# Auto-files a furrow task when HOMEBREW_TAP_TOKEN (the fine-grained PAT — tap
+# Contents:RW only — that every releasing repo uses to push its Homebrew cask;
+# fanned out from this repo by fleet-sync, t-21yv) is DEAD (revoked/expired —
+# the probe gets 401) or within EXPIRY_WARN_DAYS of expiring. Sibling of
+# fleet-sync-pat-expiry-reminder.yml (which watches FLEET_SYNC_PAT); the extra
+# liveness check exists because this token's observed failure mode was not a
+# calendar expiry but a rotation that missed repos — releases 401'd and casks
+# silently rotted (prq v0.1.2, rundiff v0.3.0). With fan-out the stale-copy
+# class is gone, but a revoked/expired hub secret would still take the whole
+# cask channel down quietly — this probe makes that loud within a week.
+#
+# Probe: an authenticated GET of the tap repo. 401 = the token itself is dead
+# (an invalid Bearer fails even on a public repo). The expiry comes from the
+# GitHub-Authentication-Token-Expiration response header; no header = the token
+# was issued non-expiring, and the reminder stays quiet on the calendar path.
+# Known limit: a token that LOST its Contents:write grant without being revoked
+# still reads 200 — write-permission narrowing is not detectable read-only, so
+# the release run's own cask-push failure remains the backstop for that sliver.
+#
+# It probes with HOMEBREW_TAP_TOKEN but writes the reminder task to the furrow
+# tracker (akira-toriyama/projects) with PROJECTS_WRITE_PAT — both secrets live
+# on this repo. No write to .github itself, so contents: read suffices.
+
+on:
+  schedule:
+    - cron: '15 9 * * 1' # Mondays, offset from the FLEET_SYNC_PAT sibling so the two tracker pushes don't race
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: homebrew-tap-token-expiry-reminder
+  cancel-in-progress: false
+
+jobs:
+  remind:
+    runs-on: ubuntu-latest
+    # Bounded so a hung API probe or tracker push can't idle a runner for hours.
+    timeout-minutes: 10
+    env:
+      EXPIRY_WARN_DAYS: '30'
+      MARKER: 'HOMEBREW_TAP_TOKEN'
+    steps:
+      - name: Gate — probe target and tracker credential present?
+        id: gate
+        env:
+          TAP_PAT: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          WRITE_PAT: ${{ secrets.PROJECTS_WRITE_PAT }}
+        run: |
+          set -euo pipefail
+          # HOMEBREW_TAP_TOKEN: the token whose health we watch. PROJECTS_WRITE_PAT:
+          # how we write the reminder to the tracker. Missing either -> dormant.
+          if [ -z "${TAP_PAT:-}" ] || [ -z "${WRITE_PAT:-}" ]; then
+            echo "::notice::HOMEBREW_TAP_TOKEN or PROJECTS_WRITE_PAT not set — reminder dormant until both configured."
+            echo "proceed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "proceed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Probe the tap with the token (liveness + expiry header)
+        id: probe
+        if: steps.gate.outputs.proceed == 'true'
+        env:
+          TAP_PAT: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          set -euo pipefail
+          # curl (not `gh api`) so the HTTP status is separable from transport
+          # failure: a transient network/5xx must never be misread as a dead
+          # token, and a 401 must never be misread as "non-expiring and fine".
+          code="$(curl -sS -o /dev/null -D "$RUNNER_TEMP/hdrs" -w '%{http_code}' \
+            -H "Authorization: Bearer $TAP_PAT" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            https://api.github.com/repos/akira-toriyama/homebrew-tap || echo 000)"
+          case "$code" in
+            401)
+              # Invalid credential — revoked or expired. The cask channel is down NOW.
+              echo "::warning::HOMEBREW_TAP_TOKEN probe got 401 — the token is dead; cask pushes are failing."
+              echo "due=true" >> "$GITHUB_OUTPUT"
+              echo "kind=dead" >> "$GITHUB_OUTPUT"
+              exit 0 ;;
+            200) ;;
+            *)
+              echo "::notice::probe returned $code (transient?) — skipping this run; retries next week."
+              echo "due=false" >> "$GITHUB_OUTPUT"
+              exit 0 ;;
+          esac
+          hdr="$(tr -d '\r' < "$RUNNER_TEMP/hdrs" \
+            | awk -F': ' 'tolower($1)=="github-authentication-token-expiration"{print $2; exit}')"
+          if [ -z "$hdr" ]; then
+            echo "::notice::No expiration header — HOMEBREW_TAP_TOKEN is non-expiring. Reissue it WITH an expiry to arm the calendar path."
+            echo "due=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          exp_s="$(date -u -d "$hdr" +%s 2>/dev/null || true)"
+          if [ -z "$exp_s" ]; then
+            echo "::notice::could not parse expiry '$hdr' — skipping this run."
+            echo "due=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          now_s="$(date -u +%s)"
+          days=$(( (exp_s - now_s) / 86400 ))
+          echo "token expires: $hdr (${days} days from now)"
+          echo "days=$days" >> "$GITHUB_OUTPUT"
+          if [ "$days" -le "${EXPIRY_WARN_DAYS}" ]; then
+            echo "due=true" >> "$GITHUB_OUTPUT"
+            echo "kind=expiry" >> "$GITHUB_OUTPUT"
+          else
+            echo "due=false (>${EXPIRY_WARN_DAYS}d) — nothing to do"
+            echo "due=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout the furrow tracker
+        if: steps.probe.outputs.due == 'true'
+        uses: actions/checkout@v7
+        with:
+          repository: akira-toriyama/projects
+          token: ${{ secrets.PROJECTS_WRITE_PAT }}
+          path: tracker
+          fetch-depth: 0
+          # The filing step runs plain `git push origin HEAD:main` (with
+          # pull-rebase retries) against this checkout, so the PAT must stay
+          # configured — explicit true marks the persistence as intentional
+          # (zizmor artipacked stays silent on an explicit opt-in). checkout
+          # v6+ keeps the credential under $RUNNER_TEMP, outside the workdir,
+          # and this job uploads no artifacts. t-2nh8
+          persist-credentials: true
+
+      - name: Set up Go
+        if: steps.probe.outputs.due == 'true'
+        uses: actions/setup-go@v6
+        with:
+          go-version: stable
+
+      - name: Install furrow
+        if: steps.probe.outputs.due == 'true'
+        # v0.6.0+ grammar (repos-pivot): the reminder task carries -r for the hub,
+        # where the rotation actually happens.
+        run: go install github.com/akira-toriyama/furrow/cmd/furrow@v0.12.0
+
+      - name: File a rotation task if none is open
+        if: steps.probe.outputs.due == 'true'
+        working-directory: tracker
+        env:
+          KIND: ${{ steps.probe.outputs.kind }}
+          DAYS: ${{ steps.probe.outputs.days }}
+        run: |
+          set -euo pipefail
+          gobin="$(go env GOPATH)/bin"
+          export PATH="$gobin:$PATH"
+
+          tasks="$(furrow ls -l security --json || echo '[]')"
+
+          # Already an open (not-done) HOMEBREW_TAP_TOKEN task? -> nothing to do.
+          open="$(printf '%s' "$tasks" | jq --arg m "$MARKER" \
+            '[.[] | select(.status != "done" and (.title | contains($m)))] | length')"
+          if [ "$open" -gt 0 ]; then
+            echo "open HOMEBREW_TAP_TOKEN task exists — skip"; exit 0
+          fi
+
+          if [ "$KIND" = "dead" ]; then
+            title="${MARKER} を更新（401 検知 — cask push が今死んでいる）"
+            headline='homebrew-tap への cask push に使う fine-grained PAT が 401 を返している（失効/取り消し済み）。**全 release repo の cask 配布が今止まっている**ため即ローテーションする。'
+          else
+            title="${MARKER} を更新（失効 ${DAYS} 日前）"
+            headline="homebrew-tap への cask push に使う fine-grained PAT があと約 ${DAYS} 日で失効する。失効すると全 release repo の cask push が 401 で落ちるため、期限内にローテーションする。"
+          fi
+
+          body="$(printf '%s\n' \
+            "# ${title}" '' \
+            "$headline" '' \
+            '1. 新しい fine-grained PAT を作成（対象 repo: **homebrew-tap のみ**・Repository permissions: **Contents: Read and write**・期限1年）' \
+            '2. hub の secret を更新: `gh secret set HOMEBREW_TAP_TOKEN --repo akira-toriyama/.github`' \
+            '3. fleet-sync を workflow_dispatch (dry-run=false) で実行 — release.yml を持つ全 repo へ再配布される' \
+            '4. 旧 PAT を **失効/削除**（配布完了後。Settings → Developer settings → Fine-grained tokens）' '' \
+            '手順の正典: .github fleet/README.md「Rotating HOMEBREW_TAP_TOKEN」。' '' \
+            '(このタスクは .github の homebrew-tap-token-expiry-reminder workflow が自動起票。)')"
+
+          furrow add "$title" -s ready -r akira-toriyama/.github -l security --body "$body"
+
+          git config user.name  'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m ':robot: chore(tracker): auto-file HOMEBREW_TAP_TOKEN rotation task'
+          # Match the sibling reminder: rebase-retry so a concurrent tracker
+          # writer doesn't drop this week's reminder, and track success
+          # explicitly so a 3-loss fall-through can't exit 0 silently.
+          pushed=0
+          for i in 1 2 3; do
+            if git push origin HEAD:main; then pushed=1; echo "pushed"; break; fi
+            echo "push rejected (race); rebasing (attempt $i)"
+            git pull --rebase origin main
+          done
+          if [ "$pushed" -ne 1 ]; then
+            echo "::error::tracker push failed after 3 attempts — reminder NOT filed; re-run this workflow."
+            exit 1
+          fi

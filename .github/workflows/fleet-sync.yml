@@ -1,8 +1,8 @@
 name: fleet-sync
 
 # Repo standardizer (fleet file-sync). Ensures a set of STANDARD files exists in
-# every owned, non-fork, non-archived repo, and distributes the tracker-write PAT
-# those files need. New repos are picked up automatically (the repo list
+# every owned, non-fork, non-archived repo, and distributes the per-repo secrets
+# the fleet's workflows need. New repos are picked up automatically (the repo list
 # is fetched at run time), so there is never a "this repo has it / that one
 # doesn't" gap. `task-status` is the first managed file, but this is deliberately
 # GENERAL — add more (src:dest) pairs to MANIFEST to standardize more files.
@@ -14,10 +14,17 @@ name: fleet-sync
 #                       Contents: Read & write ONLY, auto-expiring (fanned out to each repo).
 #                       This REPLACES the old furrow-status-bot App master key: a leak now
 #                       reaches only the tracker, and expires on its own. (t-ke0v)
+#   HOMEBREW_TAP_TOKEN  fine-grained PAT, scoped to homebrew-tap with Contents: Read &
+#                       write ONLY — the cask-push credential, fanned out to every repo
+#                       whose default branch carries a release.yml (t-21yv). Hand-placed
+#                       per-repo copies rotted silently (rundiff shipped v0.3.0 with a
+#                       stale tap cask; prq 401'd); rotation is now: update THIS repo's
+#                       secret once, the next run re-fans it everywhere.
 #
 # Safety: workflow_dispatch defaults to DRY-RUN (log only). Scheduled runs apply.
-# Blast radius: the fanned-out secret is a least-privilege, self-expiring PAT (tracker
-# Contents:RW only) — far narrower than the retired App private key it replaces.
+# Blast radius: each fanned-out secret is a least-privilege fine-grained PAT scoped
+# to ONE repo (tracker Contents:RW / tap Contents:RW) — far narrower than the
+# retired App private key the first of them replaced.
 
 on:
   workflow_dispatch:
@@ -79,6 +86,7 @@ jobs:
           DRY_RUN: ${{ inputs.dry-run }}
           ONLY_REPO: ${{ inputs.only-repo }}
           WRITE_PAT: ${{ secrets.PROJECTS_WRITE_PAT }}
+          TAP_PAT: ${{ secrets.HOMEBREW_TAP_TOKEN }}
           # Repos to skip (space-separated). .github is the hub itself.
           EXCLUDE: '.github'
         run: |
@@ -326,6 +334,28 @@ jobs:
                 echo "secrets-set: $full"
               else
                 echo "::warning::fleet: secret fan-out failed for $full"
+              fi
+            fi
+
+            # 4) fan out the cask-push PAT — same shape as (3), gated on the
+            #    consumer workflow instead: a repo gets HOMEBREW_TAP_TOKEN exactly
+            #    when its default branch carries a release.yml (every releasing
+            #    repo pushes a cask, or updates it via update-tap). The gate kills
+            #    the per-repo "does this one need it?" judgment that let hand-placed
+            #    copies rot (t-21yv: rundiff's tap cask silently stuck at v0.2.0,
+            #    prq released into a 401). Idempotent overwrite; this only gates
+            #    NEW fan-out and never prunes an already-set secret.
+            if [ -z "${TAP_PAT:-}" ]; then
+              echo "::warning::HOMEBREW_TAP_TOKEN not set on .github; skipping tap-secret fan-out for $full"
+            elif ! gh api "repos/$full/contents/.github/workflows/release.yml" >/dev/null 2>/dev/null; then
+              echo "skip-tap-secret(no release.yml on default branch): $full"
+            elif [ "$DRY" = "true" ]; then
+              echo "would-set-secrets: $full (HOMEBREW_TAP_TOKEN)"
+            else
+              if printf '%s' "$TAP_PAT" | gh secret set HOMEBREW_TAP_TOKEN --repo "$full"; then
+                echo "tap-secret-set: $full"
+              else
+                echo "::warning::fleet: tap-secret fan-out failed for $full"
               fi
             fi
           done
