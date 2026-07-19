@@ -339,30 +339,41 @@ jobs:
 
             # 4) fan out the cask-push PAT — same shape as (3), gated on the
             #    consumer workflow. Unlike (3) the gate reads CONTENT, not mere
-            #    existence: the secret goes to a repo iff one of the fleet's two
-            #    release-channel files — release.yml (Go GoReleaser + glyph) or
-            #    update-tap.yml (Swift) — references HOMEBREW_TAP_TOKEN on the
-            #    default branch. Existence alone proved too broad on the first
-            #    dry-run: dotfiles/canon/glyph-test/swift-toml-edit carry a
-            #    release.yml that pushes no cask. The gate kills the per-repo
-            #    "does this one need it?" judgment that let hand-placed copies
-            #    rot (t-21yv: rundiff's tap cask silently stuck at v0.2.0, prq
-            #    released into a 401). Idempotent overwrite; this only gates NEW
-            #    fan-out and never prunes an already-set secret.
+            #    existence: the secret goes to a repo iff one of the fleet's
+            #    release-channel files — release.yml (Go GoReleaser flavor),
+            #    update-tap.yml (Swift flavor), goreleaser.yml (glyph, whose
+            #    release.yml is the family reusable) — references
+            #    HOMEBREW_TAP_TOKEN on the default branch. Existence alone
+            #    proved too broad on the first dry-run (dotfiles/canon/
+            #    glyph-test/swift-toml-edit carry a cask-less release.yml). The
+            #    gate kills the per-repo "does this one need it?" judgment that
+            #    let hand-placed copies rot (t-21yv: rundiff's tap cask silently
+            #    stuck at v0.2.0, prq released into a 401). Idempotent
+            #    overwrite; this only gates NEW fan-out and never prunes an
+            #    already-set secret.
             tap_consumer=false
             if [ -n "${TAP_PAT:-}" ]; then
-              for wf in release.yml update-tap.yml; do
-                if gh api "repos/$full/contents/.github/workflows/$wf" --jq '.content' 2>/dev/null \
-                     | base64 -d 2>/dev/null | grep -q 'HOMEBREW_TAP_TOKEN'; then
-                  tap_consumer=true
-                  break
+              for wf in release.yml update-tap.yml goreleaser.yml; do
+                # Fetch and match SEPARATELY: a transient API failure must not
+                # be misread as "not a consumer" — the second dry-run silently
+                # skipped furrow exactly that way. 404 = file absent (normal);
+                # anything else is warned so a skipped repo is findable in the
+                # log (the daily idempotent rerun heals it).
+                gate_err="$RUNNER_TEMP/tap-gate.err"
+                if content="$(gh api "repos/$full/contents/.github/workflows/$wf" --jq '.content' 2>"$gate_err")"; then
+                  if printf '%s' "$content" | base64 -d 2>/dev/null | grep -q 'HOMEBREW_TAP_TOKEN'; then
+                    tap_consumer=true
+                    break
+                  fi
+                elif ! grep -q 'HTTP 404' "$gate_err"; then
+                  echo "::warning::fleet: tap-gate read failed for $full $wf (treated as non-consumer this run): $(head -c 200 "$gate_err")"
                 fi
               done
             fi
             if [ -z "${TAP_PAT:-}" ]; then
               echo "::warning::HOMEBREW_TAP_TOKEN not set on .github; skipping tap-secret fan-out for $full"
             elif [ "$tap_consumer" != "true" ]; then
-              echo "skip-tap-secret(no HOMEBREW_TAP_TOKEN consumer in release.yml/update-tap.yml): $full"
+              echo "skip-tap-secret(no HOMEBREW_TAP_TOKEN consumer in release-channel workflows): $full"
             elif [ "$DRY" = "true" ]; then
               echo "would-set-secrets: $full (HOMEBREW_TAP_TOKEN)"
             else
