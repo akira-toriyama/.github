@@ -12,7 +12,7 @@ name: taplo
 #     workflow_dispatch:
 #   jobs:
 #     taplo:
-#       uses: akira-toriyama/.github/.github/workflows/taplo.yml@v1
+#       uses: akira-toriyama/.github/.github/workflows/taplo.yml@v2
 
 on:
   workflow_call:

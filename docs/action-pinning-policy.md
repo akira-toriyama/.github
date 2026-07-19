@@ -13,7 +13,7 @@ is the human rationale behind that config.
 |---|---|---|
 | **First-party** — `actions/*` (GitHub-authored) | major-version **tag** (a full SHA is also accepted, never *required*) | `actions/checkout@v7` |
 | **Third-party** — everyone else | **full-length commit SHA** + a `# vX.Y.Z` trailer | `taiki-e/install-action@<sha> # v2.62.19` |
-| **Self-owned** — `akira-toriyama/*` reusables & composite | release **tag** | `akira-toriyama/.github/.github/workflows/taplo.yml@v1` |
+| **Self-owned** — `akira-toriyama/*` reusables & composite | release **tag** | `akira-toriyama/.github/.github/workflows/taplo.yml@v2` |
 
 `zizmor`'s `ref-pin` requires *some* git ref (tag or SHA), and `hash-pin` requires
 a full SHA. So the config maps one-to-one: `actions/*` → `ref-pin`,
@@ -53,5 +53,5 @@ everything); the trade is small either way, but the boundary is now recorded.
 - **Third-party pins carry a `# vX.Y.Z` trailer** so Dependabot can track them and
   a human can read what a SHA is without resolving it.
 - **Fleet callers follow the same policy.** The stubs in [`fleet/`](../fleet/) pin
-  `akira-toriyama/.github/...@v1` (self-owned → tag); any third-party `uses:` added
+  `akira-toriyama/.github/...@v2` (self-owned → tag); any third-party `uses:` added
   to a distributed file must be SHA-pinned.

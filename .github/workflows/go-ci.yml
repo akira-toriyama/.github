@@ -31,7 +31,7 @@ name: go-ci
 #     cancel-in-progress: true
 #   jobs:
 #     ci:
-#       uses: akira-toriyama/.github/.github/workflows/go-ci.yml@v1
+#       uses: akira-toriyama/.github/.github/workflows/go-ci.yml@v2
 #       # with: { runners: '["ubuntu-latest"]', go-version: stable, gotoolchain: local }
 #     # + repo-specific jobs (fuzz / smoke / drift) here
 

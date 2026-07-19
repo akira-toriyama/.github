@@ -1,8 +1,15 @@
 # Spike: glance/chord release + tap unification
 
+> **Historical (2026-07-20):** the hub `release.yml` this spike weighed was
+> retired in `v2.0.0`; the whole fleet — including glance (via a bare-binary
+> mode) and chord — has since converged onto
+> [glyph](https://github.com/akira-toriyama/glyph)'s release reusable (t-vt8s).
+> The `update-tap.yml` analysis still applies.
+
 A decision record for whether `glance` and `chord` — historically running their
 own release + Homebrew-tap workflows instead of the shared reusables — should
-converge onto [`release.yml`](../.github/workflows/release.yml) and
+converge onto the hub's `release.yml` (retired; readable at
+[`v1.5.0`](https://github.com/akira-toriyama/.github/blob/v1.5.0/.github/workflows/release.yml)) and
 [`update-tap.yml`](../.github/workflows/update-tap.yml). **No blind merge:** a
 load-bearing divergence is documented and kept, not erased.
 

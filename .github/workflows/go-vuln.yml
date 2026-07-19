@@ -24,7 +24,7 @@ name: go-vuln
 #     contents: read
 #   jobs:
 #     scan:
-#       uses: akira-toriyama/.github/.github/workflows/go-vuln.yml@v1
+#       uses: akira-toriyama/.github/.github/workflows/go-vuln.yml@v2
 #       with:
 #         binary-path: ./cmd/<bin>   # omit to scan source only
 #

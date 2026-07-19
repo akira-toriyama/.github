@@ -4,12 +4,12 @@ name: zizmor
 # thin caller workflow. Runs in the CALLER repo's context: actions/checkout pulls the
 # caller's tree, so it audits the caller's .github/workflows against the caller's own
 # .github/zizmor.yml. The logic — and, crucially, the zizmor-action SHA + the zizmor
-# version pin — live HERE once; callers only `uses:` this file at @v1. That is the
+# version pin — live HERE once; callers only `uses:` this file at @v2. That is the
 # whole reason this is a reusable rather than a self-contained fleet workflow: a
 # self-contained copy would carry the third-party SHA into every repo, where each
 # repo's (fleet-distributed) Dependabot would open a bump PR that fleet-sync then
 # overwrites — a weekly tug-of-war. Centralized here, only THIS repo's Dependabot
-# bumps it, and callers pin `@v1` (self-owned → nothing for Dependabot to touch).
+# bumps it, and callers pin `@v2` (self-owned → nothing for Dependabot to touch).
 #
 # Hard gate: the action propagates zizmor's exit code (action.sh: `exit ${exitcode}`),
 # so any finding at/above min-confidence fails the job. advanced-security:false +
@@ -27,7 +27,7 @@ name: zizmor
 #     contents: read
 #   jobs:
 #     zizmor:
-#       uses: akira-toriyama/.github/.github/workflows/zizmor.yml@v1
+#       uses: akira-toriyama/.github/.github/workflows/zizmor.yml@v2
 
 on:
   workflow_call:
