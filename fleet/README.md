@@ -49,21 +49,23 @@ until its secrets exist:
 |---|---|
 | `FLEET_SYNC_PAT` | classic PAT with `repo` + `workflow` scopes. `workflow` is **required** to write `.github/workflows/*` in other repos; the default `GITHUB_TOKEN` cannot. It is the widest-privilege secret here, so give it a bounded **expiry** (e.g. 1 year); the `fleet-sync-pat-expiry-reminder` workflow files a rotation task ~30 days before it lapses. |
 | `PROJECTS_WRITE_PAT` | fine-grained PAT scoped to the tracker repo (`projects`) with **Contents: Read & write only**, auto-expiring — fanned out to each repo as `PROJECTS_WRITE_PAT`. Replaces the retired furrow-status-bot App master key (t-ke0v): a leak now reaches only the tracker and expires on its own. |
+| `HOMEBREW_TAP_TOKEN` | fine-grained PAT scoped to `homebrew-tap` with **Contents: Read & write only** — the cask-push credential every releasing repo uses. Fanned out to each repo whose default branch carries a `release.yml` (t-21yv). Replaces hand-placed per-repo copies, which rotted silently (a missed rotation 401'd prq's release and left rundiff's cask stale at an old version). |
 
 Manual runs **default to dry-run** (log only). Use `only-repo` to target one repo.
 
 ## Notes
 
-- **Idempotent**: a file is rewritten only when it differs; the tracker PAT is
-  overwritten every run, but only on repos that already carry the `task-status` stub
-  on their default branch (least privilege — a repo holds the PAT only once it runs
-  the workflow that needs it).
-- **Security trade-off**: the fanned-out `PROJECTS_WRITE_PAT` is least-privilege
-  (tracker `Contents: Read & write` only) and auto-expiring, so its blast radius is
-  narrow — a leak reaches only the tracker and stops working on expiry. Fan-out is
-  **gated on the `task-status` stub** existing on the target's default branch, so the
-  PAT lands only in repos that actually use it (a stub still in an open fleet-sync PR
-  waits for merge). Narrow it further via `EXCLUDE` if needed.
+- **Idempotent**: a file is rewritten only when it differs; the fanned-out secrets
+  are overwritten every run, but each only on repos that already carry its consumer
+  workflow on their default branch (least privilege — a repo holds a PAT only once
+  it runs the workflow that needs it).
+- **Security trade-off**: each fanned-out PAT is least-privilege and fine-grained
+  (`PROJECTS_WRITE_PAT` = tracker `Contents: Read & write` only; `HOMEBREW_TAP_TOKEN`
+  = tap `Contents: Read & write` only), so a leak reaches exactly one repo. Fan-out
+  is **gated on the consumer workflow** existing on the target's default branch —
+  the `task-status` stub for the tracker PAT, `release.yml` for the tap token — so
+  each PAT lands only in repos that actually use it (a stub still in an open
+  fleet-sync PR waits for merge). Narrow it further via `EXCLUDE` if needed.
 - No GitHub App is involved any more (the furrow-status-bot App master key was
   retired in t-ke0v). Auth is the credential-only PAT above — no App install, no
   server, no token minting.
@@ -90,6 +92,23 @@ is never forgotten.
 
 **Audit**: the Fine-grained tokens page lists each token's expiry; `gh secret list --repo <r>`
 shows where `PROJECTS_WRITE_PAT` exists per repo.
+
+## Rotating `HOMEBREW_TAP_TOKEN`
+
+Same procedure and rationale as `PROJECTS_WRITE_PAT` above — generate-new → update the
+hub → redistribute → revoke-old, so the cask channel never has a dead window. The
+`homebrew-tap-token-expiry-reminder` workflow files a furrow task both ~30 days before
+expiry **and immediately when the token goes dead** (its weekly probe gets a 401 —
+this token's observed failure mode was a rotation that missed hand-placed copies, not
+a calendar lapse).
+
+1. **Generate** a new fine-grained PAT scoped to **only** `akira-toriyama/homebrew-tap`
+   with **Contents: Read and write**, expiry e.g. 1 year.
+2. **Update** the hub secret:
+   `gh secret set HOMEBREW_TAP_TOKEN --repo akira-toriyama/.github` (paste the token).
+3. **Redistribute**: run `fleet-sync` (Actions → Run workflow with dry-run **off**, or
+   wait for the daily run) — every repo with a `release.yml` gets the new value.
+4. **Revoke the OLD token** in the Fine-grained tokens page once step 3 has run.
 
 ## Rotating `FLEET_SYNC_PAT`
 
