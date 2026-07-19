@@ -16,8 +16,11 @@ line to `MANIFEST` in [`.github/workflows/fleet-sync.yml`](../.github/workflows/
   [`sync-task-status`](https://github.com/akira-toriyama/furrow/blob/main/.github/workflows/sync-task-status.yml)
   reusable — pinned to a concrete furrow release tag; bump the pin here per
   furrow release).
-- `dependabot.yml` → each repo's `.github/dependabot.yml` (keeps github-actions
-  deps fresh fleet-wide).
+- `dependabot.yml` / `dependabot-go.yml` → each repo's `.github/dependabot.yml`
+  (keeps github-actions deps fresh fleet-wide). Variant-selected per repo: the
+  `-go` variant adds the gomod ecosystem and is picked automatically where a
+  root `go.mod` exists — gomod on a go-mod-less repo is a weekly *failing* run
+  ("No go.mod files found"), not a no-op, so the base variant omits it (t-s3fp).
 - `commit-lint.yml` → each repo's `.github/workflows/commit-lint.yml` (caller
   stub for the shared [`commit-lint`](../.github/workflows/commit-lint.yml)
   reusable; enforces the commit convention on every PR).
