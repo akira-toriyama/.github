@@ -173,7 +173,7 @@ jobs:
             "$headline" '' \
             '1. 新しい fine-grained PAT を作成（対象 repo: **homebrew-tap のみ**・Repository permissions: **Contents: Read and write**・期限1年）' \
             '2. hub の secret を更新: `gh secret set HOMEBREW_TAP_TOKEN --repo akira-toriyama/.github`' \
-            '3. fleet-sync を workflow_dispatch (dry-run=false) で実行 — release.yml を持つ全 repo へ再配布される' \
+            '3. fleet-sync を workflow_dispatch (dry-run=false) で実行 — token を参照する release workflow を持つ全 repo へ再配布される' \
             '4. 旧 PAT を **失効/削除**（配布完了後。Settings → Developer settings → Fine-grained tokens）' '' \
             '手順の正典: .github fleet/README.md「Rotating HOMEBREW_TAP_TOKEN」。' '' \
             '(このタスクは .github の homebrew-tap-token-expiry-reminder workflow が自動起票。)')"

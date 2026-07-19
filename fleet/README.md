@@ -49,7 +49,7 @@ until its secrets exist:
 |---|---|
 | `FLEET_SYNC_PAT` | classic PAT with `repo` + `workflow` scopes. `workflow` is **required** to write `.github/workflows/*` in other repos; the default `GITHUB_TOKEN` cannot. It is the widest-privilege secret here, so give it a bounded **expiry** (e.g. 1 year); the `fleet-sync-pat-expiry-reminder` workflow files a rotation task ~30 days before it lapses. |
 | `PROJECTS_WRITE_PAT` | fine-grained PAT scoped to the tracker repo (`projects`) with **Contents: Read & write only**, auto-expiring — fanned out to each repo as `PROJECTS_WRITE_PAT`. Replaces the retired furrow-status-bot App master key (t-ke0v): a leak now reaches only the tracker and expires on its own. |
-| `HOMEBREW_TAP_TOKEN` | fine-grained PAT scoped to `homebrew-tap` with **Contents: Read & write only** — the cask-push credential every releasing repo uses. Fanned out to each repo whose default branch carries a `release.yml` (t-21yv). Replaces hand-placed per-repo copies, which rotted silently (a missed rotation 401'd prq's release and left rundiff's cask stale at an old version). |
+| `HOMEBREW_TAP_TOKEN` | fine-grained PAT scoped to `homebrew-tap` with **Contents: Read & write only** — the cask-push credential every releasing repo uses. Fanned out to each repo whose release-channel workflow (`release.yml` or `update-tap.yml`) references it (t-21yv). Replaces hand-placed per-repo copies, which rotted silently (a missed rotation 401'd prq's release and left rundiff's cask stale at an old version). |
 
 Manual runs **default to dry-run** (log only). Use `only-repo` to target one repo.
 
@@ -62,10 +62,12 @@ Manual runs **default to dry-run** (log only). Use `only-repo` to target one rep
 - **Security trade-off**: each fanned-out PAT is least-privilege and fine-grained
   (`PROJECTS_WRITE_PAT` = tracker `Contents: Read & write` only; `HOMEBREW_TAP_TOKEN`
   = tap `Contents: Read & write` only), so a leak reaches exactly one repo. Fan-out
-  is **gated on the consumer workflow** existing on the target's default branch —
-  the `task-status` stub for the tracker PAT, `release.yml` for the tap token — so
-  each PAT lands only in repos that actually use it (a stub still in an open
-  fleet-sync PR waits for merge). Narrow it further via `EXCLUDE` if needed.
+  is **gated on the consumer workflow** on the target's default branch — the
+  `task-status` stub existing for the tracker PAT; `release.yml` or `update-tap.yml`
+  actually **referencing** `HOMEBREW_TAP_TOKEN` for the tap token (existence alone
+  was too broad: some repos release without pushing a cask) — so each PAT lands only
+  in repos that actually use it (a stub still in an open fleet-sync PR waits for
+  merge). Narrow it further via `EXCLUDE` if needed.
 - No GitHub App is involved any more (the furrow-status-bot App master key was
   retired in t-ke0v). Auth is the credential-only PAT above — no App install, no
   server, no token minting.
@@ -107,7 +109,8 @@ a calendar lapse).
 2. **Update** the hub secret:
    `gh secret set HOMEBREW_TAP_TOKEN --repo akira-toriyama/.github` (paste the token).
 3. **Redistribute**: run `fleet-sync` (Actions → Run workflow with dry-run **off**, or
-   wait for the daily run) — every repo with a `release.yml` gets the new value.
+   wait for the daily run) — every repo whose release-channel workflow references the
+   token gets the new value.
 4. **Revoke the OLD token** in the Fine-grained tokens page once step 3 has run.
 
 ## Rotating `FLEET_SYNC_PAT`

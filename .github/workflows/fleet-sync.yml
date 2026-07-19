@@ -16,10 +16,10 @@ name: fleet-sync
 #                       reaches only the tracker, and expires on its own. (t-ke0v)
 #   HOMEBREW_TAP_TOKEN  fine-grained PAT, scoped to homebrew-tap with Contents: Read &
 #                       write ONLY — the cask-push credential, fanned out to every repo
-#                       whose default branch carries a release.yml (t-21yv). Hand-placed
-#                       per-repo copies rotted silently (rundiff shipped v0.3.0 with a
-#                       stale tap cask; prq 401'd); rotation is now: update THIS repo's
-#                       secret once, the next run re-fans it everywhere.
+#                       whose release-channel workflow actually references it (t-21yv).
+#                       Hand-placed per-repo copies rotted silently (rundiff shipped
+#                       v0.3.0 with a stale tap cask; prq 401'd); rotation is now:
+#                       update THIS repo's secret once, the next run re-fans it.
 #
 # Safety: workflow_dispatch defaults to DRY-RUN (log only). Scheduled runs apply.
 # Blast radius: each fanned-out secret is a least-privilege fine-grained PAT scoped
@@ -338,17 +338,31 @@ jobs:
             fi
 
             # 4) fan out the cask-push PAT — same shape as (3), gated on the
-            #    consumer workflow instead: a repo gets HOMEBREW_TAP_TOKEN exactly
-            #    when its default branch carries a release.yml (every releasing
-            #    repo pushes a cask, or updates it via update-tap). The gate kills
-            #    the per-repo "does this one need it?" judgment that let hand-placed
-            #    copies rot (t-21yv: rundiff's tap cask silently stuck at v0.2.0,
-            #    prq released into a 401). Idempotent overwrite; this only gates
-            #    NEW fan-out and never prunes an already-set secret.
+            #    consumer workflow. Unlike (3) the gate reads CONTENT, not mere
+            #    existence: the secret goes to a repo iff one of the fleet's two
+            #    release-channel files — release.yml (Go GoReleaser + glyph) or
+            #    update-tap.yml (Swift) — references HOMEBREW_TAP_TOKEN on the
+            #    default branch. Existence alone proved too broad on the first
+            #    dry-run: dotfiles/canon/glyph-test/swift-toml-edit carry a
+            #    release.yml that pushes no cask. The gate kills the per-repo
+            #    "does this one need it?" judgment that let hand-placed copies
+            #    rot (t-21yv: rundiff's tap cask silently stuck at v0.2.0, prq
+            #    released into a 401). Idempotent overwrite; this only gates NEW
+            #    fan-out and never prunes an already-set secret.
+            tap_consumer=false
+            if [ -n "${TAP_PAT:-}" ]; then
+              for wf in release.yml update-tap.yml; do
+                if gh api "repos/$full/contents/.github/workflows/$wf" --jq '.content' 2>/dev/null \
+                     | base64 -d 2>/dev/null | grep -q 'HOMEBREW_TAP_TOKEN'; then
+                  tap_consumer=true
+                  break
+                fi
+              done
+            fi
             if [ -z "${TAP_PAT:-}" ]; then
               echo "::warning::HOMEBREW_TAP_TOKEN not set on .github; skipping tap-secret fan-out for $full"
-            elif ! gh api "repos/$full/contents/.github/workflows/release.yml" >/dev/null 2>/dev/null; then
-              echo "skip-tap-secret(no release.yml on default branch): $full"
+            elif [ "$tap_consumer" != "true" ]; then
+              echo "skip-tap-secret(no HOMEBREW_TAP_TOKEN consumer in release.yml/update-tap.yml): $full"
             elif [ "$DRY" = "true" ]; then
               echo "would-set-secrets: $full (HOMEBREW_TAP_TOKEN)"
             else
