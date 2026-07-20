@@ -1,0 +1,110 @@
+# Fleet audit: every repo must run ONE glyph version.
+#
+# Why this exists. glyph is shared infrastructure — the commit lint, the semver
+# verdict and the release notes for every repo come out of one binary — so a repo
+# left on an old pin silently enforces different rules from its neighbours. That
+# is not hypothetical: on 2026-07-20 the fleet was found split across v0.8.0 and
+# v0.8.1 with nobody aware, and dotfiles was installing a v0.8.1 BINARY while its
+# workflows were pinned to v0.10.0. Both were found by hand, which is exactly the
+# thing that must not be the detection mechanism.
+#
+# What it checks. The canonical pin is whatever fleet/commit-lint.yml declares —
+# that file is what fleet-sync distributes, so it IS the fleet's intended version.
+# Every `uses:` referencing akira-toriyama/glyph in every owned repo must carry
+# that same tag. Both halves matter and drift independently:
+#
+#   - reusable workflows  (.github/workflows/*.yml@vX.Y.Z)
+#   - the install action  (.github/actions/install@vX.Y.Z)  <- the one that drifted
+#
+# COMMENTS ARE IGNORED. Every glyph reusable carries a commented caller stub
+# showing an example pin, and those examples are always stale. Matching them
+# produces permanent false drift, so only real `uses:` lines are read. (Finding
+# this the hard way is why the check is written as a workflow and not a grep in
+# someone's notes.)
+#
+# Failure is the point: this reports via exit status, so the scheduled run turns
+# red and stays red until the fleet is level again. Bump a pin by editing
+# fleet/commit-lint.yml + fleet/version-preview.yml and running fleet-sync, then
+# open per-repo PRs for the install action and any release.yml caller — those two
+# are NOT fleet-managed.
+
+name: glyph-pin-audit
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '30 6 * * *' # daily, after fleet-sync (06:00) has had time to land
+  push:
+    branches: [main]
+    paths:
+      - 'fleet/commit-lint.yml'
+      - 'fleet/version-preview.yml'
+      - '.github/workflows/glyph-pin-audit.yml'
+
+concurrency:
+  group: glyph-pin-audit
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Audit every repo's glyph pins against the canonical
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OWNER: akira-toriyama
+        run: |
+          set -euo pipefail
+
+          # The canonical pin: what fleet-sync hands to every repo.
+          want="$(grep -oE 'uses:[[:space:]]*akira-toriyama/glyph/[^@[:space:]]*@v[0-9][0-9.]*' fleet/commit-lint.yml \
+                  | grep -oE '@v[0-9][0-9.]*' | head -1)"
+          [ -n "$want" ] || { echo "::error::could not read the canonical glyph pin from fleet/commit-lint.yml"; exit 1; }
+          echo "canonical glyph pin: ${want#@}"
+
+          mapfile -t REPOS < <(gh repo list "$OWNER" --no-archived --source --limit 200 \
+            --json name,isFork -q '.[] | select(.isFork==false) | .name' | sort)
+          [ "${#REPOS[@]}" -ge 1 ] || { echo "::error::empty repo list from gh repo list — aborting (transient API failure?)."; exit 1; }
+          echo "auditing ${#REPOS[@]} repos"
+
+          drift=0
+          for repo in "${REPOS[@]}"; do
+            full="$OWNER/$repo"
+            # glyph itself DEFINES the reusables; it has no caller pins to audit
+            # beyond the ones fleet-sync gives it, and its commented stubs would
+            # otherwise dominate the report.
+            tree="$(gh api "repos/$full/git/trees/HEAD?recursive=1" --jq \
+              '.tree[] | select(.path | startswith(".github/")) | select(.path | test("\\.ya?ml$")) | .path' 2>/dev/null || true)"
+            [ -n "$tree" ] || continue
+
+            while IFS= read -r path; do
+              [ -n "$path" ] || continue
+              body="$(gh api "repos/$full/contents/$path" --jq '.content' 2>/dev/null | base64 -d 2>/dev/null || true)"
+              [ -n "$body" ] || continue
+              # Real `uses:` lines only — a leading '#' is a documentation stub.
+              while IFS= read -r found; do
+                [ -n "$found" ] || continue
+                if [ "$found" != "$want" ]; then
+                  echo "::error::$full $path pins glyph ${found#@} — canonical is ${want#@}"
+                  drift=$((drift + 1))
+                fi
+              done < <(printf '%s\n' "$body" \
+                        | grep -vE '^[[:space:]]*#' \
+                        | grep -oE 'uses:[[:space:]]*akira-toriyama/glyph/[^@[:space:]]*@v[0-9][0-9.]*' \
+                        | grep -oE '@v[0-9][0-9.]*')
+            done <<< "$tree"
+          done
+
+          if [ "$drift" -gt 0 ]; then
+            echo "::error::glyph pin drift across the fleet: $drift reference(s) off ${want#@}"
+            exit 1
+          fi
+          echo "fleet is level on glyph ${want#@}"
