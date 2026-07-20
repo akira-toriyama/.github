@@ -31,7 +31,7 @@ name: update-tap
 #           default: ""
 #   jobs:
 #     bump:
-#       uses: akira-toriyama/.github/.github/workflows/update-tap.yml@v1
+#       uses: akira-toriyama/.github/.github/workflows/update-tap.yml@v2
 #       with:
 #         formula: facet
 #         tag: ${{ github.event.inputs.tag || '' }}
@@ -133,7 +133,7 @@ jobs:
       # tap/Formula/<name>.rb in place; the git commit/push half stays below,
       # where the fake-tap fixture a runtime smoke would need is out of scope.
       - name: Bump Formula (mutate)
-        uses: akira-toriyama/.github/actions/bump-formula@v1
+        uses: akira-toriyama/.github/actions/bump-formula@v2
         with:
           formula-path: tap/Formula/${{ inputs.formula }}.rb
           tag: ${{ steps.tag.outputs.tag }}

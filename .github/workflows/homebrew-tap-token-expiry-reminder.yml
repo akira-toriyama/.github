@@ -168,6 +168,7 @@ jobs:
             headline="homebrew-tap への cask push に使う fine-grained PAT があと約 ${DAYS} 日で失効する。失効すると全 release repo の cask push が 401 で落ちるため、期限内にローテーションする。"
           fi
 
+          # shellcheck disable=SC2016  # the single-quoted markdown lines carry literal backticks — no expansion intended
           body="$(printf '%s\n' \
             "# ${title}" '' \
             "$headline" '' \

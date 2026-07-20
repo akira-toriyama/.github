@@ -11,8 +11,8 @@ name: swift-format
 # (a config alone can't make `lint --strict` pass) — see docs/swift-format-adoption.md.
 #
 # `swift format` ships with the Swift 6 toolchain, so this runs on macOS with the
-# pinned latest-stable Xcode — the same toolchain pin as the swift-build action and
-# release.yml (macos runners default to an older Swift 5.x Xcode).
+# pinned latest-stable Xcode — the same toolchain pin as the swift-build action
+# (macos runners default to an older Swift 5.x Xcode).
 #
 # Caller skeleton (.github/workflows/swift-format.yml in each Swift repo):
 #   on:
@@ -23,7 +23,7 @@ name: swift-format
 #     workflow_dispatch:
 #   jobs:
 #     swift-format:
-#       uses: akira-toriyama/.github/.github/workflows/swift-format.yml@v1
+#       uses: akira-toriyama/.github/.github/workflows/swift-format.yml@v2
 
 on:
   workflow_call:
@@ -54,7 +54,7 @@ jobs:
 
       # macos runners default to an older Xcode (Swift 5.x); `swift format` ships
       # with the Swift 6 toolchain. Pin the latest stable Xcode — same pin as the
-      # swift-build action and release.yml.
+      # swift-build action.
       - uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1
         with:
           xcode-version: latest-stable

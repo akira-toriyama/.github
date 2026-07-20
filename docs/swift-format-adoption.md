@@ -75,10 +75,10 @@ on:
 
 jobs:
   swift-format:
-    uses: akira-toriyama/.github/.github/workflows/swift-format.yml@v1
+    uses: akira-toriyama/.github/.github/workflows/swift-format.yml@v2
 ```
 
-Pin `@v1` per [the ref policy](reusable-versioning.md). Widen the trigger `paths`
+Pin `@v2` per [the ref policy](reusable-versioning.md). Widen the trigger `paths`
 (and the reusable's `paths` input) for a non-standard source layout.
 
 ## Why this is not fleet-distributed

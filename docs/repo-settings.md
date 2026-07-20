@@ -85,7 +85,8 @@ and the manual Publish would be hard-blocked; the stale-draft cleanup also colli
 with delete-protection (cli/cli#9367). `release.yml` was hardened before enabling:
 the next version must be strictly greater than the latest *published* release (fail
 loud otherwise), and stale-draft cleanup deletes drafts **by release id**, never by
-tag name. Full rationale: [`immutable-releases-hardening.md`](immutable-releases-hardening.md).
+tag name. Full rationale: [`immutable-releases-hardening.md`](immutable-releases-hardening.md)
+(that reusable is retired since `v2.0.0` — glyph's release reusable keeps the same guards).
 
 **Discipline (still required):** never delete a published immutable release or its
 tag. The full "delete release *and* tag" case leaves no trace in either `git tag`

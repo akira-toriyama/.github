@@ -22,8 +22,9 @@ line to `MANIFEST` in [`.github/workflows/fleet-sync.yml`](../.github/workflows/
   root `go.mod` exists — gomod on a go-mod-less repo is a weekly *failing* run
   ("No go.mod files found"), not a no-op, so the base variant omits it (t-s3fp).
 - `commit-lint.yml` → each repo's `.github/workflows/commit-lint.yml` (caller
-  stub for the shared [`commit-lint`](../.github/workflows/commit-lint.yml)
-  reusable; enforces the commit convention on every PR).
+  stub pinning [glyph](https://github.com/akira-toriyama/glyph)'s `lint.yml`
+  reusable at a concrete release tag; enforces the commit convention on every
+  PR. The hub's own shell-validator reusable it once called is retired).
 - `taplo.yml` → each repo's `.github/workflows/taplo.yml` (caller stub for the
   shared [`taplo`](../.github/workflows/taplo.yml) reusable; a no-op on repos
   without any `*.toml`).

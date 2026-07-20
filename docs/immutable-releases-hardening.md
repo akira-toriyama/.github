@@ -1,11 +1,20 @@
 # Hardening `release.yml` for immutable releases (t-tvzh)
 
+> **Historical (2026-07-20, t-hy5b):** the shared `release.yml` reusable this
+> record hardened was retired in `v2.0.0` — the fleet now releases through
+> [glyph](https://github.com/akira-toriyama/glyph)'s `release.yml` reusable,
+> which inherits the same rolling-draft discipline (published-floor guard,
+> delete-drafts-by-id). The retired file remains readable at
+> [`v1.5.0`](https://github.com/akira-toriyama/.github/blob/v1.5.0/.github/workflows/release.yml).
+> The immutable-release *findings* below (what immutability does, the burned-tag
+> deadlock, the discipline) are still true and still load-bearing.
+
 A decision record for the final piece of t-tvzh: enabling GitHub
 [immutable releases](https://docs.github.com/en/code-security/concepts/supply-chain-security/immutable-releases)
 on the release repos. The recommended settings (`t-s7me`/`t-tvzh`) were rolled out
 fleet-wide in `.github#46`; immutable releases were **deferred** pending this
 hardening because an adversarial audit found a reachable deadlock in the shared
-[`release.yml`](../.github/workflows/release.yml) rolling-DRAFT flow.
+`release.yml` rolling-DRAFT flow.
 
 ## What immutable releases actually do (verified)
 

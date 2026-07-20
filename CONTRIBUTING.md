@@ -146,9 +146,9 @@ builds the artifacts. (**Verdict is glyph's; artifacts are GoReleaser's.**)
   from `glyph bump`, the release notes from `glyph notes`; GoReleaser owns the
   artifacts, checksums, and attestation.
 
-Repos not yet migrated to glyph still run the git-cliff `release.yml@v1`
-reusable with a per-repo `cliff.toml`; they migrate (and drop `cliff.toml`) in
-glyph's fleet-migration phase.
+The fleet migration is complete: every releasing repo is on a glyph flavor
+above, and the hub's old git-cliff `release.yml` reusable is retired (its
+frozen `@v1` would still serve a straggler, but none exist).
 
 ## Local hook (optional, no Node)
 
