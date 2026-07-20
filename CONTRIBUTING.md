@@ -150,9 +150,28 @@ The fleet migration is complete: every releasing repo is on a glyph flavor
 above, and the hub's old git-cliff `release.yml` reusable is retired (its
 frozen `@v1` would still serve a straggler, but none exist).
 
-## Local hook (optional, no Node)
+## Local hook (optional)
 
-Some repos bundle a shell `commit-msg` hook (enable with
-`git config core.hooksPath scripts/hooks`). Hooks written for the legacy
-`<type>:` format may lag the glyph convention until updated per-repo — CI
-(glyph lint) is the authority, the hook is only an early warning.
+Install it once per clone, in any repo:
+
+```sh
+glyph hook install
+```
+
+That writes a `commit-msg` hook which pipes the message into `glyph lint
+--stdin`, so a violation surfaces as you commit rather than after a push. The
+hook carries **no copy of the convention** — it calls glyph, so it cannot lag
+the rules the way the bundled per-repo hooks did. Where glyph is not on `PATH`
+it warns and lets the commit through: CI (`glyph lint`) is the authority, the
+hook is only an early warning.
+
+It honours `core.hooksPath` and refuses to overwrite a hook it did not write
+(`--force` overrides). `glyph hook install --print` shows the script without
+installing it.
+
+> Repos used to bundle a shell `commit-msg` hook under `scripts/hooks`, enabled
+> with `git config core.hooksPath scripts/hooks`. Those were hand-written
+> regexes for the retired `<type>:` form and had fallen out of lockstep with the
+> convention — they are removed. If you still have `core.hooksPath` pointing at
+> `scripts/hooks` in a clone, unset it (`git config --unset core.hooksPath`) and
+> run `glyph hook install`.
