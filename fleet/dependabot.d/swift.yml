@@ -1,0 +1,17 @@
+
+  # Swift package (SPM) updates for the Swift apps (chord, halo, perch, sill, …):
+  # keeps in-family deps like Sill fresh. Appended by fleet-sync only where a
+  # root Package.swift exists (fleet/dependabot.d/swift.yml — see the base
+  # fleet/dependabot.yml header for the assembly scheme).
+  - package-ecosystem: swift
+    directory: /
+    schedule:
+      interval: weekly
+    # Same 7-day supply-chain cooldown as github-actions above.
+    cooldown:
+      default-days: 7
+    groups:
+      swift:
+        patterns: ["*"]
+    commit-message:
+      prefix: ":arrow_up: build(deps)"

@@ -1,0 +1,17 @@
+
+  # npm updates for the JS/TS repos (study-engine, …): dev-tooling bumps like
+  # vite/electron. Appended by fleet-sync only where a root package.json exists
+  # (fleet/dependabot.d/npm.yml — see the base fleet/dependabot.yml header for
+  # the assembly scheme).
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    # Same 7-day supply-chain cooldown as github-actions above.
+    cooldown:
+      default-days: 7
+    groups:
+      npm:
+        patterns: ["*"]
+    commit-message:
+      prefix: ":arrow_up: build(deps)"
