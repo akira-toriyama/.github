@@ -71,29 +71,42 @@ The buckets:
 
 A deletion or rename is literally `:fire:` (remove), `:coffin:` (remove dead
 code), or `:truck:` (move / rename) — all **no bump**. That is correct for
-internal, dead, or non-public assets. But in a **library repo** (one whose API
-other repos depend on), silently removing or renaming a *public* element is a
-breaking change that the literal gitmoji hides from semver.
+internal, dead, or non-public assets, and silently wrong for the rare one:
+removing or renaming something others depend on is a breaking change that the
+literal gitmoji hides from semver.
 
-**Rule:** in a library repo, a commit that removes or renames a **public**
-element — an exported type or function, a catalog / preset name, a configuration
-key, a resource slug, anything another repo can reference — uses `:boom:` (or
-`!`), even when `:fire:`/`:truck:`/`:coffin:` would fit the letter. Reserve
-`:fire:`/`:truck:`/`:coffin:` for internal, dead-code, or non-public changes.
+**Rule (enforced):** a commit whose code is `:fire:`, `:coffin:` or `:truck:`
+must say whether it breaks anyone. Either it takes a **public** element away —
+an exported type or function, a catalog / preset name, a configuration key, a
+resource slug, anything another repo or a user can reference — and carries `!`
+(or a `BREAKING CHANGE:` footer), or it does not and carries a
+`NON-BREAKING: <why>` footer. Silence is a **lint error**, in CI and in the
+commit-msg hook.
 
-- **Library vs app.** A *library repo* ships a reusable product other repos
-  depend on — it exposes a SwiftPM `library` product, or appears in another
-  repo's `Package.swift`. An *app repo* is a leaf nothing depends on; there its
-  removals are genuinely `no bump`.
-- **Safety net, not a substitute.** glyph surfaces `:fire:`/`:truck:`/`:coffin:`
-  under a **Removals** section in the release notes (still `no bump`), so an
-  honest deletion or rename is visible to a downstream pin-bump audit even if
-  this rule was missed. The notes are the backstop; the `:boom:` call is yours.
+- **Every repo, not just libraries.** This used to be a library-repo rule, on
+  the reasoning that an app is a leaf nothing depends on. The measurement says
+  otherwise: replaying the whole fleet, every clear true positive was in an
+  *app* repo removing a user-facing configuration key. Users are downstream
+  too, and "is this repo a library" is a judgement that was already got wrong
+  once. The rule is uniform so the safety net cannot be switched off by
+  mis-classifying a repo.
+- **glyph forces the question, it cannot answer it.** No commit-message linter
+  can know whether the removed symbol was public — that is your repo's
+  knowledge, and an API-diff tool's job. All the rule does is refuse to let the
+  question go unanswered, so `NON-BREAKING:` is a claim you are making, not a
+  formality. It never lowers a bump, so it cannot be used to hide a break.
+- **Safety net, not a substitute.** glyph also surfaces
+  `:fire:`/`:truck:`/`:coffin:` under a **Removals** section in the release
+  notes (still `no bump`), so an honest deletion stays visible to a downstream
+  pin-bump audit.
 
 *Why this exists:* sill pruned the public preset `catppuccin-latte` under
-`:fire:` and shipped it as a minor; a downstream consumer broke on its next pin
-bump because the removal carried no major signal and — until the Removals
-section — no notes signal either.
+`:fire:` inside a `:sparkles:` PR and shipped it as a minor; a downstream
+consumer broke on its next pin bump because the removal carried no major signal
+and — until the Removals section — no notes signal either. `:truck:` is the
+worse of the three: a rename resolves at runtime, so sill's
+`paletteFor("catppuccin-latte")` fell back to another theme silently rather
+than failing.
 
 ### Body (optional)
 
@@ -105,8 +118,16 @@ section — no notes signal either.
 ### Footer (optional)
 
 - `BREAKING CHANGE: <description>` — makes a major bump explicit.
+- `NON-BREAKING: <why>` — records that a `:fire:`/`:coffin:`/`:truck:` removal
+  takes nothing public away. Required on those codes when `!` is absent; the
+  reason is mandatory. Never lowers a bump.
 - `Closes #<N>` — links / closes an issue.
 - `Co-Authored-By: <name> <email>`.
+
+Footers are **trailers**: they open a block (after a blank line) or stack under
+another trailer, and are matched case-sensitively. Prose that happens to wrap
+onto `BREAKING CHANGE:` mid-paragraph is not a footer — a line break must not
+be able to buy a major release.
 
 ### Examples
 
