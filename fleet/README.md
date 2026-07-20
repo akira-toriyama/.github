@@ -16,11 +16,17 @@ line to `MANIFEST` in [`.github/workflows/fleet-sync.yml`](../.github/workflows/
   [`sync-task-status`](https://github.com/akira-toriyama/furrow/blob/main/.github/workflows/sync-task-status.yml)
   reusable — pinned to a concrete furrow release tag; bump the pin here per
   furrow release).
-- `dependabot.yml` / `dependabot-go.yml` → each repo's `.github/dependabot.yml`
-  (keeps github-actions deps fresh fleet-wide). Variant-selected per repo: the
-  `-go` variant adds the gomod ecosystem and is picked automatically where a
-  root `go.mod` exists — gomod on a go-mod-less repo is a weekly *failing* run
-  ("No go.mod files found"), not a no-op, so the base variant omits it (t-s3fp).
+- `dependabot.yml` + `dependabot.d/*.yml` → each repo's `.github/dependabot.yml`
+  (keeps deps fresh fleet-wide). **Assembled** per repo: the base carries only
+  github-actions (every repo has workflows); one `dependabot.d/` block is
+  appended per package ecosystem whose root manifest exists on the target
+  (`go.mod` → gomod, `Package.swift` → swift, `package.json` → npm). An
+  ecosystem without its manifest is a weekly *failing* Dependabot run, not a
+  no-op (t-s3fp); and a base-only overwrite *erases* a repo's real ecosystems —
+  the old go.mod-only variant selection wiped chord's swift and study-engine's
+  npm entries, killing their bump PRs (t-vhr9). New ecosystems = drop a block
+  in `dependabot.d/` and add its `manifest:block` probe pair to the loop in
+  `fleet-sync.yml`.
 - `commit-lint.yml` → each repo's `.github/workflows/commit-lint.yml` (caller
   stub pinning [glyph](https://github.com/akira-toriyama/glyph)'s `lint.yml`
   reusable at a concrete release tag; enforces the commit convention on every
