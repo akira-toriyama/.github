@@ -48,8 +48,11 @@ on:
     paths:
       - '.github/workflows/**'
       # The zizmor gate's own policy lives here, NOT under workflows/ — a change to
-      # it must re-run the gate, or a policy loosening could merge unexercised.
+      # it must re-run the gate, or a policy loosening could merge unexercised. The
+      # actionlint config is the same shape of thing: an added `ignore` must be
+      # exercised by the lint job on its own pull request.
       - '.github/zizmor.yml'
+      - '.github/actionlint.yaml'
       - 'actions/**'
       # Fixture edits/deletions AND the extracted test scripts (tests/*.test.sh)
       # must re-run the smoke/unit jobs — a malformed or moved fixture, or an
@@ -223,3 +226,69 @@ jobs:
           set -euo pipefail
           grep -q "github.com/akira-toriyama/facet/archive/refs/tags/v2.0.0.tar.gz" tests/fixtures/tap/plain.rb
           grep -q 'sha256 "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"' tests/fixtures/tap/plain.rb
+
+  # RUN the go-bite gate over a case table (the real .sh) so a break fails HERE, not
+  # in a fleet caller after @v2 moves. Each case builds a throwaway Go repo under
+  # mktemp with `git init`, so there is no fixture to keep in sync — and no
+  # smoke-fixtures-present entry to add.
+  go-bite-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # Builds its own repos under mktemp; never pushes (zizmor artipacked). t-2nh8
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: stable
+      - name: Table-test go-bite
+        run: bash tests/go-bite.test.sh
+
+  # The gate applied to itself. go-bite refuses a pull request whose new tests pass
+  # against the pre-change source; this job holds the gate's OWN table test to that
+  # standard — it runs the post-change table against the PRE-change script and
+  # requires it to FAIL. A change to go-bite that no case pins would otherwise merge
+  # green and surface only in a caller after @v2 moves, which is exactly the failure
+  # the gate exists to stop.
+  #
+  # A pull request that leaves both the script and its table alone skips this; a
+  # change with genuinely nothing to pin says so with the same `Bite-exempt:` commit
+  # footer the gate itself honours.
+  go-bite-self:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # Needs the merge base to reconstruct the pre-change gate.
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: stable
+      - name: The gate's own tests must bite
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -uo pipefail
+          before="$(git merge-base "$BASE_SHA" "$HEAD_SHA")"
+          if git diff --quiet "$before" "$HEAD_SHA" -- actions/go-bite tests/go-bite.test.sh; then
+            echo "::notice::go-bite itself is untouched — nothing to prove"
+            exit 0
+          fi
+          waiver="$(git log --format='%B' "$before..$HEAD_SHA" | sed -n 's/^Bite-exempt:[[:space:]]*//p' | sed -n '1p')"
+          if [ -n "$waiver" ]; then
+            echo "::notice::waived by a commit footer — $waiver"
+            exit 0
+          fi
+          # The pre-change gate, judged by the post-change table. A brand-new gate has
+          # no pre-change version at all, and the table reports that as a failure — the
+          # same "it could not have passed before" evidence go-bite counts as a bite.
+          git checkout "$before" -- actions/go-bite 2>/dev/null || rm -rf actions/go-bite
+          if bash tests/go-bite.test.sh; then
+            echo "::error::the go-bite table passes against the PRE-CHANGE gate — the new cases pin nothing. Add a case that fails without this change, or waive it with a \`Bite-exempt: <reason>\` commit footer."
+            exit 1
+          fi
+          echo "::notice::the gate's own tests bite"

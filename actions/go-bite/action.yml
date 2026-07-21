@@ -1,0 +1,29 @@
+name: go-bite
+description: >-
+  Run a pull request's new or changed Go tests against the source as it was before
+  the pull request, and fail when every one of them still passes.
+
+inputs:
+  base-sha:
+    description: 'The pull request base commit. The gate walks back to its merge base with head.'
+    required: true
+  head-sha:
+    description: 'The pull request head commit.'
+    required: true
+  test-args:
+    description: 'Flags handed to `go test` on the pre-change tree.'
+    required: false
+    default: '-race -count=1'
+
+runs:
+  using: composite
+  steps:
+    # The whole gate is the script, so the table test in tests/go-bite.test.sh runs
+    # exactly what CI runs. Inputs travel as env, never interpolated into the shell
+    # (zizmor template-injection).
+    - shell: bash
+      env:
+        BASE_SHA: ${{ inputs.base-sha }}
+        HEAD_SHA: ${{ inputs.head-sha }}
+        TEST_ARGS: ${{ inputs.test-args }}
+      run: ${{ github.action_path }}/go-bite.sh
