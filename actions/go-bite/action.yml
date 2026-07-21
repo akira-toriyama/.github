@@ -5,15 +5,15 @@ description: >-
 
 inputs:
   base-sha:
-    description: 'The pull request base commit. The gate walks back to its merge base with head.'
+    description: 'The commit the pull request would merge INTO. The pre-change tree is its merge base with head.'
     required: true
   head-sha:
-    description: 'The pull request head commit.'
+    description: 'The MERGE commit (github.sha), so the pre-change tree is the base branch as it is now rather than the fork point.'
     required: true
   test-args:
     description: 'Flags handed to `go test` on the pre-change tree.'
     required: false
-    default: '-race -count=1'
+    default: '-race -count=1 -timeout=3m'
 
 runs:
   using: composite

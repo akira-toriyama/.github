@@ -15,12 +15,17 @@
 //
 // Output: one TSV record per test function, in source order, per file:
 //
-//	FILE \t NAME \t STARTLINE \t ENDLINE \t EXEMPT
+//	FILE \t NAME \t STARTLINE \t ENDLINE \t EXEMPT \t RUNNABLE
 //
 // EXEMPT is `-` when the function has no opt-out, or the (non-empty) reason text
 // following `bite-exempt:` in the function's doc comment. A `bite-exempt:` with no
 // reason is a hard error (exit 2): the annotation costs an explanation, otherwise
 // it becomes a reflex.
+//
+// RUNNABLE is `run`, or `norun` for an example with no output comment — `go test`
+// compiles those without ever running them, so their PASS means nothing. They are
+// still reported: the caller needs their line spans to tell "changed inside a test"
+// from "changed inside a helper", and a dropped record would read as the latter.
 //
 // Exit: 0 ok (including a file with no test functions), 2 parse error or an
 // unexplained opt-out.
@@ -71,20 +76,19 @@ func scan(path string, out *strings.Builder) error {
 		if !ok || fn.Recv != nil || !isTestFunc(fn.Name.Name) {
 			continue
 		}
-		// An example without an output comment is compiled but never run, and a test
-		// that never runs reports a vacuous PASS. Leave it out rather than let the
-		// caller read that PASS as "this test pins nothing".
+		runnable := "run"
 		if strings.HasPrefix(fn.Name.Name, "Example") && !hasOutputComment(file, fn) {
-			continue
+			runnable = "norun"
+			fmt.Fprintf(os.Stderr, "::notice::go-bite: %s: %s has no output comment, so `go test` compiles it without running it — not judged\n", path, fn.Name.Name)
 		}
 		exempt, err := exemption(fn, path)
 		if err != nil {
 			return err
 		}
-		fmt.Fprintf(out, "%s\t%s\t%d\t%d\t%s\n",
+		fmt.Fprintf(out, "%s\t%s\t%d\t%d\t%s\t%s\n",
 			path, fn.Name.Name,
 			fset.Position(fn.Pos()).Line, fset.Position(fn.End()).Line,
-			exempt)
+			exempt, runnable)
 	}
 	return nil
 }

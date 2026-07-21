@@ -42,7 +42,7 @@ on:
       test-args:
         description: 'Flags handed to `go test` on the pre-change tree. Keep -race unless the repo cannot build it.'
         type: string
-        default: '-race -count=1'
+        default: '-race -count=1 -timeout=3m'
 
 # The gate reads history and runs tests. Nothing else.
 permissions:
@@ -90,5 +90,11 @@ jobs:
       - uses: ./.go-bite-hub/actions/go-bite
         with:
           base-sha: ${{ github.event.pull_request.base.sha }}
-          head-sha: ${{ github.event.pull_request.head.sha }}
+          # The MERGE commit, not the branch head. Nothing forces a rebase, so on a
+          # branch the base has moved past, the head's merge base is the fork point —
+          # and a test pinning behaviour the base branch ALREADY SHIPS would be
+          # credited as a bite. Against the merge commit the pre-change tree is the
+          # base branch as it is now, while the diff is still exactly this pull
+          # request's.
+          head-sha: ${{ github.sha }}
           test-args: ${{ inputs.test-args }}

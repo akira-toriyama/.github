@@ -314,8 +314,8 @@ Bite-exempt: extracts a helper, behaviour unchanged"
 HEAD_SHA="$(git -C "$REPO" rev-parse HEAD)"
 OUT="$(cd "$REPO" && BASE_SHA="$BEFORE" HEAD_SHA="$HEAD_SHA" bash "$script" 2>&1)"
 RC=$?
-expect 0 "a Bite-exempt commit footer waives the gate" \
-  'waived by a commit footer' 'behaviour unchanged'
+expect 0 "a Bite-exempt trailer on every commit waives the gate" \
+  'waived by a Bite-exempt trailer' 'behaviour unchanged'
 
 # A golden file updated to the fixed output is half the assertion, so testdata has
 # to travel back onto the old tree with the test. Without the fixture travelling,
@@ -398,6 +398,256 @@ EOF
 run_gate
 expect 0 "an example with no output comment is not selected" \
   'no test function was added'
+
+# A package can exit non-zero with every selected test PASSING — here a pre-existing
+# TestMain that fails after m.Run. Reading the package's exit code as the verdict
+# would credit a vacuous test with a bite it had no part in.
+repo_new
+cat >>"$REPO/pkg/pkg_test.go" <<'EOF'
+
+func TestMain(m *testing.M) {
+	code := m.Run()
+	if leaked {
+		code = 1
+	}
+	os.Exit(code)
+}
+EOF
+sed 's/^import "testing"$/import (\n\t"os"\n\t"testing"\n)/' "$REPO/pkg/pkg_test.go" >"$REPO/pkg/t" && mv "$REPO/pkg/t" "$REPO/pkg/pkg_test.go"
+cat >>"$REPO/pkg/pkg.go" <<'EOF'
+
+var leaked = true
+EOF
+commit "testmain before"
+BEFORE="$(git -C "$REPO" rev-parse HEAD)"
+python3 - "$REPO/pkg/pkg.go" <<'PYEOF'
+import sys, pathlib
+p = pathlib.Path(sys.argv[1])
+p.write_text(p.read_text().replace("var leaked = true", "var leaked = false"))
+PYEOF
+cat >>"$REPO/pkg/pkg_test.go" <<'EOF'
+
+func TestGreetVacuousBesideALeak(t *testing.T) {
+	if Greet("a") != "hi a" {
+		t.Fatal("changed")
+	}
+}
+EOF
+run_gate
+expect 2 "a package failing outside the selected tests is not a bite" \
+  'without any selected test failing'
+
+# Carrying HEAD's go.mod back can stop the OLD SOURCE compiling — here by lowering
+# the language version out from under a construct the old source uses. That build
+# failure is an artefact of the gate, not evidence, and a vacuous test must not ride
+# it to green.
+repo_new
+cat >"$REPO/pkg/pkg.go" <<'EOF'
+package pkg
+
+// Greet is the shipping behaviour under test.
+func Greet(name string) string {
+	return "hi " + first([]string{name})
+}
+
+func first[T any](xs []T) T { return xs[0] }
+EOF
+commit "generics before"
+BEFORE="$(git -C "$REPO" rev-parse HEAD)"
+cat >"$REPO/go.mod" <<'EOF'
+module example.invalid/bite
+
+go 1.17
+EOF
+cat >"$REPO/pkg/pkg.go" <<'EOF'
+package pkg
+
+// Greet is the shipping behaviour under test.
+func Greet(name string) string {
+	return "hi " + name
+}
+EOF
+cat >>"$REPO/pkg/pkg_test.go" <<'EOF'
+
+func TestGreetVacuousBesideALanguageDowngrade(t *testing.T) {
+	if Greet("a") != "hi a" {
+		t.Fatal("changed")
+	}
+}
+EOF
+run_gate
+expect 2 "a pre-change tree that does not compile on its own is not a bite" \
+  'does not compile on its own'
+
+# A committed fuzz crasher IS the regression test, and it arrives with no `_test.go`
+# change at all — the gate has to follow the seed to its target.
+repo_new
+cat >>"$REPO/pkg/pkg_test.go" <<'EOF'
+
+func FuzzGreet(f *testing.F) {
+	f.Add("a")
+	f.Fuzz(func(t *testing.T, name string) {
+		if strings.HasSuffix(Greet(name), " ") {
+			t.Fatalf("Greet(%q) = %q ends in a space", name, Greet(name))
+		}
+	})
+}
+EOF
+sed 's/^import "testing"$/import (\n\t"strings"\n\t"testing"\n)/' "$REPO/pkg/pkg_test.go" >"$REPO/pkg/t" && mv "$REPO/pkg/t" "$REPO/pkg/pkg_test.go"
+commit "fuzz before"
+BEFORE="$(git -C "$REPO" rev-parse HEAD)"
+cat >"$REPO/pkg/pkg.go" <<'EOF'
+package pkg
+
+// Greet is the shipping behaviour under test.
+func Greet(name string) string {
+	if name == "" {
+		return "hi stranger"
+	}
+	return "hi " + name
+}
+EOF
+mkdir -p "$REPO/pkg/testdata/fuzz/FuzzGreet"
+cat >"$REPO/pkg/testdata/fuzz/FuzzGreet/crasher" <<'EOF'
+go test fuzz v1
+string("")
+EOF
+run_gate
+expect 0 "a fuzz seed committed with a fix is followed to its target and bites" \
+  'FuzzGreet' 'fails without the change'
+
+# A changed line inside no test function — a package-level fixture table — is the
+# cheapest way to slip a vacuous pull request past a span-based selection.
+repo_new
+cat >"$REPO/pkg/pkg_test.go" <<'EOF'
+package pkg
+
+import "testing"
+
+var cases = []struct{ in, want string }{
+	{"a", "hi a"},
+}
+
+func TestGreetAgainstTheTable(t *testing.T) {
+	for _, c := range cases {
+		if got := Greet(c.in); got != c.want {
+			t.Fatalf("Greet(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+EOF
+commit "table fixture before"
+BEFORE="$(git -C "$REPO" rev-parse HEAD)"
+cat >"$REPO/pkg/pkg.go" <<'EOF'
+package pkg
+
+import "strings"
+
+// Greet is the shipping behaviour under test.
+func Greet(name string) string {
+	return "hi " + strings.TrimSpace(name)
+}
+EOF
+cat >"$REPO/pkg/pkg_test.go" <<'EOF'
+package pkg
+
+import "testing"
+
+var cases = []struct{ in, want string }{
+	{"a", "hi a"},
+	{" a ", "hi a"},
+}
+
+func TestGreetAgainstTheTable(t *testing.T) {
+	for _, c := range cases {
+		if got := Greet(c.in); got != c.want {
+			t.Fatalf("Greet(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+EOF
+run_gate
+expect 0 "a case added to a package-level fixture table puts the suite on trial" \
+  'whole test suite on trial' 'fails without the change'
+
+# The trailer waives the whole pull request, so every commit has to carry it — and
+# it has to be a real trailer, not a line that happens to start a paragraph.
+repo_new
+cat >>"$REPO/pkg/pkg.go" <<'EOF'
+
+// Unrelated is the shipping change.
+func Unrelated() int { return 1 }
+EOF
+git -C "$REPO" add -A
+git -C "$REPO" commit --quiet -m "first
+
+Bite-exempt: mechanical only"
+cat >>"$REPO/pkg/pkg_test.go" <<'EOF'
+
+func TestGreetVacuousInASecondCommit(t *testing.T) {
+	if Greet("a") != "hi a" {
+		t.Fatal("changed")
+	}
+}
+EOF
+run_gate "second commit with no trailer"
+expect 1 "a trailer on only one commit does not waive the pull request" \
+  'pin nothing'
+
+# A `Bite-exempt:` line buried in prose is not a trailer, and must not waive.
+repo_new
+cat >>"$REPO/pkg/pkg.go" <<'EOF'
+
+// Unrelated is the shipping change.
+func Unrelated() int { return 1 }
+EOF
+cat >>"$REPO/pkg/pkg_test.go" <<'EOF'
+
+func TestGreetVacuousBesideProse(t *testing.T) {
+	if Greet("a") != "hi a" {
+		t.Fatal("changed")
+	}
+}
+EOF
+git -C "$REPO" add -A
+git -C "$REPO" commit --quiet -m "refactor
+
+Bite-exempt: this line opens a paragraph rather than closing the message,
+so it is prose and git does not read it as a trailer."
+HEAD_SHA="$(git -C "$REPO" rev-parse HEAD)"
+OUT="$(cd "$REPO" && BASE_SHA="$BEFORE" HEAD_SHA="$HEAD_SHA" bash "$script" 2>&1)"
+RC=$?
+expect 1 "a Bite-exempt line inside a paragraph is not a trailer" \
+  'pin nothing'
+
+# One biting test carries the pull request, and the vacuous one beside it is still
+# named and warned about rather than hidden behind a package-level verdict.
+repo_new
+cat >"$REPO/pkg/pkg.go" <<'EOF'
+package pkg
+
+// Greet is the shipping behaviour under test.
+func Greet(name string) string {
+	return "hello " + name
+}
+EOF
+cat >>"$REPO/pkg/pkg_test.go" <<'EOF'
+
+func TestGreetFixedHere(t *testing.T) {
+	if Greet("a") != "hello a" {
+		t.Fatalf("got %q", Greet("a"))
+	}
+}
+
+func TestGreetVacuousHere(t *testing.T) {
+	if Greet("a") == "" {
+		t.Fatal("empty")
+	}
+}
+EOF
+run_gate
+expect 0 "a vacuous test beside a biting one is reported, not hidden" \
+  'TestGreetFixedHere — bites' 'TestGreetVacuousHere — passes'
 
 # The gate needs the base commit in the checkout; a shallow clone must say so
 # rather than guess.

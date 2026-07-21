@@ -17,8 +17,9 @@ green before the fix too, and no reviewer could have told the difference by read
 
 On every pull request that touches shipping source, `go-bite`:
 
-1. materialises the **merge base** as a git worktree — the source as it was before
-   the pull request;
+1. materialises the **base branch as it is now** as a git worktree — judged against
+   the merge commit, so a stale branch cannot be credited for pinning behaviour the
+   base branch already ships;
 2. carries the pull request's `*_test.go`, `testdata/**` and `go.mod`/`go.sum` back
    onto it (a golden file updated to the fixed output is half the assertion, so the
    fixture has to travel with the test);
@@ -28,16 +29,37 @@ On every pull request that touches shipping source, `go-bite`:
 The exit codes are the contract: `0` at least one test bit (or the gate stood
 down), `1` the tests pin nothing, `2` the gate could not judge.
 
+**Every test is judged by name**, in `go test -v`'s own stream — never by the
+package's exit code. A package can exit non-zero while every selected test passes: a
+`TestMain` that exits after `m.Run`, a race report from a goroutine outliving a
+test, a flake. Crediting that as a bite is precisely the false green this exists to
+stop, so it is exit 2 instead.
+
+**What the gate selects** is wider than the test functions a diff literally touches,
+because the cheapest way past a span-based gate is to put the assertion somewhere
+else:
+
+| Changed | Selected |
+|---|---|
+| A test function's body | that function |
+| A test file's helper, import or package-level fixture table | **every** test in that package |
+| A seed under `testdata/fuzz/<Target>/` | that fuzz target — a committed crasher *is* the regression test, and it arrives with no `_test.go` change at all |
+| Only a comment or blank line | nothing |
+
 ## What counts as a bite
 
 - **A failing assertion.** The obvious case.
-- **A package that does not build.** A test calling an API the pull request
-  introduces could not have passed before it — same evidence, different shape.
+- **A hang.** The old source did not finish; hence the `-timeout` in the defaults.
+- **A test that does not build** — a test calling an API the pull request introduces
+  could not have passed before it. But only after `go build ./...` confirms the old
+  **source** still compiles: otherwise the pull request broke the old tree (a
+  dependency bump, a moved package) and a vacuous test would ride that build failure
+  to green. That case is exit 2, never a bite.
 
 The verdict is **"at least one bites"**, not "all". A change that touches twenty
 test functions must not need nineteen annotations; one test that genuinely bites
-makes the pull request's claim checkable. The per-package table in the job summary
-shows which ones actually bit.
+makes the pull request's claim checkable. The per-test table in the job summary
+names every selected test and warns about the ones that pinned nothing.
 
 ## When the gate stands down
 
@@ -48,7 +70,7 @@ Each of these is reported in the log and the job summary — never silent.
 | No shipping source changed — only tests and fixtures | Nothing is being claimed about behaviour, so there is nothing to prove. |
 | No test function added, and none changed beyond comments or blank lines | Rewording a comment in a test must not put that test on trial. |
 | Every selected test carries `bite-exempt: <reason>` | See below. |
-| A commit carries a `Bite-exempt: <reason>` footer | See below. |
+| Every commit carries a `Bite-exempt: <reason>` trailer | See below. |
 
 ## The two opt-outs, and when using one is honest
 
@@ -65,12 +87,16 @@ they legitimately pass against the old source, because that is their entire purp
 func TestEscapeMentionsKnownLimitations(t *testing.T) {
 ```
 
-**`Bite-exempt: <reason>` as a commit footer** — for a change that moves shipping
-source **without changing behaviour**. A pure refactor: no test can bite, because
-nothing observable changed, and the mechanical test churn would otherwise demand an
-annotation per function.
+**`Bite-exempt: <reason>` as a git trailer on every commit** — for a change that
+moves shipping source **without changing behaviour**. A pure refactor: no test can
+bite, because nothing observable changed, and the mechanical test churn would
+otherwise demand an annotation per function.
 
-Both demand a reason, and both are echoed into the job summary and (for the footer)
+It has to be a real trailer — parsed with `git interpret-trailers`, so a line that
+merely starts a paragraph waives nothing — and **every** non-merge commit in the
+range has to carry it, because the claim is about the whole pull request.
+
+Both demand a reason, and both are echoed into the job summary and (for the trailer)
 into the permanent history. That is the whole enforcement mechanism: the opt-out is
 cheap but never invisible, so using one is a statement someone can disagree with.
 
@@ -92,6 +118,11 @@ test, not an annotation.
   counts as a bite — the safe direction.
 - A test that only bites under a flag absent from `test-args` (a data-race fix
   without `-race`) reads as non-biting. Hence `-race` in the default.
+- One biting test carries a pull request that also adds a vacuous one. The per-test
+  table names the vacuous one and warns; it does not fail.
+- A test relocation combined with a shipping change goes red: a moved file is wholly
+  new, so every function in it is selected and none can bite. Split the move into its
+  own pull request, or waive it with the trailer.
 - The old tree is judged by its own tests, not by the environment around it:
   `GOWORK=off`, empty `GOFLAGS`, `GOTOOLCHAIN=local`, `-vet=off`. A `go test` that
   exits non-zero *without printing a verdict* — a toolchain download, an
@@ -111,7 +142,9 @@ bite:
 ```
 
 It is safe as a required check: it only runs on `pull_request`, and it stands down
-with an explanation rather than failing when there is nothing to prove.
+with an explanation rather than failing when there is nothing to prove. Note that
+until it *is* a required check on a repo, a red verdict is visible but not blocking
+— the gate reports; branch protection is what refuses.
 
 ## Where it lives
 
