@@ -649,6 +649,36 @@ run_gate
 expect 0 "a vacuous test beside a biting one is reported, not hidden" \
   'TestGreetFixedHere — bites' 'TestGreetVacuousHere — passes'
 
+
+# The gate must never search its captured test output THROUGH A PIPE.
+#
+# `printf '%s' "$out" | grep -q PATTERN` reports a MATCH as a failure whenever
+# grep exits first: grep -q stops at the first hit, printf takes SIGPIPE (141),
+# and `set -o pipefail` hands the `if` that 141. Measured, this shell, bash 3.2:
+#
+#   out=$(... >64 KiB ...); printf '%s' "$out" | grep -q '^--- PASS: Test7 '
+#   -> rc 141, five times out of five, though the line is right there
+#
+# So a test whose result really was in the log read as "never ran against the
+# pre-change tree" and the gate died with exit 2 — on precisely the pull
+# requests it chooses to try WHOLE (one touching a shared test helper), because
+# those are the ones whose output is big enough for printf to still be writing
+# (akira-toriyama/glyph#66).
+#
+# This is asserted on the SOURCE rather than through a fixture on purpose: the
+# fault needs the searched text to outgrow a pipe buffer, which is 64 KiB on
+# Linux and 16 KiB on macOS, so a fixture that reproduces it on one runner can
+# pass vacuously on another — and a gate case that only sometimes tests
+# something is worse than one that says what it means.
+if grep -nE 'printf .%s. "\$out" \| *grep' "$script" >/tmp/go-bite-pipe-search.txt; then
+  echo "FAIL - the gate searches \$out through a pipe (SIGPIPE + pipefail reads a match as a miss)"
+  sed 's/^/       /' /tmp/go-bite-pipe-search.txt
+  fails=$((fails + 1))
+else
+  echo "ok   - the gate searches its captured output without a pipe"
+fi
+rm -f /tmp/go-bite-pipe-search.txt
+
 # The gate needs the base commit in the checkout; a shallow clone must say so
 # rather than guess.
 repo_new
