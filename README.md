@@ -23,6 +23,7 @@ uses: akira-toriyama/.github/.github/workflows/<name>.yml@v2
 | [`design-md-lint.yml`](.github/workflows/design-md-lint.yml) | `DESIGN.md` validator (`@google/design.md`); fails on broken refs | per-repo caller (DESIGN.md repos only) |
 | [`go-ci.yml`](.github/workflows/go-ci.yml) | Go build / vet / `test -race` / module-hygiene / golangci-lint v2 | per-repo caller (repo-specific jobs) |
 | [`go-vuln.yml`](.github/workflows/go-vuln.yml) | govulncheck (source + `-mode binary`), daily-cron capable | per-repo caller |
+| [`go-bite.yml`](.github/workflows/go-bite.yml) | Runs a pull request's new/changed Go tests against the source **before** it; fails the ones that all still pass | per-repo caller |
 | [`update-tap.yml`](.github/workflows/update-tap.yml) | Bump the Homebrew formula in `homebrew-tap` on release publish | per-repo caller (app repos) |
 
 Retired in `v2.0.0` (frozen `@v1` still serves stragglers, never moved):
@@ -46,7 +47,11 @@ carries the app name.
    header; mind the `go-version` / `go-version-file` / `gotoolchain` footgun noted there.
 2. `.github/workflows/govulncheck.yml` — a `scan:` job that `uses: …/go-vuln.yml@v2`
    with `binary-path: ./cmd/<bin>` and a daily `schedule` cron.
-3. Third-party actions in your own repo-specific jobs stay SHA-pinned with a
+3. `.github/workflows/build.yml` — a `bite:` job that `uses: …/go-bite.yml@v2`
+   beside the `ci:` job, so a test that would have passed without the change it
+   accompanies cannot be merged as proof of that change. See
+   [`go-bite.md`](docs/go-bite.md).
+4. Third-party actions in your own repo-specific jobs stay SHA-pinned with a
    `# vX.Y.Z` comment (Dependabot follows it); the shared core is pinned here once.
 
 ## Composite action
@@ -54,6 +59,7 @@ carries the app name.
 | Action | What it does |
 |---|---|
 | [`actions/swift-build`](actions/swift-build/action.yml) | Build + test a Swift package on the pinned latest-stable Xcode (`build-cmd`, `run-tests` inputs) |
+| [`actions/go-bite`](actions/go-bite/action.yml) | The go-bite gate as a step, for a caller that already has a Go job (the reusable above wraps it) |
 
 ```yaml
 uses: akira-toriyama/.github/actions/swift-build@v2
@@ -96,6 +102,7 @@ all it takes to surface a Sponsor button fleet-wide, should that ever change.
 - [`immutable-releases-hardening.md`](docs/immutable-releases-hardening.md) — why the retired `release.yml` was deadlock-hardened for GitHub immutable releases (historical; glyph's release reusable inherits the discipline).
 - [`release-tap-unification.md`](docs/release-tap-unification.md) — whether `glance` / `chord` converge onto the shared release / tap reusables (historical; the fleet has since converged onto glyph's release reusable).
 - [`swift-format-adoption.md`](docs/swift-format-adoption.md) — the house procedure for turning the `swift-format` gate green in a new Swift repo.
+- [`go-bite.md`](docs/go-bite.md) — why a test that passes without its own fix is refused, what the gate does and does not judge, and when opting out is honest.
 
 The commit convention — the single source of truth for every repo — lives in
 [`CONTRIBUTING.md`](CONTRIBUTING.md).
