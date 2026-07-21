@@ -1,0 +1,18 @@
+# actionlint config for the hub's own workflows, consumed by the `actionlint` job
+# in self-test.yml (actionlint auto-discovers this path).
+#
+# The ignores below are a gap in actionlint's model of the `job` context, not lints
+# being dodged. `job.workflow_repository` and `job.workflow_sha` are documented
+# properties (runner v2.334.0, 2026-04) naming the repository and resolved commit of
+# the workflow file that defines the current job — for a reusable workflow, itself.
+# go-bite.yml uses them to check out its own script at exactly the commit the caller
+# resolved this workflow to, which is what keeps the YAML and the script from
+# drifting apart. actionlint's built-in `job` type predates them.
+#
+# Scoped to the one file and those two properties, so every other expression error
+# in it still gates.
+paths:
+  .github/workflows/go-bite.yml:
+    ignore:
+      - 'property "workflow_repository" is not defined'
+      - 'property "workflow_sha" is not defined'

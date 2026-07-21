@@ -1,0 +1,100 @@
+name: go-bite
+
+# Reusable "do the new tests bite?" gate — runs the pull request's new/changed Go
+# tests against the source BEFORE the pull request and fails when they all still
+# pass. The reasoning, the verdict table and the two opt-outs live in the script:
+# actions/go-bite/go-bite.sh. Called by each Go repo's build.yml, beside go-ci.yml.
+#
+# Why a gate at all: a diff can be reviewed, but the claim "I verified this fix"
+# cannot. A test that would have been green without the fix is not evidence, and
+# nothing except habit stops one from being merged. Habit is what this replaces.
+#
+# It stands down on its own when there is nothing to prove (a test-only pull
+# request, no new or changed test function, an explicit opt-out) and says so in the
+# job summary — so it is safe to make a required check.
+#
+# Caller skeleton (beside the `ci:` job in build.yml):
+#   bite:
+#     uses: akira-toriyama/.github/.github/workflows/go-bite.yml@v2
+#     with:
+#       go-version-file: go.mod
+#
+# Only pull_request events carry the two commits the gate compares, so the job
+# skip-passes on push. That is also why it is cheap to adopt: nothing changes on
+# main, and a pull request pays one extra checkout plus one `go test` of the
+# selected packages.
+
+on:
+  workflow_call:
+    inputs:
+      runner:
+        description: 'Runner label for the gate.'
+        type: string
+        default: 'ubuntu-latest'
+      go-version:
+        description: "setup-go go-version (e.g. 'stable'). Empty defers to go-version-file."
+        type: string
+        default: ''
+      go-version-file:
+        description: "setup-go go-version-file. Pass '' to disable when go-version is set."
+        type: string
+        default: 'go.mod'
+      test-args:
+        description: 'Flags handed to `go test` on the pre-change tree. Keep -race unless the repo cannot build it.'
+        type: string
+        default: '-race -count=1 -timeout=3m'
+
+# The gate reads history and runs tests. Nothing else.
+permissions:
+  contents: read
+
+jobs:
+  bite:
+    # Only a pull request has a base and a head to compare; on push there is no
+    # claim under review.
+    if: github.event_name == 'pull_request'
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          # The gate walks to the merge base of base and head, so it needs the
+          # history — a shallow checkout would make it exit 2 rather than guess.
+          fetch-depth: 0
+          # Reads history and runs tests, never pushes (zizmor artipacked).
+          persist-credentials: false
+
+      # The gate's own script lives in the hub, not in the caller — and a step's
+      # `uses: ./…` resolves against the WORKSPACE, which holds the caller's tree.
+      # So fetch the hub beside it. The `job` context's workflow-identity properties
+      # name the repository and the resolved commit of the workflow file defining
+      # this job — i.e. THIS file, at whatever tag, branch or SHA the caller pinned —
+      # so the YAML and the script it runs can never drift apart. (`github.*` would
+      # be the caller's; `github.job_workflow_sha` was a documentation error and is
+      # always null, an OIDC claim only.)
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .go-bite-hub
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ inputs.go-version }}
+          go-version-file: ${{ inputs.go-version-file }}
+          cache: true
+
+      # Runs the composite the hub self-tests, from the checkout above — one code
+      # path for the fleet and for the hub's own smoke.
+      - uses: ./.go-bite-hub/actions/go-bite
+        with:
+          base-sha: ${{ github.event.pull_request.base.sha }}
+          # The MERGE commit, not the branch head. Nothing forces a rebase, so on a
+          # branch the base has moved past, the head's merge base is the fork point —
+          # and a test pinning behaviour the base branch ALREADY SHIPS would be
+          # credited as a bite. Against the merge commit the pre-change tree is the
+          # base branch as it is now, while the diff is still exactly this pull
+          # request's.
+          head-sha: ${{ github.sha }}
+          test-args: ${{ inputs.test-args }}
