@@ -379,7 +379,9 @@ while IFS=$'\t' read -r path name _ _ _; do
 done < <(awk -F'\t' '$5 == "-"' "$work/selected.tsv")
 sort -u "$work/run.tsv" -o "$work/run.tsv"
 
-while IFS=$'\t' read -r path name _ _ reason; do
+# Six fields, not five: `read` gives the last variable everything that is left, so
+# one name short would tack the RUNNABLE column onto the reason it prints.
+while IFS=$'\t' read -r path name _ _ reason _; do
   note "$path:$name opted out — $reason"
   summary "- \`$name\` (\`$path\`) opted out — $reason"
 done <"$work/exempt.tsv"

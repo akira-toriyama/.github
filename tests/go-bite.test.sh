@@ -174,8 +174,8 @@ func TestGreetKnownLimitation(t *testing.T) {
 }
 EOF
 run_gate
-expect 0 "a bite-exempt test is skipped" \
-  'opted out' 'pins current behaviour'
+expect 0 "a bite-exempt test is skipped, quoting its reason and nothing else" \
+  'opted out — pins current behaviour, not a fix$'
 
 # The opt-out costs an explanation, or it becomes a reflex.
 repo_new
