@@ -439,6 +439,17 @@ while IFS= read -r dir; do
   out="$(cd "$tree/$root" && go test $TEST_ARGS -vet=off -v -run "^($pattern)\$" "./$rel" 2>&1)"
   rc=$?
   printf '%s\n::endgroup::\n' "$out"
+  # Every search below reads this FILE, never `printf "$out" | grep`. Under
+  # `set -o pipefail` that idiom reports the pipeline as FAILED whenever grep -q
+  # finds its match early: grep exits at the first hit, printf takes SIGPIPE
+  # (141), and pipefail hands the `if` the 141 — so a match reads as a miss. It
+  # is not theoretical and not rare: it fires on a big `$out`, which is exactly
+  # what a whole-package trial produces, and a whole-package trial is what this
+  # gate itself chooses when a pull request touches a shared test helper. The
+  # symptom was a test the gate's own log shows as `--- PASS:` being reported as
+  # "never ran against the pre-change tree", with a stray "printf: write error:
+  # Broken pipe" beside it (akira-toriyama/glyph#66).
+  printf '%s\n' "$out" >"$work/out.txt"
 
   case "$out" in
     *'[setup failed]'*)
@@ -450,7 +461,7 @@ while IFS= read -r dir; do
   # _test.go, which is exactly the discriminator: if it fails too, this pull request
   # broke the old tree (a dependency bump, a moved package) and the build failure is
   # an artefact of the gate rather than evidence about the tests.
-  if printf '%s' "$out" | grep -q '\[build failed\]'; then
+  if grep -q '\[build failed\]' "$work/out.txt"; then
     if (cd "$tree/$root" && go build ./... >"$work/build.log" 2>&1); then
       while IFS= read -r name; do record "$dir" "$name" 'bites — does not build without the change'; done <<<"$names"
       continue
@@ -463,7 +474,7 @@ while IFS= read -r dir; do
 
   # A hang prints `panic: test timed out` and NO `--- FAIL:` line, so this arm has to
   # come before judging tests by name. It is a bite: the old source did not finish.
-  if printf '%s' "$out" | grep -q '^panic: test timed out'; then
+  if grep -q '^panic: test timed out' "$work/out.txt"; then
     while IFS= read -r name; do record "$dir" "$name" 'bites — hangs without the change'; done <<<"$names"
     continue
   fi
@@ -473,14 +484,14 @@ while IFS= read -r dir; do
   bit_here=0
   ran=0
   while IFS= read -r name; do
-    if printf '%s' "$out" | grep -q "^--- FAIL: ${name} "; then
+    if grep -q "^--- FAIL: ${name} " "$work/out.txt"; then
       record "$dir" "$name" 'bites — fails without the change'
       bit_here=1
       ran=1
-    elif printf '%s' "$out" | grep -q "^--- PASS: ${name} "; then
+    elif grep -q "^--- PASS: ${name} " "$work/out.txt"; then
       record "$dir" "$name" 'passes without the change — pins nothing'
       ran=1
-    elif printf '%s' "$out" | grep -q "^--- SKIP: ${name} "; then
+    elif grep -q "^--- SKIP: ${name} " "$work/out.txt"; then
       record "$dir" "$name" 'skipped itself against the pre-change tree'
     else
       die "$name never ran against the pre-change tree, so the gate cannot judge it (a build constraint excluding it on $(go env GOOS) is the usual cause)"
