@@ -16,7 +16,7 @@ tags), [`CONTRIBUTING.md`](../CONTRIBUTING.md) (the convention glyph enforces).
 
 ## What is pinned, and by whom
 
-Four things reference glyph. **Only the first two are fleet-managed** — the rest
+Five things reference glyph. **Only the first two are fleet-managed** — the rest
 need per-repo PRs, and forgetting them is the most common miss.
 
 | Reference | Where the pin lives | Propagated by |
@@ -25,12 +25,21 @@ need per-repo PRs, and forgetting them is the most common miss.
 | `workflows/pr-verdict.yml` | `fleet/version-preview.yml` | fleet-sync |
 | `workflows/release.yml` | each repo's `.github/workflows/release.yml` | **per-repo PR** |
 | `actions/install` | each repo's release/CI workflows | **per-repo PR** |
+| the **binary** that action installs | `with: version:` on that same step | **per-repo PR** |
 
 `.github` also pins `lint.yml` in its own `self-commit-lint.yml`.
 
-The install action is the sneaky one: a repo can have every *workflow* on the new
+The install action is the sneaky one, and its `version:` input is sneakier still —
+it is a *fifth* reference hiding inside the fourth, two lines below it and easy to
+leave behind when the `@tag` moves. A repo can have every *workflow* on the new
 tag while still installing an **older binary**, so its CI enforces rules that no
-longer match the workflows around it. dotfiles sat exactly like that.
+longer match the workflows around it. dotfiles sat exactly like that in July 2026;
+by the time anyone looked again, seven repos did, all on a **v0.8.0 binary behind a
+v0.10.2 action** — three releases of convention enforced by nobody's decision. The
+pin audit read `uses:` only, so none of it registered.
+
+**Bump the `@tag` and the `version:` in the same edit, always.** They ship lockstep
+from one glyph release; there is no combination of the two that is deliberate.
 
 ## The sequence
 
@@ -41,7 +50,8 @@ longer match the workflows around it. dotfiles sat exactly like that.
 2. Bump `fleet/commit-lint.yml` and `fleet/version-preview.yml` in one PR. Merge.
 3. Run fleet-sync **with apply**: `gh workflow run fleet-sync.yml -f dry-run=false`.
 4. Merge any `fleet-sync/*` PRs it opened (see branch protection below).
-5. Open per-repo PRs for `release.yml` and `actions/install`.
+5. Open per-repo PRs for `release.yml`, and for `actions/install` **together with
+   the `version:` it passes** — one edit, both lines.
 6. Verify with the audit and the live check below.
 
 ## Traps
@@ -66,14 +76,25 @@ permanently stale. A naive grep reports glyph itself as drifted forever; a
 wrong version everywhere. Filter `^\s*#` out and anchor on `uses:`. This is why
 the audit is a workflow — see `glyph-pin-audit.yml`.
 
+**And `version:` cannot be grepped at all.** It is a generic input name — taplo,
+`setup-*` and half the fleet's third-party steps take one — so the only thing that
+makes an occurrence a glyph pin is the *step* it sits in. That needs block
+structure, which is why the audit's reader is an extracted, table-tested script
+(`scripts/glyph-pin-scan.sh`, `tests/glyph-pin-scan.test.sh`) rather than another
+line of grep. It reports an install step whose version it *cannot* read as drift
+too: an unverifiable pin and a correct pin must not look alike.
+
 ## Verifying — actually run it
 
 Do not conclude a rollout worked by reading diffs.
 
 **Machine check.** `glyph-pin-audit.yml` runs daily and on any canonical-pin
-change, and fails while any repo's real `uses:` disagrees with
-`fleet/commit-lint.yml`. Run it on demand with
+change, and fails while any repo's real `uses:` — or the `version:` its install
+step passes — disagrees with `fleet/commit-lint.yml`. Run it on demand with
 `gh workflow run glyph-pin-audit.yml`. If it is green, the fleet is level.
+
+Green means level, not *finished*: the audit only sees `.github/**.yml`, so a
+glyph reference kept anywhere else is still invisible to it.
 
 **Live check, in `glyph-test`.** That repo exists to fire live ammunition — use
 it. Push a branch whose commit deliberately violates the new rule, open a PR, and
