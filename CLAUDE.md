@@ -10,6 +10,7 @@ consumer index.
 
 ## Where each topic is documented — read there, don't reinvent
 
+- **How far to verify before rolling a change out** (stage it: local → POC → live ammunition in `glyph-test` → canary → fleet; what is machine-enforced and what is not) → [`docs/fleet-change-policy.md`](docs/fleet-change-policy.md) (account-wide rule).
 - **Commit convention** (gitmoji-driven — the leading `:code:` is the type and drives semver; enforced/consumed by glyph) → [`CONTRIBUTING.md`](CONTRIBUTING.md) (single source of truth).
 - **Ref policy + cutting a release** (moving `v2`, immutable `v2.x.y`, next major for breaking; `v1` frozen at `v1.5.0`) → [`docs/reusable-versioning.md`](docs/reusable-versioning.md).
 - **fleet-sync mechanism + PAT rotation** → [`fleet/README.md`](fleet/README.md).
@@ -18,6 +19,12 @@ consumer index.
 
 ## Invariants — load-bearing, easy to break, not obvious from any single file
 
+- **A change here lands in every repo at once — stage it, don't ship it.** Build
+  a POC when a step has never been done before, fire live ammunition in
+  `glyph-test`, canary one repo, *then* the fleet. Nothing in CI enforces those
+  stages, so say which ones you actually performed and which you skipped. The
+  rule, and the honest list of what is and is not machine-enforced, is
+  [`docs/fleet-change-policy.md`](docs/fleet-change-policy.md).
 - **`.github/workflows/task-status.yml` is maintained BY HAND.** fleet-sync
   EXCLUDEs `.github` (it *is* the hub), so the canonical `fleet/task-status.yml`
   never syncs onto it. Keep this file's caller body — the furrow pin,
