@@ -58,6 +58,11 @@ on:
       # must re-run the smoke/unit jobs — a malformed or moved fixture, or an
       # edited test, is exactly what should trip the gate.
       - 'tests/**'
+      # Logic extracted OUT of a workflow keeps its gate. glyph-pin-scan.sh is
+      # what glyph-pin-audit.yml sees the whole fleet through, and actionlint
+      # does not read scripts/ — without this line an edit to it would merge
+      # unexercised, which is the exact hole this workflow exists to close.
+      - 'scripts/**'
       # smoke-taplo lints the WHOLE repo (taplo.yml has no path input), so any
       # *.toml change should re-run it — an unclean file then fails on ITS OWN PR
       # rather than being admitted silently and reddening a later unrelated one.
@@ -226,6 +231,22 @@ jobs:
           set -euo pipefail
           grep -q "github.com/akira-toriyama/facet/archive/refs/tags/v2.0.0.tar.gz" tests/fixtures/tap/plain.rb
           grep -q 'sha256 "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"' tests/fixtures/tap/plain.rb
+
+  # RUN the pin extractor over a case table (the real .sh). glyph-pin-audit.yml
+  # reads every workflow in ~36 repos through this script, and it is the only
+  # thing standing between "the fleet is level" and a lie — a parser regression
+  # here does not fail loudly, it silently stops SEEING a pin, which is
+  # indistinguishable from a level fleet. The table pins that distinction.
+  glyph-pin-scan-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # Feeds YAML to a script on stdin; never pushes (zizmor artipacked). t-2nh8
+          persist-credentials: false
+      - name: Table-test glyph-pin-scan
+        run: bash tests/glyph-pin-scan.test.sh
 
   # RUN the go-bite gate over a case table (the real .sh) so a break fails HERE, not
   # in a fleet caller after @v2 moves. Each case builds a throwaway Go repo under

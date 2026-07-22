@@ -10,11 +10,21 @@
 #
 # What it checks. The canonical pin is whatever fleet/commit-lint.yml declares —
 # that file is what fleet-sync distributes, so it IS the fleet's intended version.
-# Every `uses:` referencing akira-toriyama/glyph in every owned repo must carry
-# that same tag. Both halves matter and drift independently:
+# Every reference to akira-toriyama/glyph in every owned repo must carry that same
+# tag. All three drift independently:
 #
 #   - reusable workflows  (.github/workflows/*.yml@vX.Y.Z)
-#   - the install action  (.github/actions/install@vX.Y.Z)  <- the one that drifted
+#   - the install action  (.github/actions/install@vX.Y.Z)
+#   - the BINARY that action installs (`with: version:`)   <- invisible until 2026-07-22
+#
+# The third one is why this file grew a parser. `uses:` is line-local and was a
+# grep for months; `version:` is a generic input name, so what makes an occurrence
+# a glyph pin is the STEP it sits in. Nothing looked at it, and seven repos sat on
+# a v0.8.0 binary behind a v0.10.2 action — enforcing a three-release-old
+# convention while every audit and every workflow file said otherwise. Reading
+# blocks lives in scripts/glyph-pin-scan.sh, table-tested by
+# tests/glyph-pin-scan.test.sh, because a parser nobody can run is a parser
+# nobody can trust.
 #
 # COMMENTS ARE IGNORED. Every glyph reusable carries a commented caller stub
 # showing an example pin, and those examples are always stale. Matching them
@@ -25,8 +35,8 @@
 # Failure is the point: this reports via exit status, so the scheduled run turns
 # red and stays red until the fleet is level again. Bump a pin by editing
 # fleet/commit-lint.yml + fleet/version-preview.yml and running fleet-sync, then
-# open per-repo PRs for the install action and any release.yml caller — those two
-# are NOT fleet-managed.
+# open per-repo PRs for the install action, the version it installs, and any
+# release.yml caller — those are NOT fleet-managed.
 
 name: glyph-pin-audit
 
@@ -40,6 +50,8 @@ on:
       - 'fleet/commit-lint.yml'
       - 'fleet/version-preview.yml'
       - '.github/workflows/glyph-pin-audit.yml'
+      # The extractor IS the audit's eyesight — a change to it must re-run.
+      - 'scripts/glyph-pin-scan.sh'
 
 concurrency:
   group: glyph-pin-audit
@@ -64,11 +76,13 @@ jobs:
         run: |
           set -euo pipefail
 
-          # The canonical pin: what fleet-sync hands to every repo.
-          want="$(grep -oE 'uses:[[:space:]]*akira-toriyama/glyph/[^@[:space:]]*@v[0-9][0-9.]*' fleet/commit-lint.yml \
-                  | grep -oE '@v[0-9][0-9.]*' | head -1)"
+          # The canonical pin: what fleet-sync hands to every repo. Read through
+          # the SAME extractor as every repo below — one reader, one truth, and
+          # the canonical is covered by the extractor's own table test.
+          want="$(bash scripts/glyph-pin-scan.sh < fleet/commit-lint.yml \
+                  | awk -F'\t' '$1 == "uses" { print $2; exit }')"
           [ -n "$want" ] || { echo "::error::could not read the canonical glyph pin from fleet/commit-lint.yml"; exit 1; }
-          echo "canonical glyph pin: ${want#@}"
+          echo "canonical glyph pin: $want"
 
           mapfile -t REPOS < <(gh repo list "$OWNER" --no-archived --source --limit 200 \
             --json name,isFork -q '.[] | select(.isFork==false) | .name' | sort)
@@ -89,22 +103,38 @@ jobs:
               [ -n "$path" ] || continue
               body="$(gh api "repos/$full/contents/$path" --jq '.content' 2>/dev/null | base64 -d 2>/dev/null || true)"
               [ -n "$body" ] || continue
-              # Real `uses:` lines only — a leading '#' is a documentation stub.
-              while IFS= read -r found; do
-                [ -n "$found" ] || continue
-                if [ "$found" != "$want" ]; then
-                  echo "::error::$full $path pins glyph ${found#@} — canonical is ${want#@}"
-                  drift=$((drift + 1))
-                fi
-              done < <(printf '%s\n' "$body" \
-                        | grep -vE '^[[:space:]]*#' \
-                        | grep -oE 'uses:[[:space:]]*akira-toriyama/glyph/[^@[:space:]]*@v[0-9][0-9.]*' \
-                        | grep -oE '@v[0-9][0-9.]*')
+              while IFS="$(printf '\t')" read -r kind ref line; do
+                [ -n "$kind" ] || continue
+                case "$kind" in
+                  uses)
+                    if [ "$ref" != "$want" ]; then
+                      echo "::error::$full $path:$line pins glyph $ref — canonical is $want"
+                      drift=$((drift + 1))
+                    fi
+                    ;;
+                  version)
+                    # The workflow file can be entirely current and this still
+                    # wrong; that combination is why the check exists.
+                    if [ "$ref" != "$want" ]; then
+                      echo "::error::$full $path:$line installs the glyph $ref BINARY — canonical is $want"
+                      drift=$((drift + 1))
+                    fi
+                    ;;
+                  version-missing)
+                    echo "::error::$full $path:$line pins actions/install@$ref but passes no version: — the input is required, so this step cannot run"
+                    drift=$((drift + 1))
+                    ;;
+                  version-unreadable)
+                    echo "::error::$full $path:$line pins actions/install@$ref and computes its version: — this audit cannot tell which binary it installs. Pass a literal tag."
+                    drift=$((drift + 1))
+                    ;;
+                esac
+              done < <(printf '%s\n' "$body" | bash scripts/glyph-pin-scan.sh)
             done <<< "$tree"
           done
 
           if [ "$drift" -gt 0 ]; then
-            echo "::error::glyph pin drift across the fleet: $drift reference(s) off ${want#@}"
+            echo "::error::glyph pin drift across the fleet: $drift reference(s) off $want"
             exit 1
           fi
-          echo "fleet is level on glyph ${want#@}"
+          echo "fleet is level on glyph $want"
