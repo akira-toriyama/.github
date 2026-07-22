@@ -70,8 +70,14 @@ is worse than no rule.
 
 **Enforced today**
 
-- `glyph-pin-audit.yml` fails while any repo's real `uses:` disagrees with the
-  canonical pin (daily, and on canonical-pin changes). Stage 4's "audit green".
+- `glyph-pin-audit.yml` fails while any repo's real `uses:` — or the `version:`
+  its glyph install step passes — disagrees with the canonical pin (daily, and on
+  canonical-pin changes). Stage 4's "audit green". Its own reader is table-tested
+  (`tests/glyph-pin-scan.test.sh`), because a check that silently stops SEEING a
+  pin is indistinguishable from a level fleet.
+- What it does NOT see: anything outside `.github/**.yml`, and any repo the
+  runner's token cannot list (29 of 35, on 2026-07-22). Green means level as far
+  as it looks.
 - `fleet-sync`'s dry-run default. It cannot write by accident; it can only fail
   to write while looking like it wrote.
 - Branch protection on the repos that have it: fleet-sync opens a PR instead of
