@@ -5,6 +5,12 @@ release notes for **every** repo come out of one binary. A rollout therefore
 touches ~24 repos, and every step below exists because it was got wrong at least
 once. Machine checks come first; this document only covers what a check cannot.
 
+This document is the **sequence**. Whether you have earned the right to run it —
+how far to verify before a change reaches the fleet at all — is
+[`fleet-change-policy.md`](fleet-change-policy.md): local → POC → live ammunition
+in `glyph-test` → canary → fleet. Step 1 below is the earliest point at which
+that staging is already over.
+
 Related: [`reusable-versioning.md`](reusable-versioning.md) (why pins are concrete
 tags), [`CONTRIBUTING.md`](../CONTRIBUTING.md) (the convention glyph enforces).
 
