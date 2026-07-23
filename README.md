@@ -103,6 +103,7 @@ all it takes to surface a Sponsor button fleet-wide, should that ever change.
 - [`release-tap-unification.md`](docs/release-tap-unification.md) — whether `glance` / `chord` converge onto the shared release / tap reusables (historical; the fleet has since converged onto glyph's release reusable).
 - [`swift-format-adoption.md`](docs/swift-format-adoption.md) — the house procedure for turning the `swift-format` gate green in a new Swift repo.
 - [`go-bite.md`](docs/go-bite.md) — why a test that passes without its own fix is refused, what the gate does and does not judge, and when opting out is honest.
+- [`doc-consistency-policy.md`](docs/doc-consistency-policy.md) — the fleet-wide rule that docs stay code-first, un-duplicated, and not translated in place (no stored `README.ja.md`), plus the language matrix (public → English, private → the author's language). furrow is the reference implementation.
 
 The commit convention — the single source of truth for every repo — lives in
 [`CONTRIBUTING.md`](CONTRIBUTING.md).

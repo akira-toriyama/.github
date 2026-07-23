@@ -12,6 +12,7 @@ consumer index.
 
 - **How far to verify before rolling a change out** (stage it: local → POC → live ammunition in `glyph-test` → canary → fleet; what is machine-enforced and what is not) → [`docs/fleet-change-policy.md`](docs/fleet-change-policy.md) (account-wide rule).
 - **Commit convention** (gitmoji-driven — the leading `:code:` is the type and drives semver; enforced/consumed by glyph) → [`CONTRIBUTING.md`](CONTRIBUTING.md) (single source of truth).
+- **Documentation consistency** (code-first, no duplicated facts, no stored translations / `README.ja.md`, and the public-English / private-author-language matrix) → [`docs/doc-consistency-policy.md`](docs/doc-consistency-policy.md) (fleet-wide; furrow is the reference implementation).
 - **Ref policy + cutting a release** (moving `v2`, immutable `v2.x.y`, next major for breaking; `v1` frozen at `v1.5.0`) → [`docs/reusable-versioning.md`](docs/reusable-versioning.md).
 - **fleet-sync mechanism + PAT rotation** → [`fleet/README.md`](fleet/README.md).
 - **Fleet-wide repo settings** (`apply-repo-settings.sh`) → [`docs/repo-settings.md`](docs/repo-settings.md).
