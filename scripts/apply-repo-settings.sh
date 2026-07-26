@@ -83,9 +83,22 @@ ruleset_requires() {
   return 1
 }
 
-mapfile -t REPOS < <(gh repo list "$OWNER" --no-archived --source --limit 200 \
-  --json name,isFork,visibility -q '.[] | select(.isFork==false) | "\(.name)\t\(.visibility)"' | sort)
-[ "${#REPOS[@]}" -ge 1 ] || { echo "::error:: empty repo list (transient API failure?)"; exit 1; }
+# Read the repo list WITHOUT `mapfile`: this script is run by hand, from the dev
+# machine, and macOS ships bash 3.2 where mapfile does not exist. It used to abort
+# with "mapfile: command not found" followed by "REPOS: unbound variable" — on the
+# one platform its operator actually runs it from. (It only worked here because a
+# newer bash happened to be earlier in PATH.)
+#
+# Check the raw text BEFORE building the array, so the array is never empty when
+# it is expanded: bash 3.2 treats an empty array as unset under `set -u`.
+repo_list="$(gh repo list "$OWNER" --no-archived --source --limit 200 \
+  --json name,isFork,visibility -q '.[] | select(.isFork==false) | "\(.name)\t\(.visibility)"' | sort)"
+[ -n "$repo_list" ] || { echo "::error:: empty repo list (transient API failure?)"; exit 1; }
+REPOS=()
+while IFS= read -r repo_line; do
+  [ -n "$repo_line" ] || continue
+  REPOS+=("$repo_line")
+done < <(printf '%s\n' "$repo_list")
 
 # The `uses:` line fleet-sync actually distributes as each repo's commit-lint
 # caller, DERIVED from the canonical rather than restated here. The literal that

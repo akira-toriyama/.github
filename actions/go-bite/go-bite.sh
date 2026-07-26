@@ -113,7 +113,11 @@ short="$(git rev-parse --short "$before")"
 
 work="$(mktemp -d)" || die "cannot create a work directory"
 tree="$work/before"
-# shellcheck disable=SC2329  # invoked indirectly by the `trap cleanup EXIT` below
+# Invoked indirectly by the `trap cleanup EXIT` below. Both codes are needed:
+# ubuntu-latest's linter reports SC2317 on the body, a newer one reports SC2329 on
+# the declaration. (Careful: a comment line that BEGINS with the tool's name is
+# parsed as a directive, so this note deliberately does not.)
+# shellcheck disable=SC2329,SC2317
 cleanup() {
   git worktree remove --force "$tree" >/dev/null 2>&1
   rm -rf "$work"
