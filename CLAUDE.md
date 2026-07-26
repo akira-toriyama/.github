@@ -30,11 +30,15 @@ consumer index.
   EXCLUDEs `.github` (it *is* the hub), so the canonical `fleet/task-status.yml`
   never syncs onto it. Keep this file's caller body — the furrow pin,
   `on` / `permissions` / `secrets` — identical to `fleet/task-status.yml`; only the
-  top provenance comment differs. Bump the furrow pin in **both**. Nothing in CI
-  guards this — the rule lives only in the two files' comments.
-- **Fleet-distributed files: edit only the canonical copy in [`fleet/`](fleet/)**
-  (`task-status.yml`, `commit-lint.yml`, `taplo.yml`, `dependabot.yml`,
-  `commit-convention.md`). Every per-repo copy is overwritten on the next sync —
+  top provenance comment differs. Bump the furrow pin in **both**.
+  `.github/workflows/self-commit-lint.yml` is the second such twin: its glyph pin
+  must move with `fleet/commit-lint.yml`. Both pairs, and the furrow pin's four
+  scattered call sites, are now checked by
+  [`tests/fleet-manifest.test.sh`](tests/fleet-manifest.test.sh) — the rule used to
+  live only in the files' own comments, and drifted anyway.
+- **Fleet-distributed files: edit only the canonical copy in [`fleet/`](fleet/)** —
+  the canonical set is the Files list in [`fleet/README.md`](fleet/README.md), not
+  a copy of it kept here. Every per-repo copy is overwritten on the next sync —
   never edit those.
 - **Merging to `main` does NOT reach callers.** Callers pin `@v2`; a change ships
   only when you move the `v2` tag onto the release commit
@@ -43,8 +47,10 @@ consumer index.
 - **`vX.Y.Z` tags here are cut BY HAND** — this repo has no app of its own, so
   no release workflow ever tags it. The immutable `vX.Y.Z` tags are **never** moved
   or deleted, and the frozen `v1` (parked at `v1.5.0` since the `v2.0.0`
-  retirements) must not move either; separately, the retired `sync-task-status@v1`
-  (that reusable now ships from furrow — its old `@v1` here still serves
-  stragglers) must not be moved until fleet-sync repoints them.
+  retirements) must not move either — not now, not after any repoint. The
+  reusables it still carries (`release.yml`, `commit-lint.yml`) keep working there
+  for anyone left on `@v1`; `sync-task-status.yml` does not — it is absent from
+  `v1.5.0`, so that pin is already a hard failure and ships from furrow now. See
+  [`docs/reusable-versioning.md`](docs/reusable-versioning.md).
 - **Verify `run:` blocks under bash, not zsh** — zsh doesn't word-split, so a
   script that passes an interactive zsh test can still break in Actions' bash.

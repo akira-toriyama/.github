@@ -1,9 +1,10 @@
 # .github
 
-Shared CI (reusable workflows + a composite action) and the default
-community-health files for the **akira-toriyama** repos. This front page indexes
-what lives here and how to consume it; the deeper design records are in
-[`docs/`](docs/).
+Shared CI (reusable workflows + composite actions) and the default
+community-health files for the **akira-toriyama** repos. This front page is **the**
+index of what lives here and how to consume it — the ref policy and the design
+records point back at these tables rather than restating them; the deeper records
+are in [`docs/`](docs/).
 
 ## Reusable workflows
 
@@ -54,12 +55,13 @@ carries the app name.
 4. Third-party actions in your own repo-specific jobs stay SHA-pinned with a
    `# vX.Y.Z` comment (Dependabot follows it); the shared core is pinned here once.
 
-## Composite action
+## Composite actions
 
 | Action | What it does |
 |---|---|
 | [`actions/swift-build`](actions/swift-build/action.yml) | Build + test a Swift package on the pinned latest-stable Xcode (`build-cmd`, `run-tests` inputs) |
 | [`actions/go-bite`](actions/go-bite/action.yml) | The go-bite gate as a step, for a caller that already has a Go job (the reusable above wraps it) |
+| [`actions/bump-formula`](actions/bump-formula/action.yml) | Move a Homebrew formula to a new tag + source sha256 in place. The pure file-mutation half of `update-tap.yml`, extracted so it can be table-tested; a backward move is refused unless `allow-downgrade` |
 
 ```yaml
 uses: akira-toriyama/.github/actions/swift-build@v2
@@ -104,6 +106,8 @@ all it takes to surface a Sponsor button fleet-wide, should that ever change.
 - [`swift-format-adoption.md`](docs/swift-format-adoption.md) — the house procedure for turning the `swift-format` gate green in a new Swift repo.
 - [`go-bite.md`](docs/go-bite.md) — why a test that passes without its own fix is refused, what the gate does and does not judge, and when opting out is honest.
 - [`doc-consistency-policy.md`](docs/doc-consistency-policy.md) — the fleet-wide rule that docs stay code-first, un-duplicated, and not translated in place (no stored `README.ja.md`), plus the language matrix (public → English, private → the author's language). furrow is the reference implementation.
+- [`fleet-change-policy.md`](docs/fleet-change-policy.md) — how far to verify before a change here reaches every repo (local → POC → live ammunition in `glyph-test` → canary → fleet), and an honest list of which of those stages a machine enforces and which it does not.
+- [`glyph-rollout-runbook.md`](docs/glyph-rollout-runbook.md) — the procedure for levelling the fleet on a new glyph release, including the binary `version:` pin that no `uses:`-shaped check could see until `glyph-pin-audit` grew one.
 
 The commit convention — the single source of truth for every repo — lives in
 [`CONTRIBUTING.md`](CONTRIBUTING.md).

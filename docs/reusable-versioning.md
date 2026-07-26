@@ -1,18 +1,23 @@
 # Versioning the shared reusables
 
-The reusable workflows in this repo (`taplo`, `zizmor`, `update-tap`,
-`swift-format`, `go-ci`, `go-vuln`, `design-md-lint`) and the composite actions
-(`swift-build`, `bump-formula`) are consumed by every owned repo via
-`uses: akira-toriyama/.github/.github/workflows/<name>.yml@<ref>` (or
-`…/actions/<name>@<ref>`). This is the ref policy.
+The reusable workflows and composite actions in this repo are consumed by every
+owned repo via `uses: akira-toriyama/.github/.github/workflows/<name>.yml@<ref>`
+(or `…/actions/<name>@<ref>`). **What they are is indexed in
+[`README.md`](../README.md)** — this document is only the ref policy, and keeps no
+second list to fall out of date (it already had: it named seven reusables when
+there were eight, and two composites when there were three).
 
 > `sync-task-status` RETIRED from this repo (2026-07-02): it ships with furrow
 > itself (`akira-toriyama/furrow/.github/workflows/sync-task-status.yml`) and is
-> pinned to a **concrete furrow release tag** (e.g. `@v0.5.0`), NOT a moving
-> major — the workflow installs the furrow release binary of the same version,
-> so workflow and binary cannot skew, and moving tags would collide with
-> GoReleaser's semver tag space. The old `@v1` tag here still serves stragglers
-> until fleet-sync repoints them; do not move it.
+> pinned to a **concrete furrow release tag**, NOT a moving major — the workflow
+> installs the furrow release binary of the same version, so workflow and binary
+> cannot skew, and moving tags would collide with GoReleaser's semver tag space.
+>
+> There are no stragglers left to serve here, and there is no `@v1` fallback for
+> this one: `sync-task-status.yml` was last present at `v1.0.2` and is **absent
+> from `v1.5.0`**, where the frozen `v1` points. A surviving
+> `…/.github/.github/workflows/sync-task-status.yml@v1` pin is therefore already a
+> hard "workflow was not found", not a deprecation — repoint it at furrow's tag.
 
 ## The scheme — moving `v2` + immutable `v2.x.y`
 
