@@ -40,6 +40,14 @@ line to `MANIFEST` in [`.github/workflows/fleet-sync.yml`](../.github/workflows/
   caller carries no third-party pin for a per-repo Dependabot to bump.
 - `zizmor-config.yml` → each repo's `.github/zizmor.yml` (the `unpinned-uses` policy
   the gate reads; pairs with `zizmor.yml` above).
+- `version-preview.yml` → each repo's `.github/workflows/version-preview.yml`
+  (caller stub for [glyph](https://github.com/akira-toriyama/glyph)'s `pr-verdict.yml`
+  reusable, pinned at a concrete release tag — bump it here per adopted glyph
+  release, as with `commit-lint.yml`). Posts one sticky PR comment saying what
+  merging would do to the version. Advisory: `commit-lint.yml` owns enforcement, and
+  this is deliberately not a required check. The filename deliberately does **not**
+  match the reusable it calls — the file's own header explains why, and
+  `fleet-sync.yml`'s reusable-collision guard now refuses that mistake outright.
 - `commit-convention.md` → each repo's `docs/commit-convention.md` (a universal
   pointer to the canonical [`CONTRIBUTING.md`](../CONTRIBUTING.md); carries no
   local-hook assumptions, so it fits hook-less repos too).

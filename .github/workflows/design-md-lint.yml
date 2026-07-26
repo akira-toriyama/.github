@@ -63,8 +63,12 @@ jobs:
         run: |
           set -uo pipefail
           # Lint every existing path individually (the CLI takes one FILE per call).
-          # Don't `set -e`: collect all failures so one broken file doesn't hide the
-          # findings of the others, then fail once at the end.
+          # Collect all failures so one broken file doesn't hide the findings of the
+          # others, then fail once at the end. Note what actually buys that: the
+          # `if ! npx …` wrapper below, NOT the absence of `set -e`. A plain `run:`
+          # block already executes under `bash -e {0}`, so errexit is on here no
+          # matter what this line says — a bare `npx … "$p"` would abort the loop on
+          # the first bad file.
           fail=0
           linted=0
           for p in $PATHS; do

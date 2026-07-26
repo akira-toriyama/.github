@@ -113,6 +113,11 @@ short="$(git rev-parse --short "$before")"
 
 work="$(mktemp -d)" || die "cannot create a work directory"
 tree="$work/before"
+# Invoked indirectly by the `trap cleanup EXIT` below. Both codes are needed:
+# ubuntu-latest's linter reports SC2317 on the body, a newer one reports SC2329 on
+# the declaration. (Careful: a comment line that BEGINS with the tool's name is
+# parsed as a directive, so this note deliberately does not.)
+# shellcheck disable=SC2329,SC2317
 cleanup() {
   git worktree remove --force "$tree" >/dev/null 2>&1
   rm -rf "$work"
@@ -521,6 +526,8 @@ if grep -q $'\tbites' "$work/rows.tsv"; then
   exit 0
 fi
 
+# shellcheck disable=SC2016  # single-quoted on purpose: %s is printf's, and the
+# backticks are literal text in the message.
 printf '::error::go-bite: every test this pull request adds or changes still passes against %s, the source before it. Those tests pin nothing, so the change they accompany is unproven. Make one of them fail without the change; or annotate a test that deliberately pins current behaviour with `bite-exempt: <reason>` in its doc comment; or, for a refactor that changes no behaviour at all, add a `Bite-exempt: <reason>` trailer to every commit.\n' \
   "$short" >&2
 exit 1

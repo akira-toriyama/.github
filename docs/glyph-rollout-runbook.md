@@ -2,8 +2,10 @@
 
 glyph is shared infrastructure: the commit lint, the semver verdict and the
 release notes for **every** repo come out of one binary. A rollout therefore
-touches ~24 repos, and every step below exists because it was got wrong at least
-once. Machine checks come first; this document only covers what a check cannot.
+touches the whole fleet, and every step below exists because it was got wrong at
+least once. (No repo count here on purpose — the loops print the live one:
+`glyph-pin-audit` logs `auditing N repos` and `fleet-sync` logs `candidate repos: N`.
+A hand-kept number in prose only ever disagrees with them.) Machine checks come first; this document only covers what a check cannot.
 
 This document is the **sequence**. Whether you have earned the right to run it —
 how far to verify before a change reaches the fleet at all — is
@@ -59,8 +61,8 @@ from one glyph release; there is no combination of the two that is deliberate.
 **fleet-sync's manual trigger defaults to DRY-RUN.** `workflow_dispatch` has
 `dry-run: true` by default, so a plain `gh workflow run fleet-sync.yml` reports
 `needs-sync:` / `would-set-secrets:` for every repo, exits **success**, and
-changes nothing. The default is correct — a 24-repo blind write deserves a
-safety — but "green run, zero effect" reads exactly like "already up to date".
+changes nothing. The default is correct — a safety for a fleet-wide blind write — but "green run, zero effect" reads exactly
+like "already up to date".
 Pass `-f dry-run=false`. Scheduled runs apply automatically.
 
 **Branch-protected repos get a PR, not a push.** fleet-sync tries a direct commit

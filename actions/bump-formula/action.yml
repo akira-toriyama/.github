@@ -1,10 +1,10 @@
 name: Bump Homebrew formula
 description: >-
   Mutate a Homebrew formula file in place to a new tag + source sha256
-  (repo-qualified, first-match seds; drops a stale revision; refuses a backward
-  move unless allow-downgrade). The pure file-mutation half of update-tap.yml,
-  extracted so self-test can table-test it; the git commit/push half stays in the
-  reusable. See t-kve5.
+  (repo-qualified, first-match-only rewrite; drops a stale revision; refuses a
+  backward move unless allow-downgrade, and a refusal leaves the file untouched).
+  The pure file-mutation half of update-tap.yml, extracted so self-test can
+  table-test it; the git commit/push half stays in the reusable. See t-kve5.
 
 inputs:
   formula-path:

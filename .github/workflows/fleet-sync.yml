@@ -52,7 +52,7 @@ jobs:
     runs-on: ubuntu-latest
     # Bounded: cancel-in-progress is false, so a wedged run would hold the
     # concurrency slot and block every scheduled run after it. Generous — a
-    # full 200-repo × 5-file sweep is well under this.
+    # full 200-repo sweep of the whole MANIFEST is well under this.
     timeout-minutes: 30
     steps:
       - name: Gate (dormant until configured)
@@ -154,7 +154,11 @@ jobs:
             --json name,isFork -q '.[] | select(.isFork==false) | .name' | sort)
           echo "candidate repos: ${#REPOS[@]}"
           # A transient gh/API failure inside the process substitution can't trip
-          # set -e; guard so a silently empty/short list can't no-op the whole fleet.
+          # set -e, so guard the result. This catches an EMPTY list only — a
+          # truncated one (say a single repo) still passes and quietly no-ops the
+          # rest of the fleet. Raising the floor to a hard number would be a second
+          # hand-kept fleet count to rot, so the honest fix is the read-back that
+          # t-dk1e tracks: verify what landed instead of trusting what was sent.
           [ "${#REPOS[@]}" -ge 1 ] || { echo "::error::empty repo list from gh repo list — aborting (transient API failure?)."; exit 1; }
 
           changed=0

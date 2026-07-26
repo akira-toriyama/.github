@@ -174,16 +174,62 @@ jobs:
 EOF
 )" "$(printf 'uses\tv0.11.1\t4\nversion\tv0.11.1\t10')"
 
+# The decoy key comes AFTER the real one deliberately. The scanner is
+# last-write-wins, so with the order reversed this case passes just as happily
+# without the `[ \t{,]` guard that keeps `glyph-version:` from reading as
+# `version:` — it would be named for a failure it cannot detect.
 case_ "quotes erased, glyph-version: not read as version:" "$(cat <<'EOF'
 jobs:
   release:
     steps:
       - uses: "akira-toriyama/glyph/.github/actions/install@v0.11.1"
         with:
-          glyph-version: v9.9.9
           version: "v0.11.1"
+          glyph-version: v9.9.9
 EOF
-)" "$(printf 'uses\tv0.11.1\t4\nversion\tv0.11.1\t7')"
+)" "$(printf 'uses\tv0.11.1\t4\nversion\tv0.11.1\t6')"
+
+# ---------------------------------------------------------------------------
+# Refs that are NOT a concrete release tag. Each of these produced ZERO output
+# before the `uses:` match was widened — indistinguishable, to the audit, from a
+# file with no glyph reference at all.
+# ---------------------------------------------------------------------------
+case_ "a branch ref is reported, not skipped" "$(cat <<'EOF'
+jobs:
+  lint:
+    uses: akira-toriyama/glyph/.github/workflows/lint.yml@main
+EOF
+)" "$(printf 'uses-unpinned\tmain\t3')"
+
+# The compounding case: losing the `uses:` match also dropped the block tag, so
+# the BINARY version inside the step vanished with it. A step installing a
+# three-release-old glyph off a SHA-pinned action reported nothing at all.
+case_ "a SHA-pinned install action still reports its binary version" "$(cat <<'EOF'
+jobs:
+  release:
+    steps:
+      - uses: akira-toriyama/glyph/.github/actions/install@0f9d1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f
+        with:
+          version: v0.8.0
+EOF
+)" "$(printf 'uses-unpinned\t0f9d1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f\t4\nversion\tv0.8.0\t6')"
+
+# A prerelease is not the release tag the fleet is levelled on, and the old
+# `@v[0-9][0-9.]*` match would have truncated it to `v0.11.0` and called it level.
+case_ "a prerelease tag is not mistaken for its release" "$(cat <<'EOF'
+jobs:
+  lint:
+    uses: akira-toriyama/glyph/.github/workflows/lint.yml@v0.11.0-rc.1
+EOF
+)" "$(printf 'uses-unpinned\tv0.11.0-rc.1\t3')"
+
+# A moving major would silently re-point the whole fleet on glyph's next release.
+case_ "a moving major ref is reported" "$(cat <<'EOF'
+jobs:
+  lint:
+    uses: akira-toriyama/glyph/.github/workflows/lint.yml@v0
+EOF
+)" "$(printf 'uses-unpinned\tv0\t3')"
 
 case_ "blank and comment lines do not end the step" "$(cat <<'EOF'
 jobs:
