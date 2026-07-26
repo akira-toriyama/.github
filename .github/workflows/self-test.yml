@@ -1,12 +1,16 @@
 name: self test
 
-# The hub tests its OWN Actions plumbing. Its reusable workflows (taplo.yml,
-# swift-format.yml, design-md-lint.yml, update-tap.yml, fleet-sync.yml)
-# and the actions/swift-build composite are consumed fleet-wide via @v2, but
-# until this workflow existed a change to any of them could merge GREEN WITHOUT
-# EVER RUNNING — the break surfaced only when the moving major tag moved (or,
-# for fleet-sync, the next scheduled run), by which point every caller already
-# had it. Three kinds of check close that gap, cheapest-first:
+# The hub tests its OWN Actions plumbing. Its reusable workflows and composite
+# actions — indexed in README.md, not re-listed here, because the copy that used
+# to be here named fleet-sync.yml (which is not a reusable and is consumed by
+# nobody) and omitted four that are — ship fleet-wide via @v2. Until this workflow
+# existed a change to any of them could merge GREEN WITHOUT EVER RUNNING; the
+# break surfaced only when the moving major tag moved, by which point every caller
+# already had it. fleet-sync.yml is here for the same reason by a different route:
+# it is not consumed, but it runs on a daily schedule against every repo, so its
+# first execution after a merge is already fleet-wide.
+#
+# Four kinds of check close that gap, cheapest-first:
 #
 #   actionlint  — static-lints the hub's own workflow files (YAML / expression /
 #                 shellcheck). It bundles shellcheck for `run:` blocks and
@@ -33,6 +37,14 @@ name: self test
 #                 deliberately out of scope. And because a reusable skip-passes on
 #                 a missing path, smoke-fixtures-present guards against a moved
 #                 fixture turning a smoke vacuously green.
+#   *-test        — table tests over the logic EXTRACTED out of `run:` blocks
+#                   (tests/*.test.sh), plus the hub's own bookkeeping invariants
+#                   (fleet-manifest-test). Extraction is what made that logic
+#                   testable; it also moved it out of actionlint's reach, so the
+#                   shellcheck step above covers scripts/, actions/ and tests/
+#                   directly. posix-portability re-runs the pure-shell tables on
+#                   macOS, because the author's machine is the one place these
+#                   have to be debuggable by hand.
 #
 # Precondition (t-h0sc): the two intentional word-splits carry line-scoped
 # `# shellcheck disable=SC2086` (added in the workflow-hygiene batch t-zb2r), so
@@ -63,6 +75,13 @@ on:
       # does not read scripts/ — without this line an edit to it would merge
       # unexercised, which is the exact hole this workflow exists to close.
       - 'scripts/**'
+      # The canonical files fleet-sync distributes. They are complete workflows
+      # bound for every owned repo, yet nothing here used to look at them: actionlint's
+      # no-argument default is `.github/workflows/**`, and this filter did not
+      # name them either — so a syntax error in one could merge and ship. They
+      # are also what fleet-manifest.test.sh and apply-repo-settings.test.sh read
+      # as their source of truth, so an edit here must re-run those.
+      - 'fleet/**'
       # smoke-taplo lints the WHOLE repo (taplo.yml has no path input), so any
       # *.toml change should re-run it — an unclean file then fails on ITS OWN PR
       # rather than being admitted silently and reddening a later unrelated one.
@@ -106,6 +125,32 @@ jobs:
           command -v shellcheck >/dev/null \
             || { echo "::error::shellcheck not on runner — actionlint would skip run: checks"; exit 1; }
           ./actionlint -color
+          # The fleet canonicals are complete workflows bound for every repo, but
+          # they live under fleet/ and actionlint's no-argument default only walks
+          # `.github/workflows/**` — so until this line they were the least-linted
+          # workflow files in the repo and the most widely distributed. Named
+          # explicitly rather than globbed: fleet/dependabot.yml and
+          # fleet/zizmor-config.yml are configs, not workflows, and actionlint
+          # syntax-errors on them.
+          ./actionlint -color \
+            fleet/commit-lint.yml \
+            fleet/task-status.yml \
+            fleet/taplo.yml \
+            fleet/version-preview.yml \
+            fleet/zizmor.yml
+
+      # Standalone shell scripts are NOT covered by the actionlint run above:
+      # actionlint shellchecks `run:` blocks inside workflow files and never opens
+      # scripts/ or tests/. Extracting logic out of a `run:` block to make it
+      # testable therefore silently dropped it out of shellcheck's reach — and
+      # that is where the fleet-mutating code now lives.
+      - name: Shellcheck the standalone scripts
+        run: |
+          set -euo pipefail
+          shellcheck --shell=bash \
+            scripts/*.sh \
+            actions/*/*.sh \
+            tests/*.test.sh
 
   # Actions-specific security lint as a HARD PR gate. This DOGFOODS the reusable the
   # hub distributes to the fleet (zizmor.yml, t-qbp1): calling it via `uses: ./`
@@ -154,8 +199,10 @@ jobs:
             tests/fixtures/swift/Fixture.swift \
             tests/fixtures/tap/plain.rb \
             tests/fixtures/tap/with-resource.rb \
+            tests/fixtures/tap/with-own-resource.rb \
             tests/fixtures/tap/with-revision.rb \
             tests/fixtures/tap/with-head.rb \
+            tests/fixtures/tap/double-digit-minor.rb \
             tests/fixtures/tap/mismatched-url.rb; do
             # -s (non-empty), not just -f: an emptied fixture is as vacuous as a
             # missing one — taplo/design-md/swift-format would all no-op-pass on it.
@@ -169,8 +216,9 @@ jobs:
 
   # Reusable smoke tests — RUN each of the three cheap/deterministic reusables via
   # `uses: ./` against its fixture so a break in the reusable's own runtime (bad
-  # tool call, input handling) fails here at PR time, not in a caller after the v1
-  # tag moves. Each fixture is kept tool-clean and documents its contract under
+  # tool call, input handling) fails here at PR time, not in a caller after the
+  # moving `v2` tag moves (`v1` is frozen and must never move). Each fixture is
+  # kept tool-clean and documents its contract under
   # tests/fixtures/ (existence enforced by smoke-fixtures-present above).
   smoke-taplo:
     # taplo.yml takes no path input — it lints the whole checked-out repo, so the
@@ -226,14 +274,37 @@ jobs:
           sha: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
           repo: akira-toriyama/facet
           formula: facet
-      - name: Assert the wrapper mutated the fixture
+      # `allow-downgrade` is the one input the forward bump above never routes:
+      # bump-formula.sh reads it only on a backward move, so deleting its line from
+      # action.yml's env: block leaves this whole job green and breaks nothing but
+      # production rollbacks. Roll the fixture back so every declared input travels
+      # through the wrapper at least once.
+      - name: Run the composite again, rolling back
+        uses: ./actions/bump-formula
+        with:
+          formula-path: tests/fixtures/tap/plain.rb
+          tag: v1.0.0
+          sha: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+          repo: akira-toriyama/facet
+          formula: facet
+          allow-downgrade: "true"
+      # Assert something the script cannot assert about itself. Re-running its own
+      # post-condition greps proves nothing: bump-formula.sh already exits 1 unless
+      # they hold, so the composite step above fails first in every case this could
+      # catch. That the FIXTURE CHANGED is the wrapper's own contract — it is what
+      # goes wrong when action.yml stops mapping an input into the environment.
+      - name: Assert the wrapper actually mutated the fixture
         run: |
           set -euo pipefail
-          grep -q "github.com/akira-toriyama/facet/archive/refs/tags/v2.0.0.tar.gz" tests/fixtures/tap/plain.rb
-          grep -q 'sha256 "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"' tests/fixtures/tap/plain.rb
+          if git diff --quiet -- tests/fixtures/tap/plain.rb; then
+            echo "::error::the composite left tests/fixtures/tap/plain.rb untouched — the wrapper did not run the script"
+            exit 1
+          fi
+          grep -q "github.com/akira-toriyama/facet/archive/refs/tags/v1.0.0.tar.gz" tests/fixtures/tap/plain.rb
+          grep -q 'sha256 "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"' tests/fixtures/tap/plain.rb
 
   # RUN the pin extractor over a case table (the real .sh). glyph-pin-audit.yml
-  # reads every workflow in ~36 repos through this script, and it is the only
+  # reads every workflow in every owned repo through this script, and it is the only
   # thing standing between "the fleet is level" and a lie — a parser regression
   # here does not fail loudly, it silently stops SEEING a pin, which is
   # indistinguishable from a level fleet. The table pins that distinction.
@@ -247,6 +318,63 @@ jobs:
           persist-credentials: false
       - name: Table-test glyph-pin-scan
         run: bash tests/glyph-pin-scan.test.sh
+
+  # The hub's own bookkeeping, which until now lived only in prose: that every
+  # MANIFEST src exists, that no dest collides with a glyph reusable definition,
+  # that every canonical is both distributed AND documented, that dependabot.d
+  # blocks and their probe pairs agree, and that the hand-maintained
+  # .github/workflows/task-status.yml still matches fleet/task-status.yml below
+  # the provenance header. fleet-sync EXCLUDEs `.github`, so nothing will ever
+  # reconcile that last pair on its own — CLAUDE.md said "nothing in CI guards
+  # this", and this job is that guard.
+  fleet-manifest-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Check the fleet manifest invariants
+        run: bash tests/fleet-manifest.test.sh
+
+  # RUN the fleet-wide settings script against a stubbed `gh`. It is the only
+  # thing here that mutates state across every repo, it had no test at all, and
+  # its branch-protection detector spent two weeks matching zero repos while
+  # exiting 0. The table seeds its caller fixture FROM fleet/commit-lint.yml, so a
+  # future repoint of the canonical cannot silently disarm the detector again.
+  apply-repo-settings-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Table-test apply-repo-settings
+        run: bash tests/apply-repo-settings.test.sh
+
+  # The same three pure-shell tables on macOS. Not redundancy: the author's
+  # machine is macOS with a BSD userland, so a GNU-only construct here means the
+  # only local way to see this logic run is unavailable exactly when it is needed.
+  # That was not hypothetical — bump-formula.sh used GNU `sed -i` with the
+  # `0,/re/` address and its table failed 5 of 8 cases locally while passing in
+  # CI, so the one check that could catch a formula-mutation bug before it reached
+  # a tap could not be run by the person writing the change. Cheap: all three are
+  # sub-second, and go-bite (which needs Go and builds throwaway repos) stays
+  # linux-only.
+  posix-portability:
+    runs-on: macos-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: The shell tables must pass on a BSD userland too
+        run: |
+          set -euo pipefail
+          bash tests/bump-formula.test.sh
+          bash tests/glyph-pin-scan.test.sh
+          bash tests/fleet-manifest.test.sh
+          bash tests/apply-repo-settings.test.sh
 
   # RUN the go-bite gate over a case table (the real .sh) so a break fails HERE, not
   # in a fleet caller after @v2 moves. Each case builds a throwaway Go repo under
@@ -294,22 +422,62 @@ jobs:
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           set -uo pipefail
-          before="$(git merge-base "$BASE_SHA" "$HEAD_SHA")"
+          before="$(git merge-base "$BASE_SHA" "$HEAD_SHA")" \
+            || { echo "::error::no merge base for $BASE_SHA..$HEAD_SHA — cannot reconstruct the pre-change gate"; exit 1; }
+          [ -n "$before" ] \
+            || { echo "::error::empty merge base — cannot reconstruct the pre-change gate"; exit 1; }
           if git diff --quiet "$before" "$HEAD_SHA" -- actions/go-bite tests/go-bite.test.sh; then
             echo "::notice::go-bite itself is untouched — nothing to prove"
             exit 0
           fi
-          waiver="$(git log --format='%B' "$before..$HEAD_SHA" | sed -n 's/^Bite-exempt:[[:space:]]*//p' | sed -n '1p')"
-          if [ -n "$waiver" ]; then
-            echo "::notice::waived by a commit footer — $waiver"
+
+          # Parse the waiver EXACTLY as the gate parses it: a real git trailer, on
+          # EVERY commit in the range. The `git log | sed -n 's/^Bite-exempt:…//p'`
+          # this replaces accepted a bare line anywhere in any ONE commit message —
+          # which is precisely the shape tests/go-bite.test.sh pins as a NON-waiver.
+          # The gate guarding the gate was the easier of the two to walk past.
+          waiver=""
+          waived=0
+          commits="$(git rev-list --no-merges "$before..$HEAD_SHA")"
+          if [ -n "$commits" ]; then
+            waived=1
+            for commit in $commits; do
+              line="$(git show -s --format=%B "$commit" | git interpret-trailers --parse | grep '^Bite-exempt:' | sed -n '1p')"
+              if [ -z "$line" ]; then waived=0; break; fi
+              waiver="$(printf '%s' "${line#Bite-exempt:}" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+            done
+          fi
+          if [ "$waived" -eq 1 ] && [ -n "$waiver" ]; then
+            echo "::notice::waived by a Bite-exempt trailer on every commit — $waiver"
             exit 0
           fi
-          # The pre-change gate, judged by the post-change table. A brand-new gate has
-          # no pre-change version at all, and the table reports that as a failure — the
-          # same "it could not have passed before" evidence go-bite counts as a bite.
-          git checkout "$before" -- actions/go-bite 2>/dev/null || rm -rf actions/go-bite
-          if bash tests/go-bite.test.sh; then
-            echo "::error::the go-bite table passes against the PRE-CHANGE gate — the new cases pin nothing. Add a case that fails without this change, or waive it with a \`Bite-exempt: <reason>\` commit footer."
+
+          # Reconstruct the pre-change gate. A brand-new gate has no pre-change
+          # version at all — a distinct, expected case, asked about directly rather
+          # than inferred from a failed checkout. The blanket `|| rm -rf` this
+          # replaces fired on ANY checkout error, so an unresolvable ref deleted the
+          # gate and the resulting abort was then reported as proof that it bites.
+          if git cat-file -e "$before:actions/go-bite/go-bite.sh" 2>/dev/null; then
+            git checkout "$before" -- actions/go-bite \
+              || { echo "::error::could not restore actions/go-bite at $before"; exit 1; }
+          else
+            echo "::notice::no gate at $before — a brand-new gate could not have passed before, by definition"
+            rm -rf actions/go-bite
+          fi
+
+          out="$(bash tests/go-bite.test.sh 2>&1)"; rc=$?
+          printf '%s\n' "$out"
+          if [ "$rc" -eq 0 ]; then
+            echo "::error::the go-bite table passes against the PRE-CHANGE gate — the new cases pin nothing. Add a case that fails without this change, or waive it with a \`Bite-exempt: <reason>\` commit trailer on every commit."
+            exit 1
+          fi
+          # Non-zero alone is not evidence: the harness also aborts non-zero on a
+          # missing script or a broken environment. Require a NAMED failing case —
+          # except on the brand-new-gate path, where there is no script to run.
+          # (Herestring, not a pipe: `printf … | grep -q` under pipefail is the
+          # SIGPIPE false-negative this repo keeps a dedicated guard case for.)
+          if [ -d actions/go-bite ] && ! grep -q '^FAIL - ' <<<"$out"; then
+            echo "::error::the table exited $rc against the pre-change gate but named no failing case — that is an environment error, not a bite."
             exit 1
           fi
           echo "::notice::the gate's own tests bite"

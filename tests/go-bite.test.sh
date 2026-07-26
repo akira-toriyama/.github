@@ -670,14 +670,18 @@ expect 0 "a vacuous test beside a biting one is reported, not hidden" \
 # Linux and 16 KiB on macOS, so a fixture that reproduces it on one runner can
 # pass vacuously on another — and a gate case that only sometimes tests
 # something is worse than one that says what it means.
-if grep -nE 'printf .%s. "\$out" \| *grep' "$script" >/tmp/go-bite-pipe-search.txt; then
+# A private temp file, not a fixed /tmp path: a world-writable well-known name is
+# both a symlink target and a collision between two concurrent runs.
+pipe_hits="$(mktemp)"
+# shellcheck disable=SC2016  # the pattern is literal source text being searched for
+if grep -nE 'printf .%s. "\$out" \| *grep' "$script" >"$pipe_hits"; then
   echo "FAIL - the gate searches \$out through a pipe (SIGPIPE + pipefail reads a match as a miss)"
-  sed 's/^/       /' /tmp/go-bite-pipe-search.txt
+  sed 's/^/       /' "$pipe_hits"
   fails=$((fails + 1))
 else
   echo "ok   - the gate searches its captured output without a pipe"
 fi
-rm -f /tmp/go-bite-pipe-search.txt
+rm -f "$pipe_hits"
 
 # The gate needs the base commit in the checkout; a shallow clone must say so
 # rather than guess.
