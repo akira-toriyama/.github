@@ -43,6 +43,14 @@ Opt-in (need per-repo judgement, hence flags):
   already requires it (e.g. `canon`) are skipped. `PROTECT_REPOS` is an allowlist so
   the merge-blocking check stays on the intended app repos, not every repo that
   gained a commit-lint caller via a fleet-sync gap-fill.
+  A repo counts as having a caller when its `.github/workflows/commit-lint.yml`
+  carries the `uses:` line that [`fleet/commit-lint.yml`](../fleet/commit-lint.yml)
+  distributes — read from that file at run time, not restated in the script. If it
+  matches **zero** repos the run now fails loudly instead of reporting a clean
+  sweep: between #82 and this change the detector still named the hub's own retired
+  reusable, so every repo printed `skip(protection)` and nothing was ever applied.
+  [`tests/apply-repo-settings.test.sh`](../tests/apply-repo-settings.test.sh) seeds
+  its fixture from the canonical, so the next repoint cannot disarm it again.
 - `WITH_IMMUTABLE=1` — enable immutable releases on the release repos
   (`RELEASE_REPOS`). Now safe: `release.yml` was hardened first — see below.
 - `WITH_CODEQL_GO=1` — add CodeQL **`go`** (compiled) analysis on the Go repos

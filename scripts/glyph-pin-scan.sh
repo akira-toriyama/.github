@@ -2,7 +2,10 @@
 # Read ONE workflow / action YAML on stdin; write every glyph pin it declares to
 # stdout as TAB-separated records, one per line:
 #
-#   uses                <tag>         <line>   a real `uses:` of akira-toriyama/glyph/…@vX.Y.Z
+#   uses                <tag>         <line>   a `uses:` of akira-toriyama/glyph/…@vX.Y.Z
+#   uses-unpinned       <ref>         <line>   … pinned to something that is NOT a release
+#                                              tag: a branch, a commit SHA, a moving
+#                                              major, or a prerelease
 #   version             <tag>         <line>   the literal `version:` a glyph install step passes
 #   version-missing     <action-tag>  <line>   … that step passes no `version:` at all
 #   version-unreadable  <action-tag>  <line>   … it passes one this scanner cannot resolve
@@ -42,6 +45,16 @@
 # scanner cannot read a literal version out of is reported (version-missing /
 # version-unreadable), never passed over. An unreadable pin and a correct pin
 # must not look alike — that indistinguishability is the whole bug this closes.
+#
+# The `uses:` half held the same bug one level up until it was widened to match
+# ANY ref and classify it afterwards. Matching `@v[0-9]…` directly meant a glyph
+# reference pinned to `@main`, to a commit SHA, or to a prerelease produced NO
+# record at all — indistinguishable from a file with no glyph reference in it, so
+# the audit called the fleet level. Worse, on an install step the same match set
+# the block tag, so losing the `uses:` silently discarded the BINARY pin inside it
+# too: a step installing an ancient glyph off a SHA-pinned action reported nothing
+# whatsoever. Everything glyph-shaped now emits a record; only the classification
+# varies.
 # glyph's OWN reusables are not affected: they reach the composite by relative
 # path (`./.glyph-action/…`), which never matches, so their computed
 # `version: ${{ steps.glyph.outputs.version }}` is invisible here by construction.
@@ -80,12 +93,22 @@ function emit(   ) {
   # …so a list nested INSIDE a step (still deeper) is not a new step.
   if (isitem && !inblock) { inblock = 1; curind = ind }
 
-  if (match(line, /uses:[ \t]*akira-toriyama\/glyph\/[^@ \t]*@v[0-9][0-9.]*/)) {
+  # Match ANY ref, then classify — see FAIL LOUD above. `[^ \t]+` runs to the end
+  # of the value; comments and quotes are already gone by here.
+  if (match(line, /uses:[ \t]*akira-toriyama\/glyph\/[^@ \t]*@[^ \t]+/)) {
     ref = substr(line, RSTART, RLENGTH)
     tag = ref; sub(/^.*@/, "", tag)
-    print "uses\t" tag "\t" NR
+    # A concrete release tag, and nothing else: not `@main`, not a SHA, not a
+    # moving `@v0`, not `v0.11.0-rc.1`. The convention is that a glyph workflow
+    # and the binary it installs ship lockstep from ONE release tag, so anything
+    # that can move out from under the audit is drift by definition.
+    # (No apostrophes in here: this awk program is a single-quoted shell string.)
+    if (tag ~ /^v[0-9]+\.[0-9]+\.[0-9]+$/) print "uses\t" tag "\t" NR
+    else                                   print "uses-unpinned\t" tag "\t" NR
     # Only the install composite carries a binary version; the reusable
-    # workflows derive theirs from the tag the caller pinned.
+    # workflows derive theirs from the tag the caller pinned. Recorded whatever
+    # the ref turned out to be, so an unreadable action ref does not also hide
+    # the version: pin sitting inside its step.
     if (ref ~ /\/\.github\/actions\/install@/) { blocktag = tag; blocktagline = NR }
   }
 

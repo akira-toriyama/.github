@@ -34,9 +34,13 @@
 #
 # Failure is the point: this reports via exit status, so the scheduled run turns
 # red and stays red until the fleet is level again. Bump a pin by editing
-# fleet/commit-lint.yml + fleet/version-preview.yml and running fleet-sync, then
-# open per-repo PRs for the install action, the version it installs, and any
-# release.yml caller — those are NOT fleet-managed.
+# fleet/commit-lint.yml + fleet/version-preview.yml AND the hub's own
+# hand-maintained .github/workflows/self-commit-lint.yml (fleet-sync EXCLUDEs the
+# hub, so nothing syncs that one — and this audit scans .github like any other
+# repo, so leaving it behind turns the audit red; tests/fleet-manifest.test.sh now
+# fails first). Then run fleet-sync, and open per-repo PRs for the install action,
+# the version it installs, and any release.yml caller — those are NOT
+# fleet-managed.
 
 name: glyph-pin-audit
 
@@ -92,9 +96,12 @@ jobs:
           drift=0
           for repo in "${REPOS[@]}"; do
             full="$OWNER/$repo"
-            # glyph itself DEFINES the reusables; it has no caller pins to audit
-            # beyond the ones fleet-sync gives it, and its commented stubs would
-            # otherwise dominate the report.
+            # glyph is audited like every other repo. It reaches its own composite
+            # by relative path (`./.glyph-action/…`), which never matches, and the
+            # commented caller stubs its reusables ship are skipped as comments by
+            # the extractor — so the pins left to see are the ones fleet-sync gave
+            # it, which is exactly what should be checked. (A comment here used to
+            # claim glyph was excluded; no code ever excluded it.)
             tree="$(gh api "repos/$full/git/trees/HEAD?recursive=1" --jq \
               '.tree[] | select(.path | startswith(".github/")) | select(.path | test("\\.ya?ml$")) | .path' 2>/dev/null || true)"
             [ -n "$tree" ] || continue
@@ -111,6 +118,13 @@ jobs:
                       echo "::error::$full $path:$line pins glyph $ref — canonical is $want"
                       drift=$((drift + 1))
                     fi
+                    ;;
+                  uses-unpinned)
+                    # A branch, a SHA, a moving major or a prerelease. Whatever it
+                    # resolves to today it can resolve to something else tomorrow,
+                    # so it is drift even when it currently points at $want.
+                    echo "::error::$full $path:$line references glyph at '$ref', which is not a concrete release tag — canonical is $want"
+                    drift=$((drift + 1))
                     ;;
                   version)
                     # The workflow file can be entirely current and this still

@@ -47,10 +47,24 @@ GO_REPOS="${GO_REPOS:-cifail pare furrow glyph}"
 # repos only (not every repo that gained a caller via a fleet-sync gap-fill).
 PROTECT_REPOS="${PROTECT_REPOS:-}"
 
+here="$(cd "$(dirname "$0")" && pwd)"
+root="$(dirname "$here")"
+
+# Every mutation that failed, across every repo. A fleet-wide run makes hundreds
+# of calls and prints hundreds of lines; without a tally the operator has to read
+# all of them to notice that (say) an expired token 403'd every single one, and
+# the script would still exit 0 under "done (mode: APPLY)".
+failures=0
+
 run() { # echo + (apply) a gh api mutation
   local desc="$1"; shift
   if [ "$APPLY" = "1" ]; then
-    if "$@" >/dev/null 2>&1; then echo "    applied: $desc"; else echo "    ::FAILED:: $desc"; fi
+    if "$@" >/dev/null 2>&1; then
+      echo "    applied: $desc"
+    else
+      echo "    ::FAILED:: $desc"
+      failures=$((failures + 1))
+    fi
   else
     echo "    would: $desc"
   fi
@@ -72,6 +86,25 @@ ruleset_requires() {
 mapfile -t REPOS < <(gh repo list "$OWNER" --no-archived --source --limit 200 \
   --json name,isFork,visibility -q '.[] | select(.isFork==false) | "\(.name)\t\(.visibility)"' | sort)
 [ "${#REPOS[@]}" -ge 1 ] || { echo "::error:: empty repo list (transient API failure?)"; exit 1; }
+
+# The `uses:` line fleet-sync actually distributes as each repo's commit-lint
+# caller, DERIVED from the canonical rather than restated here. The literal that
+# used to live at the detector below still named the hub's own commit-lint
+# reusable, which #82 repointed at glyph on 2026-07-12 and #111 later deleted —
+# so for two weeks every repo failed the match, every repo printed
+# "skip(protection)", and WITH_PROTECTION=1 applied nothing while exiting 0.
+# Reading the canonical means the next repoint moves this with it.
+commit_lint_uses="$(awk '$1 == "uses:" && $2 ~ /^akira-toriyama\// { sub(/@.*$/, "", $2); print $2; exit }' \
+  "$root/fleet/commit-lint.yml")"
+[ -n "$commit_lint_uses" ] || {
+  echo "::error:: could not read the caller \`uses:\` from $root/fleet/commit-lint.yml"
+  echo "          without it the protection detector matches nothing and skips the whole fleet silently"
+  exit 1
+}
+# Escape for ERE: the path is full of dots that would otherwise be wildcards.
+commit_lint_re="${commit_lint_uses//./[.]}"
+protection_considered=0
+protection_matched=0
 
 echo "mode: $([ "$APPLY" = 1 ] && echo APPLY || echo DRY-RUN)  token-flip=$WITH_TOKEN_FLIP protection=$WITH_PROTECTION immutable=$WITH_IMMUTABLE codeql-go=$WITH_CODEQL_GO"
 echo
@@ -188,43 +221,49 @@ for line in "${REPOS[@]}"; do
   fi
 
   # 6) branch protection: make "lint / lint" a required check (admin bypass).
-  #    A real caller has a `uses: …/commit-lint.yml@` line (job `lint` ⇒ context
-  #    "lint / lint"); the hub's commit-lint.yml is the REUSABLE (on: workflow_call,
-  #    no caller line) so it is correctly skipped. For already-protected repos we
-  #    PATCH only the status-check contexts (preserving enforce_admins / force-push
-  #    / strict / reviews — a full PUT would reset allow_force_pushes etc.). For
-  #    unprotected repos we PUT a fresh config matching the .github reference. Repos
-  #    whose ruleset already requires it, or outside PROTECT_REPOS, are skipped.
+  #    A real caller is the file fleet-sync distributes (fleet/commit-lint.yml,
+  #    job `lint` calling glyph's reusable ⇒ context "lint / lint"). The hub itself
+  #    never appears here: fleet-sync EXCLUDEs `.github`, and its hand-maintained
+  #    self-commit-lint.yml uses job id `commit-lint` ⇒ a different context.
+  #    For already-protected repos we PATCH only the status-check contexts
+  #    (preserving enforce_admins / force-push / strict / reviews — a full PUT
+  #    would reset allow_force_pushes etc.). For unprotected repos we PUT a fresh
+  #    config matching the .github reference. Repos whose ruleset already requires
+  #    it, or outside PROTECT_REPOS, are skipped.
   if [ "$WITH_PROTECTION" = "1" ] && { [ -z "$PROTECT_REPOS" ] || in_list "$R" "$PROTECT_REPOS"; }; then
     want="lint / lint"
+    protection_considered=$((protection_considered + 1))
     cl=$(gh api -H "Accept: application/vnd.github.raw" \
       "repos/$full/contents/.github/workflows/commit-lint.yml" 2>/dev/null || true)
-    if ! printf '%s' "$cl" | grep -qE '^[[:space:]]*uses:[[:space:]]*akira-toriyama/\.github/\.github/workflows/commit-lint\.yml@'; then
+    if ! printf '%s' "$cl" | grep -qE "^[[:space:]]*uses:[[:space:]]*${commit_lint_re}@"; then
       echo "    skip(protection): no commit-lint caller in $R"
-    elif ruleset_requires "$full" "$want"; then
-      echo "    ok: a ruleset already requires '$want' in $R"
     else
-      prot=$(gh api "repos/$full/branches/main/protection" 2>/dev/null) || prot=""
-      if [ -n "$prot" ]; then
-        existing=$(printf '%s' "$prot" | jq -r '(.required_status_checks.contexts // [])[]' 2>/dev/null || true)
-        if printf '%s\n' "$existing" | grep -qxF "$want"; then
-          echo "    ok: branch protection already requires '$want'"
-        else
-          strict=$(printf '%s' "$prot" | jq -r '.required_status_checks.strict // false' 2>/dev/null)
-          merged=$(printf '%s\n%s\n' "$existing" "$want" | sed '/^$/d' | sort -u | jq -R . | jq -sc .)
-          patch=$(jq -nc --argjson ctx "$merged" --argjson strict "$strict" '{strict:$strict, contexts:$ctx}')
-          run "protection(PATCH): require [$(printf '%s' "$merged" | jq -r 'join(", ")')] (preserve other settings)" \
-            gh api -X PATCH "repos/$full/branches/main/protection/required_status_checks" --input - <<<"$patch"
-        fi
+      protection_matched=$((protection_matched + 1))
+      if ruleset_requires "$full" "$want"; then
+        echo "    ok: a ruleset already requires '$want' in $R"
       else
-        body=$(jq -nc '{
-          required_status_checks:{strict:false, contexts:["lint / lint"]},
-          enforce_admins:false, required_pull_request_reviews:null, restrictions:null,
-          allow_force_pushes:false, allow_deletions:false,
-          required_linear_history:false, required_conversation_resolution:false
-        }')
-        run "protection(PUT new): require [lint / lint] (admin bypass, .github template)" \
-          gh api -X PUT "repos/$full/branches/main/protection" --input - <<<"$body"
+        prot=$(gh api "repos/$full/branches/main/protection" 2>/dev/null) || prot=""
+        if [ -n "$prot" ]; then
+          existing=$(printf '%s' "$prot" | jq -r '(.required_status_checks.contexts // [])[]' 2>/dev/null || true)
+          if printf '%s\n' "$existing" | grep -qxF "$want"; then
+            echo "    ok: branch protection already requires '$want'"
+          else
+            strict=$(printf '%s' "$prot" | jq -r '.required_status_checks.strict // false' 2>/dev/null)
+            merged=$(printf '%s\n%s\n' "$existing" "$want" | sed '/^$/d' | sort -u | jq -R . | jq -sc .)
+            patch=$(jq -nc --argjson ctx "$merged" --argjson strict "$strict" '{strict:$strict, contexts:$ctx}')
+            run "protection(PATCH): require [$(printf '%s' "$merged" | jq -r 'join(", ")')] (preserve other settings)" \
+              gh api -X PATCH "repos/$full/branches/main/protection/required_status_checks" --input - <<<"$patch"
+          fi
+        else
+          body=$(jq -nc --arg want "$want" '{
+            required_status_checks:{strict:false, contexts:[$want]},
+            enforce_admins:false, required_pull_request_reviews:null, restrictions:null,
+            allow_force_pushes:false, allow_deletions:false,
+            required_linear_history:false, required_conversation_resolution:false
+          }')
+          run "protection(PUT new): require [$want] (admin bypass, .github template)" \
+            gh api -X PUT "repos/$full/branches/main/protection" --input - <<<"$body"
+        fi
       fi
     fi
   fi
@@ -241,3 +280,23 @@ done
 
 echo
 echo "done (mode: $([ "$APPLY" = 1 ] && echo APPLY || echo DRY-RUN))."
+
+# Fail loud on the two ways this script has silently done nothing.
+#
+# A detector that matches ZERO repos is the shape of bug that hid here for two
+# weeks: it is indistinguishable, in the log, from a fleet that is simply already
+# compliant. Every repo carrying a caller is the norm — fleet-sync puts one in all
+# of them — so zero matches out of a non-empty candidate list means the caller's
+# shape moved, not that the fleet stopped using commit-lint.
+rc=0
+if [ "$WITH_PROTECTION" = "1" ] && [ "$protection_considered" -gt 0 ] && [ "$protection_matched" -eq 0 ]; then
+  echo "::error:: WITH_PROTECTION=1 examined $protection_considered repo(s) and matched NONE."
+  echo "          Expected \`uses: $commit_lint_uses@…\` (read from fleet/commit-lint.yml)."
+  echo "          Either the fleet has not been synced with that caller, or the canonical moved again."
+  rc=1
+fi
+if [ "$failures" -gt 0 ]; then
+  echo "::error:: $failures mutation(s) FAILED — see the ::FAILED:: lines above."
+  rc=1
+fi
+exit "$rc"
