@@ -111,9 +111,7 @@ than failing.
 ### Body (optional)
 
 - **English**; explain the *why* and *how*.
-- When a body is present, end it with a `---（和訳）` separator and add a
-  Japanese translation of both the subject and the body (same content).
-- A subject-only commit needs no body and no translation.
+- A subject-only commit needs no body.
 
 ### Footer (optional)
 
@@ -139,11 +137,6 @@ be able to buy a major release.
 :bug:(config) keep defaults when an unknown key is present
 
 Unknown keys used to reset the ring; now they are ignored per spec.
-
----（和訳）
-:bug:(config) 未知のキーがあってもデフォルトを保持する
-
-未知のキーは以前リングをリセットしていたが、仕様どおり無視するようにした。
 ```
 
 ```
