@@ -1,0 +1,215 @@
+# Fleet audit: glyph's covered-pull trap must never arm — and the day it does,
+# something red must exist that a human cannot miss.
+#
+# The trap. During the release walk, a commit that landed via a merged pull
+# stands aside for that pull's merge commit (the covered pull, docs/glossary.md
+# in glyph). Resolving the merge point asks who AUTHORED the merge commit, and
+# glyph's internal/bump/bump.go ExcludedFromResolution skips `*[bot]`,
+# `github-actions*` and `web-flow` — so a pull merged BY AN AUTOMATION with a
+# real merge commit (`gh pr merge --merge`) is never expanded: the pull's whole
+# contribution vanishes from both the version and the notes. glyph prints a
+# warning (internal/cli/sincetag.go, the coveredOrder reconciliation) and
+# deliberately does not guess — expanding from the pull's API listing
+# double-counted rebased SHAs and resurrected released work (t-7zt7). A warning
+# in a green release job is read by nobody; that is what this audit replaces.
+#
+# Both halves started green (measured 2026-07-22 and re-measured 2026-07-26:
+# zero bot-authored merges since any latest release; the fleet's one live
+# `gh pr merge` is glossary-site's `--auto --squash`, harmless). Arming takes
+# ONE WORD — a workflow gaining `--merge` or `--rebase` — so a red here is a
+# real, new arming, not noise (t-q0jv ratified watching instead of changing
+# the resolution gate).
+#
+# What it checks, both through scripts/covered-pull-scan.sh (table-tested by
+# tests/covered-pull-scan.test.sh — every arming shape there is a positive
+# control, because both halves assert an absence and a matcher that silently
+# stops matching reads exactly like a clean fleet):
+#
+#   1. the COMMIT, after the fact: any commit since a repo's latest release
+#      with two or more parents and an excluded author. That window is
+#      approximately the next release walk's range, so a hit means the NEXT
+#      release will silently drop a pull — red before the damage ships.
+#   2. the WORD, before the commit exists: any fleet workflow invoking
+#      `gh pr merge` with `--merge`/`--rebase` (or a strategy the scanner
+#      cannot read — fail loud, not open). This catches the arming edit at
+#      the day it lands, even if no pull has been merged through it yet.
+#
+# THE AUDITOR MUST SEE WHAT THE WRITER WRITES. Same lesson as
+# glyph-pin-audit.yml, learned 2026-07-28: the default GITHUB_TOKEN sees no
+# private repos, and this fleet has six — an audit run on it would call 29
+# repos "the fleet" and green a trap armed in the other six. Hence the SAME
+# credential as fleet-sync, a hard failure when it is absent, and the
+# private-repo canary asserting the wider view is in effect.
+#
+# Failure is the point: this reports via exit status, so the scheduled run
+# turns red and stays red until the arming is reverted (or, if the strategy is
+# ever intended, until t-q0jv's decision is revisited — do not "fix" this audit
+# to be quieter).
+
+name: glyph-covered-pull-audit
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '45 6 * * *' # daily, after fleet-sync (06:00) and glyph-pin-audit (06:30)
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/glyph-covered-pull-audit.yml'
+      # The extractor IS the audit's eyesight — a change to it must re-run.
+      - 'scripts/covered-pull-scan.sh'
+
+concurrency:
+  group: glyph-covered-pull-audit
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Find anything that arms or has armed the covered-pull trap
+        env:
+          # fleet-sync's writing credential, NOT github.token — the default
+          # token sees no private repos, and an audit over a subset reports
+          # "trap is dormant" about a fleet it cannot see (see header).
+          GH_TOKEN: ${{ secrets.FLEET_SYNC_PAT }}
+          OWNER: akira-toriyama
+        run: |
+          set -euo pipefail
+
+          # Fail loud, not open: without the PAT this audit would still run,
+          # see only public repos, and hand out a green that claims less than
+          # it appears to (glyph-pin-audit.yml, same rule, same incident).
+          [ -n "${GH_TOKEN:-}" ] || { echo "::error::FLEET_SYNC_PAT is not set — refusing to audit with a public-only view (it would silently exclude every private repo)."; exit 1; }
+
+          repo_rows="$(gh repo list "$OWNER" --no-archived --source --limit 200 \
+            --json name,isFork,visibility,defaultBranchRef \
+            -q '.[] | select(.isFork==false) | .name + "\t" + .visibility + "\t" + (.defaultBranchRef.name // "")' | sort)"
+          mapfile -t ROWS < <(printf '%s\n' "$repo_rows")
+          [ "${#ROWS[@]}" -ge 1 ] || { echo "::error::empty repo list from gh repo list — aborting (transient API failure?)."; exit 1; }
+
+          # The private-repo canary (glyph-pin-audit.yml explains why a count
+          # kept in prose would rot; the SHAPE — "this fleet always contains
+          # private repos" — is the stable assertion).
+          private_n="$(printf '%s\n' "$repo_rows" | grep -c $'\tPRIVATE\t' || true)"
+          if [ "${private_n:-0}" -eq 0 ]; then
+            echo "::error::the repo list contains no private repos — the token's view is degraded (this is how the 29-of-35 audit happened), refusing to call this an audit of the fleet."
+            exit 1
+          fi
+          echo "auditing ${#ROWS[@]} repos ($private_n private)"
+
+          # A repo this loop cannot READ is not a repo that PASSED — every
+          # unreadable window or file is counted and fails the run at the end,
+          # next to a real arming (t-a8zh). Genuine absence stays normal: no
+          # releases means no walk and therefore no trap, and an empty repo
+          # answers 404/409 on its tree.
+          armed=0
+          apifail=0
+          for row in "${ROWS[@]}"; do
+            repo="${row%%$'\t'*}"
+            branch="${row##*$'\t'}"
+            full="$OWNER/$repo"
+
+            # ---- 1. the COMMIT: bot-authored merges inside the next walk's
+            # window. `releases/latest` is the latest PUBLISHED release — the
+            # fleet's rolling drafts are invisible to it, which is right: the
+            # walk base is the last tag actually cut.
+            rel_err="$RUNNER_TEMP/rel.err"
+            if tag="$(gh api "repos/$full/releases/latest" --jq '.tag_name' 2>"$rel_err")"; then
+              cmp_json="$RUNNER_TEMP/cmp.json"
+              cmp_err="$RUNNER_TEMP/cmp.err"
+              if gh api "repos/$full/compare/$tag...$branch?per_page=250" >"$cmp_json" 2>"$cmp_err"; then
+                # The compare API stops listing at 250 commits. A window that
+                # outgrows it was NOT fully audited — say so rather than
+                # greening the part this run could see.
+                total="$(jq -r '.total_commits // 0' "$cmp_json")"
+                fetched="$(jq -r '.commits | length' "$cmp_json")"
+                if [ "$total" -gt "$fetched" ]; then
+                  echo "::error::$full has $total commits since $tag but compare lists only $fetched — the window was NOT fully audited."
+                  apifail=$((apifail + 1))
+                fi
+                while IFS=$'\t' read -r kind sha author; do
+                  [ -n "$kind" ] || continue
+                  case "$kind" in
+                    covered-merge)
+                      echo "::error::$full commit $sha (since $tag) is a merge authored by '$author' — glyph's next release walk will skip resolving it and silently drop that pull from the version and the notes. Revert the merge strategy that produced it; see t-q0jv."
+                      armed=$((armed + 1))
+                      ;;
+                    malformed-input)
+                      echo "::error::$full compare output was unreadable to covered-pull-scan.sh — the API plumbing changed shape; this window was NOT audited."
+                      apifail=$((apifail + 1))
+                      ;;
+                  esac
+                done < <(jq -r '.commits[] | [.sha, (.parents | length | tostring), (.commit.author.name // "")] | @tsv' "$cmp_json" \
+                          | bash scripts/covered-pull-scan.sh merges)
+              else
+                echo "::error::cannot compare $tag...$branch in $full — this window was NOT audited: $(head -c 200 "$cmp_err")"
+                apifail=$((apifail + 1))
+              fi
+            elif ! grep -qE 'HTTP 404' "$rel_err"; then
+              echo "::error::cannot read the latest release of $full — this repo's window was NOT audited: $(head -c 200 "$rel_err")"
+              apifail=$((apifail + 1))
+            fi # a 404 is a repo that has never released — no walk, no trap
+
+            # ---- 2. the WORD: an arming merge strategy written in a workflow.
+            # Same tree walk as glyph-pin-audit.yml, same accounting.
+            tree_err="$RUNNER_TEMP/audit-tree.err"
+            if ! tree="$(gh api "repos/$full/git/trees/HEAD?recursive=1" --jq \
+              '.tree[] | select(.path | startswith(".github/")) | select(.path | test("\\.ya?ml$")) | .path' 2>"$tree_err")"; then
+              if grep -qE 'HTTP (404|409)' "$tree_err"; then continue; fi # empty repo — nothing to audit
+              echo "::error::cannot list the tree of $full — this repo was NOT audited: $(head -c 200 "$tree_err")"
+              apifail=$((apifail + 1))
+              continue
+            fi
+            [ -n "$tree" ] || continue # no .github/**.yml — nothing to audit
+
+            while IFS= read -r path; do
+              [ -n "$path" ] || continue
+              body_err="$RUNNER_TEMP/audit-body.err"
+              if ! raw="$(gh api "repos/$full/contents/$path" --jq '.content' 2>"$body_err")"; then
+                echo "::error::cannot read $full $path — this file was NOT audited: $(head -c 200 "$body_err")"
+                apifail=$((apifail + 1))
+                continue
+              fi
+              if ! body="$(printf '%s\n' "$raw" | base64 -d 2>/dev/null)"; then
+                echo "::error::cannot decode $full $path — this file was NOT audited"
+                apifail=$((apifail + 1))
+                continue
+              fi
+              [ -n "$body" ] || continue
+              while IFS=$'\t' read -r kind strat line; do
+                [ -n "$kind" ] || continue
+                case "$kind" in
+                  merge-strategy)
+                    case "$strat" in
+                      merge|rebase)
+                        echo "::error::$full $path:$line invokes gh pr merge --$strat — one merged pull through this line writes a bot-authored merge commit, and glyph's release walk then silently drops that pull (covered-pull trap, t-q0jv). Use --squash, or revisit t-q0jv before keeping this."
+                        armed=$((armed + 1))
+                        ;;
+                      squash)
+                        echo "::notice::$full $path:$line merges with --squash — the normal path, no merge commit, nothing armed."
+                        ;;
+                    esac
+                    ;;
+                  merge-strategy-unreadable)
+                    echo "::error::$full $path:$line invokes gh pr merge with a strategy this audit cannot read — pass a literal --squash/--merge/--rebase so the fleet can be audited (unreadable is treated as armed, not as clean)."
+                    armed=$((armed + 1))
+                    ;;
+                esac
+              done < <(printf '%s\n' "$body" | bash scripts/covered-pull-scan.sh workflows)
+            done <<< "$tree"
+          done
+
+          if [ "$armed" -gt 0 ] || [ "$apifail" -gt 0 ]; then
+            echo "::error::covered-pull audit failed: $armed arming(s), $apifail read failure(s) — a repo that could not be read has not passed."
+            exit 1
+          fi
+          echo "covered-pull trap is dormant across ${#ROWS[@]} repos: no bot-authored merge since any latest release, no arming merge strategy in any workflow."

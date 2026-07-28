@@ -337,6 +337,23 @@ jobs:
       - name: Table-test glyph-pin-rewrite
         run: bash tests/glyph-pin-rewrite.test.sh
 
+  # RUN the covered-pull extractor over a case table (the real .sh).
+  # glyph-covered-pull-audit.yml asserts an ABSENCE across every owned repo —
+  # no bot-authored merge commit in any release window, no --merge/--rebase on
+  # any `gh pr merge` — and an extractor that silently stops matching reads
+  # exactly like a dormant trap. The table's arming shapes are the positive
+  # controls that pin the difference.
+  covered-pull-scan-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # Feeds TSV/YAML to a script on stdin; never pushes (zizmor artipacked). t-2nh8
+          persist-credentials: false
+      - name: Table-test covered-pull-scan
+        run: bash tests/covered-pull-scan.test.sh
+
   # The hub's own bookkeeping, which until now lived only in prose: that every
   # MANIFEST src exists, that no dest collides with a glyph reusable definition,
   # that every canonical is both distributed AND documented, that dependabot.d
@@ -404,6 +421,7 @@ jobs:
           bash tests/bump-formula.test.sh
           bash tests/glyph-pin-scan.test.sh
           bash tests/glyph-pin-rewrite.test.sh
+          bash tests/covered-pull-scan.test.sh
           bash tests/fleet-manifest.test.sh
           bash tests/apply-repo-settings.test.sh
 
