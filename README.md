@@ -25,6 +25,7 @@ uses: akira-toriyama/.github/.github/workflows/<name>.yml@v2
 | [`go-ci.yml`](.github/workflows/go-ci.yml) | Go build / vet / `test -race` / module-hygiene / golangci-lint v2 | per-repo caller (repo-specific jobs) |
 | [`go-vuln.yml`](.github/workflows/go-vuln.yml) | govulncheck (source + `-mode binary`), daily-cron capable | per-repo caller |
 | [`go-bite.yml`](.github/workflows/go-bite.yml) | Runs a pull request's new/changed Go tests against the source **before** it; fails the ones that all still pass | per-repo caller |
+| [`swift-bite.yml`](.github/workflows/swift-bite.yml) | The same gate for the Swift half of the fleet (XCTest and swift-testing alike) | per-repo caller |
 | [`update-tap.yml`](.github/workflows/update-tap.yml) | Bump the Homebrew formula in `homebrew-tap` on release publish | per-repo caller (app repos) |
 
 Retired in `v2.0.0` (frozen `@v1` still serves stragglers, never moved):
@@ -61,6 +62,7 @@ carries the app name.
 |---|---|
 | [`actions/swift-build`](actions/swift-build/action.yml) | Build + test a Swift package on the pinned latest-stable Xcode (`build-cmd`, `run-tests` inputs) |
 | [`actions/go-bite`](actions/go-bite/action.yml) | The go-bite gate as a step, for a caller that already has a Go job (the reusable above wraps it) |
+| [`actions/swift-bite`](actions/swift-bite/action.yml) | The swift-bite gate as a step (the reusable above wraps it) |
 | [`actions/bump-formula`](actions/bump-formula/action.yml) | Move a Homebrew formula to a new tag + source sha256 in place. The pure file-mutation half of `update-tap.yml`, extracted so it can be table-tested; a backward move is refused unless `allow-downgrade` |
 
 ```yaml
@@ -119,6 +121,7 @@ all it takes to surface a Sponsor button fleet-wide, should that ever change.
 - [`release-tap-unification.md`](docs/release-tap-unification.md) — whether `glance` / `chord` converge onto the shared release / tap reusables (historical; the fleet has since converged onto glyph's release reusable).
 - [`swift-format-adoption.md`](docs/swift-format-adoption.md) — the house procedure for turning the `swift-format` gate green in a new Swift repo.
 - [`go-bite.md`](docs/go-bite.md) — why a test that passes without its own fix is refused, what the gate does and does not judge, and when opting out is honest.
+- [`swift-bite.md`](docs/swift-bite.md) — the same gate for Swift, and the measured `swift test` semantics (filter dialect, verdict lines, the empty-match exit 0) the design rests on.
 - [`doc-consistency-policy.md`](docs/doc-consistency-policy.md) — the fleet-wide rule that docs stay code-first, un-duplicated, and not translated in place (no stored `README.ja.md`), plus the language matrix (public → English, private → the author's language). furrow is the reference implementation.
 - [`fleet-change-policy.md`](docs/fleet-change-policy.md) — how far to verify before a change here reaches every repo (local → POC → live ammunition in `glyph-test` → canary → fleet), and an honest list of which of those stages a machine enforces and which it does not.
 - [`glyph-rollout-runbook.md`](docs/glyph-rollout-runbook.md) — the procedure for levelling the fleet on a new glyph release, including the binary `version:` pin that no `uses:`-shaped check could see until `glyph-pin-audit` grew one.

@@ -109,7 +109,7 @@ test, not an annotation.
 - **Coverage.** A pull request with a fix and no test at all stands the gate down.
   go-bite asks whether the tests you wrote are evidence, not whether you wrote any.
 - **Whether the fix is correct.** Only whether the test can tell.
-- **Anything but Go.** The Swift half of the fleet has no equivalent yet.
+- **Anything but Go.** The Swift half of the fleet has [swift-bite](swift-bite.md).
 
 ## Accepted limitations
 

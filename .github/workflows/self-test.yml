@@ -482,6 +482,24 @@ jobs:
       - name: Table-test go-bite
         run: bash tests/go-bite.test.sh
 
+  # swift-bite's table needs what the gate itself needs: a macOS runner whose
+  # toolchain can RUN XCTest and swift-testing (Command Line Tools can do
+  # neither, which is why the table has a loud scan-only mode for local use —
+  # never here).
+  swift-bite-test:
+    runs-on: macos-15
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # Builds its own repos under mktemp; never pushes (zizmor artipacked).
+          persist-credentials: false
+      - uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1
+        with:
+          xcode-version: latest-stable
+      - name: Table-test swift-bite
+        run: bash tests/swift-bite.test.sh
+
   # The gate applied to itself. go-bite refuses a pull request whose new tests pass
   # against the pre-change source; this job holds the gate's OWN table test to that
   # standard — it runs the post-change table against the PRE-change script and
@@ -565,6 +583,84 @@ jobs:
           # (Herestring, not a pipe: `printf … | grep -q` under pipefail is the
           # SIGPIPE false-negative this repo keeps a dedicated guard case for.)
           if [ -d actions/go-bite ] && ! grep -q '^FAIL - ' <<<"$out"; then
+            echo "::error::the table exited $rc against the pre-change gate but named no failing case — that is an environment error, not a bite."
+            exit 1
+          fi
+          echo "::notice::the gate's own tests bite"
+
+  # The same standard for the Swift gate: the post-change table must FAIL
+  # against the pre-change script, or the change is unpinned. Same waiver, same
+  # brand-new-gate carve-out, same named-failing-case requirement as
+  # go-bite-self above.
+  swift-bite-self:
+    runs-on: macos-15
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # Needs the merge base to reconstruct the pre-change gate.
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1
+        with:
+          xcode-version: latest-stable
+      - name: The gate's own tests must bite
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -uo pipefail
+          before="$(git merge-base "$BASE_SHA" "$HEAD_SHA")" \
+            || { echo "::error::no merge base for $BASE_SHA..$HEAD_SHA — cannot reconstruct the pre-change gate"; exit 1; }
+          [ -n "$before" ] \
+            || { echo "::error::empty merge base — cannot reconstruct the pre-change gate"; exit 1; }
+          if git diff --quiet "$before" "$HEAD_SHA" -- actions/swift-bite tests/swift-bite.test.sh; then
+            echo "::notice::swift-bite itself is untouched — nothing to prove"
+            exit 0
+          fi
+
+          # Parse the waiver EXACTLY as the gate parses it: a real git trailer,
+          # on EVERY commit in the range (see go-bite-self for the incident the
+          # looser parse caused).
+          waiver=""
+          waived=0
+          commits="$(git rev-list --no-merges "$before..$HEAD_SHA")"
+          if [ -n "$commits" ]; then
+            waived=1
+            for commit in $commits; do
+              line="$(git show -s --format=%B "$commit" | git interpret-trailers --parse | grep '^Bite-exempt:' | sed -n '1p')"
+              if [ -z "$line" ]; then waived=0; break; fi
+              waiver="$(printf '%s' "${line#Bite-exempt:}" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+            done
+          fi
+          if [ "$waived" -eq 1 ] && [ -n "$waiver" ]; then
+            echo "::notice::waived by a Bite-exempt trailer on every commit — $waiver"
+            exit 0
+          fi
+
+          # Reconstruct the pre-change gate. A brand-new gate has no pre-change
+          # version at all — a distinct, expected case, asked about directly
+          # rather than inferred from a failed checkout.
+          if git cat-file -e "$before:actions/swift-bite/swift-bite.sh" 2>/dev/null; then
+            git checkout "$before" -- actions/swift-bite \
+              || { echo "::error::could not restore actions/swift-bite at $before"; exit 1; }
+          else
+            echo "::notice::no gate at $before — a brand-new gate could not have passed before, by definition"
+            rm -rf actions/swift-bite
+          fi
+
+          out="$(bash tests/swift-bite.test.sh 2>&1)"; rc=$?
+          printf '%s\n' "$out"
+          if [ "$rc" -eq 0 ]; then
+            echo "::error::the swift-bite table passes against the PRE-CHANGE gate — the new cases pin nothing. Add a case that fails without this change, or waive it with a \`Bite-exempt: <reason>\` commit trailer on every commit."
+            exit 1
+          fi
+          # Non-zero alone is not evidence: the harness also aborts non-zero on
+          # a missing script or a broken environment. Require a NAMED failing
+          # case — except on the brand-new-gate path, where there is no script
+          # to run. (Herestring, not a pipe: `printf … | grep -q` under pipefail
+          # is the SIGPIPE false-negative this repo keeps a guard case for.)
+          if [ -d actions/swift-bite ] && ! grep -q '^FAIL - ' <<<"$out"; then
             echo "::error::the table exited $rc against the pre-change gate but named no failing case — that is an environment error, not a bite."
             exit 1
           fi
