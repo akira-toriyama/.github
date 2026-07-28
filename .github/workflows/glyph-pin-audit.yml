@@ -126,7 +126,15 @@ jobs:
           fi
           echo "auditing ${#REPOS[@]} repos ($private_n private)"
 
+          # A repo this loop cannot READ is not a repo that PASSED. Both reads
+          # below used to be `|| true` + `continue`, so a transient API failure
+          # contributed zero drift and the run still ended `fleet is level` —
+          # "could not see" and "saw no drift" were indistinguishable (t-a8zh).
+          # Absence stays normal: an empty repo answers HTTP 404/409 on the
+          # tree, and that is genuinely nothing to audit; every OTHER failure
+          # is counted and fails the run at the end, next to drift.
           drift=0
+          apifail=0
           for repo in "${REPOS[@]}"; do
             full="$OWNER/$repo"
             # glyph is audited like every other repo. It reaches its own composite
@@ -135,14 +143,30 @@ jobs:
             # the extractor — so the pins left to see are the ones fleet-sync gave
             # it, which is exactly what should be checked. (A comment here used to
             # claim glyph was excluded; no code ever excluded it.)
-            tree="$(gh api "repos/$full/git/trees/HEAD?recursive=1" --jq \
-              '.tree[] | select(.path | startswith(".github/")) | select(.path | test("\\.ya?ml$")) | .path' 2>/dev/null || true)"
-            [ -n "$tree" ] || continue
+            tree_err="$RUNNER_TEMP/audit-tree.err"
+            if ! tree="$(gh api "repos/$full/git/trees/HEAD?recursive=1" --jq \
+              '.tree[] | select(.path | startswith(".github/")) | select(.path | test("\\.ya?ml$")) | .path' 2>"$tree_err")"; then
+              if grep -qE 'HTTP (404|409)' "$tree_err"; then continue; fi # empty repo / no default branch — nothing to audit
+              echo "::error::cannot list the tree of $full — this repo was NOT audited: $(head -c 200 "$tree_err")"
+              apifail=$((apifail + 1))
+              continue
+            fi
+            [ -n "$tree" ] || continue # no .github/**.yml — nothing to audit
 
             while IFS= read -r path; do
               [ -n "$path" ] || continue
-              body="$(gh api "repos/$full/contents/$path" --jq '.content' 2>/dev/null | base64 -d 2>/dev/null || true)"
-              [ -n "$body" ] || continue
+              body_err="$RUNNER_TEMP/audit-body.err"
+              if ! raw="$(gh api "repos/$full/contents/$path" --jq '.content' 2>"$body_err")"; then
+                echo "::error::cannot read $full $path — this file was NOT audited: $(head -c 200 "$body_err")"
+                apifail=$((apifail + 1))
+                continue
+              fi
+              if ! body="$(printf '%s\n' "$raw" | base64 -d 2>/dev/null)"; then
+                echo "::error::cannot decode $full $path — this file was NOT audited"
+                apifail=$((apifail + 1))
+                continue
+              fi
+              [ -n "$body" ] || continue # an empty file carries no pin
               while IFS="$(printf '\t')" read -r kind ref line; do
                 [ -n "$kind" ] || continue
                 case "$kind" in
@@ -180,8 +204,8 @@ jobs:
             done <<< "$tree"
           done
 
-          if [ "$drift" -gt 0 ]; then
-            echo "::error::glyph pin drift across the fleet: $drift reference(s) off $want"
+          if [ "$drift" -gt 0 ] || [ "$apifail" -gt 0 ]; then
+            echo "::error::glyph pin audit failed: $drift reference(s) off $want, $apifail read failure(s) — a repo that could not be read has not passed."
             exit 1
           fi
           echo "fleet is level on glyph $want"
