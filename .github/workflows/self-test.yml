@@ -575,7 +575,12 @@ jobs:
             rm -rf actions/go-bite
           fi
 
-          out="$(bash tests/go-bite.test.sh 2>&1)"; rc=$?
+          # `|| rc=$?`, never a bare `; rc=$?`: the table FAILING here is the
+          # expected outcome, and under the runner's injected `bash -e` a plain
+          # assignment from a failing substitution kills the job on that very
+          # line — before the verdict logic below ever runs.
+          rc=0
+          out="$(bash tests/go-bite.test.sh 2>&1)" || rc=$?
           printf '%s\n' "$out"
           if [ "$rc" -eq 0 ]; then
             echo "::error::the go-bite table passes against the PRE-CHANGE gate — the new cases pin nothing. Add a case that fails without this change, or waive it with a \`Bite-exempt: <reason>\` commit trailer on every commit."
@@ -657,7 +662,12 @@ jobs:
             rm -rf actions/swift-bite
           fi
 
-          out="$(bash tests/swift-bite.test.sh 2>&1)"; rc=$?
+          # `|| rc=$?`, never a bare `; rc=$?`: the table FAILING here is the
+          # expected outcome, and under the runner's injected `bash -e` a plain
+          # assignment from a failing substitution kills the job on that very
+          # line — before the verdict logic below ever runs.
+          rc=0
+          out="$(bash tests/swift-bite.test.sh 2>&1)" || rc=$?
           printf '%s\n' "$out"
           if [ "$rc" -eq 0 ]; then
             echo "::error::the swift-bite table passes against the PRE-CHANGE gate — the new cases pin nothing. Add a case that fails without this change, or waive it with a \`Bite-exempt: <reason>\` commit trailer on every commit."
