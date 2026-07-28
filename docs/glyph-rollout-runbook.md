@@ -83,9 +83,14 @@ from one glyph release; there is no combination of the two that is deliberate.
 **fleet-sync's manual trigger defaults to DRY-RUN.** `workflow_dispatch` has
 `dry-run: true` by default, so a plain `gh workflow run fleet-sync.yml` reports
 `needs-sync:` / `would-set-secrets:` for every repo, exits **success**, and
-changes nothing. The default is correct — a safety for a fleet-wide blind write — but "green run, zero effect" reads exactly
-like "already up to date".
-Pass `-f dry-run=false`. Scheduled runs apply automatically.
+changes nothing. The default is correct — a safety for a fleet-wide blind write —
+and two mechanisms now keep its green from being misread: a dry run's job summary
+is headed **`DRY-RUN — NOTHING WAS DISTRIBUTED`**, and an apply run does not end
+at "sent" — a read-back step re-fetches every managed file from every repo and
+fails on any that is stale (an open `fleet-sync/*` PR carrying the canonical
+bytes is the one accepted resting state). A write failure also fails the run
+outright, so "green run, zero effect" can no longer read like "already up to
+date". Pass `-f dry-run=false`. Scheduled runs apply automatically.
 
 **Branch-protected repos get a PR, not a push.** fleet-sync tries a direct commit
 first and falls back to opening `fleet-sync/<file>` branches when protection
