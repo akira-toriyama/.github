@@ -22,9 +22,13 @@ consumer index.
 
 - **A change here lands in every repo at once — stage it, don't ship it.** Build
   a POC when a step has never been done before, fire live ammunition in
-  `glyph-test`, canary one repo, *then* the fleet. Nothing in CI enforces those
-  stages, so say which ones you actually performed and which you skipped. The
-  rule, and the honest list of what is and is not machine-enforced, is
+  `glyph-test`, canary one repo, *then* the fleet. For the `fleet/` canonicals
+  the canary → fleet half is machine-held by the rollout ledger
+  (`fleet/rollout.json` — a canonical edit needs a ledger entry in the same PR,
+  and no apply run distributes past the stage the rollout has earned); the POC
+  and `glyph-test` stages are still yours to carry, so say which ones you
+  actually performed and which you skipped. The rule, and the honest list of
+  what is and is not machine-enforced, is
   [`docs/fleet-change-policy.md`](docs/fleet-change-policy.md).
 - **`.github/workflows/task-status.yml` is maintained BY HAND.** fleet-sync
   EXCLUDEs `.github` (it *is* the hub), so the canonical `fleet/task-status.yml`

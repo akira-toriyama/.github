@@ -337,6 +337,26 @@ jobs:
       - name: Table-test glyph-pin-rewrite
         run: bash tests/glyph-pin-rewrite.test.sh
 
+  # RUN the rollout-ledger gate over a case table (the real .sh, stubbed gh).
+  # fleet-sync refuses every apply run this gate does not allow, so a regression
+  # here fails one of two ways: open (a staged change ships fleet-wide with no
+  # canary behind it) or shut (the daily sync reddens until someone reads the
+  # log). The table pins both directions, and its final case is a REAL-TREE
+  # invariant: the repo's own fleet/rollout.json must cover the repo's own
+  # fleet/ bytes — which is what makes "edit a canonical, forget the ledger"
+  # fail on the PR that does it instead of in the next day's apply run.
+  fleet-rollout-gate-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # Runs the script against mktemp fixtures; never pushes (zizmor
+          # artipacked). t-2nh8
+          persist-credentials: false
+      - name: Table-test fleet-rollout-gate
+        run: bash tests/fleet-rollout-gate.test.sh
+
   # RUN the bundled-commit writer over a case table (the real .sh, stubbed gh).
   # fleet-sync lands every repo's manifest diff through this script, and the
   # property it exists for — N changed files, ONE push — is invisible to
@@ -441,6 +461,7 @@ jobs:
           bash tests/covered-pull-scan.test.sh
           bash tests/fleet-commit-bundle.test.sh
           bash tests/fleet-manifest.test.sh
+          bash tests/fleet-rollout-gate.test.sh
           bash tests/apply-repo-settings.test.sh
 
   # RUN the go-bite gate over a case table (the real .sh) so a break fails HERE, not

@@ -55,6 +55,38 @@ line to `MANIFEST` in [`.github/workflows/fleet-sync.yml`](../.github/workflows/
 **Edit these canonical copies, never the per-repo copies** — fleet-sync overwrites
 them on the next run.
 
+## Rollout ledger — `rollout.json`
+
+The one file here that is **not** distributed (fleet-manifest's check 3 excludes
+it): it is the hub-only state the staged-rollout policy
+([`docs/fleet-change-policy.md`](../docs/fleet-change-policy.md)) reads before any
+apply run may write, via `scripts/fleet-rollout-gate.sh` (t-yyfv). Its effect:
+
+- **Editing a canonical requires a ledger entry in the same PR.** The `covers`
+  field is a hash over this directory's distributable bytes
+  (`bash scripts/fleet-rollout-gate.sh --print-covers fleet/rollout.json`), and
+  `tests/fleet-rollout-gate.test.sh` holds the real tree to it at PR time — so a
+  canonical edit that forgets the ledger fails its own PR, and even if it merged,
+  every apply run would refuse to distribute it (exit 11).
+- **A rollout earns the fleet; it is not granted it.** `stage: "canary"` lets
+  exactly the listed `canary` repos be written
+  (`gh workflow run fleet-sync.yml -f dry-run=false -f only-repo=<canary>`).
+  The recorder step then writes the read-back's verdicts into
+  `evidence.canary.<repo>` as a PR on the hub, sets `soak_until` (48h) and
+  advances `stage` to `"fleet"`. Fleet-wide writes resume only when the gate can
+  verify that evidence — real `run_id` of a successful fleet-sync run, same
+  `covers` — and the soak has elapsed. Any other `stage` value ("local", "poc",
+  "glyph-test", …) holds all writes.
+- **A held apply run is red on purpose** — including the daily scheduled one.
+  That red says "the fleet is intentionally behind the hub's main"; the fix is to
+  advance the rollout (run the canary, merge the evidence PR, wait out the soak),
+  never to edit the ledger's evidence by hand — the gate's run-id check refuses
+  records that no real run stands behind.
+
+There is no approval flow in this — a solo fleet needs none. The only human acts
+are the ones branch protection already requires: merging the change PR and the
+evidence PR.
+
 ## How it runs
 
 `fleet-sync.yml` runs daily (and on demand via **Run workflow**). It is **dormant**
