@@ -1,0 +1,34 @@
+name: swift-bite
+description: >-
+  Run a pull request's new or changed Swift tests against the source as it was
+  before the pull request, and fail when every one of them still passes.
+
+inputs:
+  base-sha:
+    description: 'The commit the pull request would merge INTO. The pre-change tree is its merge base with head.'
+    required: true
+  head-sha:
+    description: 'The MERGE commit (github.sha), so the pre-change tree is the base branch as it is now rather than the fork point.'
+    required: true
+  test-args:
+    description: 'Extra flags handed to the `swift test` run on the pre-change tree.'
+    required: false
+    default: ''
+  timeout-seconds:
+    description: 'Seconds before the verdict run is read as a hang (the runner ships no `timeout` binary; the watchdog is built in).'
+    required: false
+    default: '600'
+
+runs:
+  using: composite
+  steps:
+    # The whole gate is the script, so the table test in tests/swift-bite.test.sh
+    # runs exactly what CI runs. Inputs travel as env, never interpolated into
+    # the shell (zizmor template-injection).
+    - shell: bash
+      env:
+        BASE_SHA: ${{ inputs.base-sha }}
+        HEAD_SHA: ${{ inputs.head-sha }}
+        TEST_ARGS: ${{ inputs.test-args }}
+        SWIFT_BITE_TIMEOUT: ${{ inputs.timeout-seconds }}
+      run: ${{ github.action_path }}/swift-bite.sh
