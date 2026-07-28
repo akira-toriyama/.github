@@ -23,6 +23,17 @@ skipped=0
 
 [ -f "$script" ] || { echo "FAIL - $script is missing"; exit 1; }
 
+# The composite executes the script DIRECTLY (`run: …/swift-bite.sh`), so a
+# missing exec bit is a fleet-visible "Permission denied" — which the cases
+# below cannot catch, because the harness invokes via `bash "$script"`.
+# (Measured: the first live-ammunition caller died exactly this way.)
+if [ -x "$script" ]; then
+  echo "ok   - the gate script is executable (the composite runs it directly)"
+else
+  echo "FAIL - the gate script is not executable, and the composite runs it directly"
+  fails=$((fails + 1))
+fi
+
 scan_only=0
 if [ "${SWIFT_BITE_TEST_SCAN_ONLY:-}" = "1" ]; then
   scan_only=1
