@@ -548,7 +548,11 @@ jobs:
           if [ -n "$commits" ]; then
             waived=1
             for commit in $commits; do
-              line="$(git show -s --format=%B "$commit" | git interpret-trailers --parse | grep '^Bite-exempt:' | sed -n '1p')"
+              # `{ grep || true; }`: this inline copy runs under the runner's
+              # injected `bash -e`, where pipefail turns grep's no-match exit 1
+              # into a SILENT job failure before the table ever runs (the gate
+              # script itself is immune — it runs in its own bash without -e).
+              line="$(git show -s --format=%B "$commit" | git interpret-trailers --parse | { grep '^Bite-exempt:' || true; } | sed -n '1p')"
               if [ -z "$line" ]; then waived=0; break; fi
               waiver="$(printf '%s' "${line#Bite-exempt:}" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
             done
@@ -628,7 +632,11 @@ jobs:
           if [ -n "$commits" ]; then
             waived=1
             for commit in $commits; do
-              line="$(git show -s --format=%B "$commit" | git interpret-trailers --parse | grep '^Bite-exempt:' | sed -n '1p')"
+              # `{ grep || true; }`: this inline copy runs under the runner's
+              # injected `bash -e`, where pipefail turns grep's no-match exit 1
+              # into a SILENT job failure before the table ever runs (the gate
+              # script itself is immune — it runs in its own bash without -e).
+              line="$(git show -s --format=%B "$commit" | git interpret-trailers --parse | { grep '^Bite-exempt:' || true; } | sed -n '1p')"
               if [ -z "$line" ]; then waived=0; break; fi
               waiver="$(printf '%s' "${line#Bite-exempt:}" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
             done

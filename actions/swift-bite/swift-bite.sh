@@ -566,7 +566,11 @@ done <"$work/judge.tsv"
 # failure; a clean exit with a missing test is the filter missing, the exact
 # false green this gate exists to stop. Neither is ever a verdict.
 if [ -s "$work/pending.tsv" ]; then
-  if [ "$timedout" -eq 1 ] && [ "$run_started" -eq 1 ]; then
+  if [ "$timedout" -eq 1 ]; then
+    # No run_started requirement here: SIGKILL loses the harness's buffered
+    # output, sometimes ALL of it — but the watchdog firing at all IS the
+    # evidence. The build was green and the filter confined the run to the
+    # selected tests, so something in that selection failed to finish.
     while IFS=$'\t' read -r kind full; do
       record "$kind" "$full" "bites — hangs without the change (killed after ${SWIFT_BITE_TIMEOUT}s)"
     done <"$work/pending.tsv"

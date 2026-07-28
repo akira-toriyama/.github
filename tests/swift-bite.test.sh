@@ -123,7 +123,7 @@ commit() {
 # run_gate commits the working tree as the head state and runs the gate over it.
 # Sets OUT (stdout+stderr) and RC.
 run_gate() {
-  commit "${1:-after}"
+  commit "after"
   HEAD_SHA="$(git -C "$REPO" rev-parse HEAD)"
   OUT="$(cd "$REPO" && BASE_SHA="$BEFORE" HEAD_SHA="$HEAD_SHA" bash "$script" 2>&1)"
   RC=$?
@@ -399,21 +399,28 @@ expect 0 "a test for a new API counts as a bite (it cannot build without it)" \
 
 # But when the old tree cannot compile even without the tests — the pull
 # request reshaped the package — the failure says nothing about the tests.
+# (A second target is what breaks it: with a single target SwiftPM's flat
+# layout quietly adopts whatever lives under Sources/, as the first version of
+# this case found out.)
 repo_new
-mkdir -p "$REPO/Sources/Core"
-git -C "$REPO" mv Sources/Mini/Mini.swift Sources/Core/Core.swift
+mkdir -p "$REPO/Sources/Extra"
+cat >"$REPO/Sources/Extra/Extra.swift" <<'EOF'
+public func extra() -> Int { 42 }
+EOF
 python3 - "$REPO/Package.swift" <<'EOF'
 import sys
 p = sys.argv[1]
-s = open(p).read().replace('.target(name: "Mini")', '.target(name: "Core")')
-s = s.replace('dependencies: ["Mini"]', 'dependencies: ["Core"]')
+s = open(p).read()
+s = s.replace('.target(name: "Mini"),', '.target(name: "Mini"),\n        .target(name: "Extra"),')
+s = s.replace('dependencies: ["Mini"]', 'dependencies: ["Mini", "Extra"]')
 open(p, 'w').write(s)
 EOF
-sed -i.bak 's/@testable import Mini/@testable import Core/' "$REPO/Tests/MiniTests/GreetTests.swift" && rm -f "$REPO/Tests/MiniTests/GreetTests.swift.bak"
 cat >>"$REPO/Tests/MiniTests/GreetTests.swift" <<'EOF'
 
-@Test func afterTheMove() {
-    #expect(greet("a").hasPrefix("h"))
+import Extra
+
+@Test func usesExtra() {
+    #expect(extra() == 42)
 }
 EOF
 run_gate
