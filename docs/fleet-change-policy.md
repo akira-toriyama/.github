@@ -79,7 +79,15 @@ is worse than no rule.
   runner's token cannot list (29 of 35, on 2026-07-22). Green means level as far
   as it looks.
 - `fleet-sync`'s dry-run default. It cannot write by accident; it can only fail
-  to write while looking like it wrote.
+  to write while looking like it wrote. `glyph-pin-rewrite.yml` — the repair path
+  for the three glyph pins fleet-sync cannot byte-copy — takes the same default,
+  and never writes outside a pull request.
+- Confinement of that repair. `scripts/glyph-pin-rewrite.sh` compares its output
+  against its input line by line and writes **nothing at all** if a line outside
+  a glyph pin moved, then re-reads the result through the audit's own scanner to
+  confirm the pin actually landed. Both refusals are pinned by mutation in
+  `tests/glyph-pin-rewrite.test.sh`: a guard that only ever runs on correct input
+  proves nothing about the case it exists for.
 - Branch protection on the repos that have it: fleet-sync opens a PR instead of
   pushing, so a bad canonical cannot land silently there.
 

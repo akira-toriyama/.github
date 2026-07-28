@@ -18,18 +18,33 @@ tags), [`CONTRIBUTING.md`](../CONTRIBUTING.md) (the convention glyph enforces).
 
 ## What is pinned, and by whom
 
-Five things reference glyph. **Only the first two are fleet-managed** — the rest
-need per-repo PRs, and forgetting them is the most common miss.
+Five things reference glyph, and **no single mechanism moves all five**. The split
+is not cosmetic: the first two are one canonical byte-copied everywhere, the last
+three are lines inside files each repo owns and writes differently.
 
 | Reference | Where the pin lives | Propagated by |
 |---|---|---|
-| `workflows/lint.yml` | `fleet/commit-lint.yml` | fleet-sync |
-| `workflows/pr-verdict.yml` | `fleet/version-preview.yml` | fleet-sync |
-| `workflows/release.yml` | each repo's `.github/workflows/release.yml` | **per-repo PR** |
-| `actions/install` | each repo's release/CI workflows | **per-repo PR** |
-| the **binary** that action installs | `with: version:` on that same step | **per-repo PR** |
+| `workflows/lint.yml` | `fleet/commit-lint.yml` | fleet-sync (copies the file) |
+| `workflows/pr-verdict.yml` | `fleet/version-preview.yml` | fleet-sync (copies the file) |
+| `workflows/release.yml` | each repo's own release workflow | glyph-pin-rewrite (**opens a PR**) |
+| `actions/install` | each repo's release/CI workflows | glyph-pin-rewrite (**opens a PR**) |
+| the **binary** that action installs | `with: version:` on that same step | glyph-pin-rewrite (**opens a PR**) |
 
-`.github` also pins `lint.yml` in its own `self-commit-lint.yml`.
+Those bottom three moved **only by hand** until 2026-07-28 — one pull request per
+repo per glyph release, 22 references across 14 repos on the v0.11.2 rollout, with
+the audit red for the four days it took. `glyph-pin-rewrite.yml` opens those pull
+requests now; **merging them is still yours**, and until they merge the audit is
+correctly red.
+
+Do not look for those pins by filename. `sill` keeps its install step in
+`.github/workflows/build.yml` while the eight other consumers call it
+`release.yml` — the census that planned the v0.11.2 rollout keyed on the filename
+and lost sill silently. Search by content (`akira-toriyama/glyph`), which is what
+both the audit and the rewriter do.
+
+`.github` also pins `lint.yml` in its own `self-commit-lint.yml`. fleet-sync
+EXCLUDEs the hub, so that one is hand-maintained; glyph-pin-rewrite does **not**
+exclude it, and `tests/fleet-manifest.test.sh` fails at PR time if it drifts.
 
 The install action is the sneaky one, and its `version:` input is sneakier still —
 it is a *fifth* reference hiding inside the fourth, two lines below it and easy to
@@ -52,8 +67,12 @@ from one glyph release; there is no combination of the two that is deliberate.
 2. Bump `fleet/commit-lint.yml` and `fleet/version-preview.yml` in one PR. Merge.
 3. Run fleet-sync **with apply**: `gh workflow run fleet-sync.yml -f dry-run=false`.
 4. Merge any `fleet-sync/*` PRs it opened (see branch protection below).
-5. Open per-repo PRs for `release.yml`, and for `actions/install` **together with
-   the `version:` it passes** — one edit, both lines.
+5. Run the rewriter **with apply**:
+   `gh workflow run glyph-pin-rewrite.yml -f dry-run=false`. It opens one
+   `glyph-pin/vX.Y.Z` PR per repo still carrying an unmanaged pin, moving the
+   `@tag` and the `version:` under it in the same edit. Merge them. (Its
+   `workflow_dispatch` defaults to dry-run for the same reason fleet-sync's does;
+   run it without the flag first if you want the list.)
 6. Verify with the audit and the live check below.
 
 ## Traps
@@ -77,6 +96,13 @@ permanently stale. A naive grep reports glyph itself as drifted forever; a
 `head -1` grep reads the comment instead of the real `uses:` line and reports the
 wrong version everywhere. Filter `^\s*#` out and anchor on `uses:`. This is why
 the audit is a workflow — see `glyph-pin-audit.yml`.
+
+**The rewriter refuses some pins, on purpose.** An `actions/install@` step that
+passes **no** `version:`, or one that **computes** it, is reported and left alone:
+inserting the input is a structural edit and freezing an expression someone wrote
+deliberately is a silent behaviour change. Those are the two states the audit
+calls `version-missing` / `version-unreadable`, and they stay red until a human
+decides. A `::warning::` in the rewriter's log names the file.
 
 **And `version:` cannot be grepped at all.** It is a generic input name — taplo,
 `setup-*` and half the fleet's third-party steps take one — so the only thing that

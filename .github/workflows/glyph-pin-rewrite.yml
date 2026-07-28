@@ -1,0 +1,289 @@
+# Fleet repair: move the glyph pins fleet-sync cannot reach.
+#
+# THE ASYMMETRY THIS CLOSES. Five things reference glyph (docs/glyph-rollout-runbook.md).
+# fleet-sync distributes two of them — `fleet/commit-lint.yml` and
+# `fleet/version-preview.yml` — by byte-copying a canonical over every repo. The
+# other three cannot be distributed that way and never were:
+#
+#   - a repo's own `release.yml` calling glyph's release reusable
+#   - `.github/actions/install@vX.Y.Z`
+#   - the `version:` that install step passes — the BINARY
+#
+# They live in files that are BESPOKE per repo. Adding `release.yml` to
+# fleet-sync's MANIFEST would overwrite fourteen different release workflows with
+# one and report success doing it; fleet-sync refuses that dest by name for
+# exactly this reason, and tests/fleet-manifest.test.sh refuses it at PR time.
+#
+# So glyph-pin-audit could SEE those three drift and nothing could MOVE them. Every
+# glyph release left the fleet split until a human opened one pull request per
+# repo: the v0.11.2 rollout was 22 references across 14 repos, and the audit sat
+# red for the four days it took. Detection without a repair path does not stay a
+# nuisance — a check that is red for reasons nobody can act on stops being read.
+#
+# WHAT THIS DOES INSTEAD OF COPYING. It rewrites the pin LINES and nothing else,
+# in place, in whatever file they happen to be in, and opens ONE pull request per
+# repo. Line-confinement is what makes a bespoke file survive the edit; the
+# rewriter (scripts/glyph-pin-rewrite.sh) proves it and refuses otherwise.
+#
+# FOUR TRAPS, ALL FOUND BY DOING THE v0.11.2 ROLLOUT BY HAND:
+#
+#   1. DO NOT SEARCH BY PATH. `sill` keeps its install step in
+#      `.github/workflows/build.yml`; the eight other consumers call it
+#      `release.yml`. The census that planned that rollout keyed on the filename
+#      and lost sill silently — it turned up only when every `.github/**.yml` was
+#      read. This loop enumerates by CONTENT, like the audit, for that reason.
+#   2. DO NOT TOUCH COMMENTS. Every glyph reusable ships a commented caller stub
+#      whose `@vX.Y.Z` must STAY a placeholder — glyph's own `internal/workflows`
+#      test fails a concrete version there, because a tag is cut on an
+#      already-frozen tree. Six such lines were in scope by hand. The scanner
+#      skips comment lines, so they are never in the rewrite set.
+#   3. DO NOT TOUCH A STRANGER'S `version:`. It is a generic input name.
+#   4. THE HUB'S OWN PIN IS NOT FLEET-MANAGED EITHER. fleet-sync EXCLUDEs
+#      `.github`, so `self-commit-lint.yml` is hand-maintained. This workflow does
+#      NOT exclude the hub: a stale self-pin gets the same pull request as anyone
+#      else's. tests/fleet-manifest.test.sh case 7 remains the PR-time guard.
+#
+# WHY A PULL REQUEST AND NEVER A DIRECT COMMIT, unlike fleet-sync. fleet-sync
+# writes a file the hub OWNS and can restore from the canonical; a mistake there
+# is one re-run away from repaired. This writes into a file the target repo owns
+# and the hub cannot reconstruct. A pull request puts that repo's own CI between
+# the rewrite and its default branch, which is the only reviewer this mechanism
+# gets.
+#
+# WHAT IT DELIBERATELY DOES NOT DO: merge. Opening the pull requests is the half
+# that was mechanical; merging them is a judgment about a repo's own release
+# workflow.
+#
+# Reading order after a glyph release: fleet-sync (06:00) distributes the two,
+# this (06:20) opens pull requests for the rest, glyph-pin-audit (06:30) reports
+# what is still off — and stays red until the pull requests merge, correctly.
+
+name: glyph-pin-rewrite
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: Log what would change without opening anything.
+        type: boolean
+        default: true
+      only-repo:
+        description: Limit to a single repo name (optional).
+        type: string
+        default: ''
+  schedule:
+    - cron: '20 6 * * *' # between fleet-sync (06:00) and glyph-pin-audit (06:30)
+
+concurrency:
+  group: glyph-pin-rewrite
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  rewrite:
+    runs-on: ubuntu-latest
+    # Bounded like fleet-sync: cancel-in-progress is false, so a wedged run would
+    # hold the slot and block every scheduled run behind it.
+    timeout-minutes: 30
+    steps:
+      - name: Gate (dormant until configured)
+        id: gate
+        env:
+          PAT: ${{ secrets.FLEET_SYNC_PAT }}
+        run: |
+          set -euo pipefail
+          if [ -z "${PAT:-}" ]; then
+            echo "::notice::FLEET_SYNC_PAT not set — glyph-pin-rewrite is dormant until configured."
+            echo "go=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "go=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout (the hub holds the canonical pin and the rewriter)
+        if: steps.gate.outputs.go == 'true'
+        uses: actions/checkout@v7
+        with:
+          # Every fleet write goes through gh + FLEET_SYNC_PAT, never git — drop
+          # the persisted checkout token (zizmor artipacked). t-2nh8
+          persist-credentials: false
+
+      - name: Move every unmanaged glyph pin to the canonical
+        if: steps.gate.outputs.go == 'true'
+        env:
+          # Classic PAT with `repo` + `workflow`. The workflow scope is REQUIRED:
+          # every file this touches is under .github/workflows or .github/actions,
+          # and a token without it is rejected on the PUT, not on the read.
+          GH_TOKEN: ${{ secrets.FLEET_SYNC_PAT }}
+          OWNER: ${{ github.repository_owner }}
+          EVENT: ${{ github.event_name }}
+          DRY_RUN: ${{ inputs.dry-run }}
+          ONLY_REPO: ${{ inputs.only-repo }}
+        run: |
+          set -euo pipefail
+
+          # Scheduled runs apply; manual runs honour the dry-run input. Same
+          # convention as fleet-sync, deliberately — a fleet operator should not
+          # have to remember which of two fleet writers defaults which way.
+          DRY="${DRY_RUN:-false}"
+          [ "$EVENT" = "schedule" ] && DRY=false
+          echo "event=$EVENT dry-run=$DRY"
+
+          # The canonical pin, read through the SAME extractor as every repo
+          # below and as glyph-pin-audit. One reader, one truth: a writer with its
+          # own idea of the canonical would level the fleet on the wrong tag and
+          # the audit would then disagree with it forever.
+          want="$(bash scripts/glyph-pin-scan.sh < fleet/commit-lint.yml \
+                  | awk -F'\t' '$1 == "uses" { print $2; exit }')"
+          [ -n "$want" ] || { echo "::error::could not read the canonical glyph pin from fleet/commit-lint.yml"; exit 1; }
+          echo "canonical glyph pin: $want"
+
+          # Files fleet-sync OWNS are off limits here — DERIVED from its MANIFEST,
+          # never restated. Two writers racing for one path is how a repo ends up
+          # with a pull request whose diff vanishes under a direct commit the same
+          # morning. An unreadable MANIFEST is a HARD failure and not an empty
+          # list: an empty list would silently make this workflow the second
+          # writer of commit-lint.yml in ~36 repos.
+          manifest_line="$(grep -E '^[[:space:]]*MANIFEST="' .github/workflows/fleet-sync.yml | head -1)"
+          [ -n "$manifest_line" ] || { echo "::error::could not read MANIFEST=\"...\" from .github/workflows/fleet-sync.yml — refusing to run rather than write over files fleet-sync owns"; exit 1; }
+          MANIFEST="$(printf '%s' "$manifest_line" | sed -e 's/^[^"]*"//' -e 's/"[[:space:]]*$//')"
+          MANAGED=""
+          for pair in $MANIFEST; do MANAGED="$MANAGED ${pair##*:}"; done
+          [ -n "${MANAGED// /}" ] || { echo "::error::MANIFEST parsed to an empty dest list — refusing to run"; exit 1; }
+          echo "fleet-managed dests (skipped here):$MANAGED"
+
+          mapfile -t REPOS < <(gh repo list "$OWNER" --no-archived --source --limit 200 \
+            --json name,isFork -q '.[] | select(.isFork==false) | .name' | sort)
+          [ "${#REPOS[@]}" -ge 1 ] || { echo "::error::empty repo list from gh repo list — aborting (transient API failure?)."; exit 1; }
+          echo "considering ${#REPOS[@]} repos"
+
+          rewritten=0; prs=0; unfixable=0; skipped=0; hard=0
+          for repo in "${REPOS[@]}"; do
+            if [ -n "$ONLY_REPO" ] && [ "$repo" != "$ONLY_REPO" ]; then continue; fi
+            full="$OWNER/$repo"
+
+            tree="$(gh api "repos/$full/git/trees/HEAD?recursive=1" --jq \
+              '.tree[] | select(.path | startswith(".github/")) | select(.path | test("\\.ya?ml$")) | .path' 2>/dev/null || true)"
+            if [ -z "$tree" ]; then
+              # NOT silent. A repo this loop could not read is a repo it did not
+              # repair, and "no pull request" reads exactly like "nothing to fix".
+              echo "::warning::glyph-pin-rewrite: could not list .github/**.yml for $full — it was NOT examined this run"
+              skipped=$((skipped + 1))
+              continue
+            fi
+
+            branch="glyph-pin/$want"
+            changed_paths=""
+            while IFS= read -r path; do
+              [ -n "$path" ] || continue
+              # fleet-sync's territory.
+              case " $MANAGED " in *" $path "*) continue ;; esac
+
+              orig="$RUNNER_TEMP/orig.yml"; new="$RUNNER_TEMP/new.yml"
+              if ! gh api "repos/$full/contents/$path" --jq '.content' 2>/dev/null | base64 -d > "$orig" 2>/dev/null || [ ! -s "$orig" ]; then
+                echo "::warning::glyph-pin-rewrite: could not read $full $path — it was NOT examined this run"
+                skipped=$((skipped + 1))
+                continue
+              fi
+
+              # NEVER rewrite a reusable DEFINITION. glyph's own reusables live at
+              # the same kind of path a caller occupies everywhere else, and they
+              # reach the install composite by RELATIVE path on purpose so the tag
+              # the caller pinned governs. A concrete pin appearing in one is a bug
+              # in glyph, and pinning it here would launder that bug into every
+              # release. Decided on CONTENT, not on a repo name — the same rule
+              # fleet-sync's prune step applies for the same reason.
+              if grep -q 'workflow_call' "$orig"; then continue; fi
+
+              set +e
+              bash scripts/glyph-pin-rewrite.sh "$want" < "$orig" > "$new" 2>"$RUNNER_TEMP/rw.err"
+              rc=$?
+              set -e
+              case "$rc" in
+                0) ;;
+                4)
+                  # A pin no mechanical rewrite can move (an install step with no
+                  # version:, or one that computes it). The audit is already red
+                  # about it and staying red is correct — this must not paper over it.
+                  echo "::warning::glyph-pin-rewrite: $full $path carries a pin that cannot be moved mechanically: $(head -c 300 "$RUNNER_TEMP/rw.err" | tr '\n' ' ')"
+                  unfixable=$((unfixable + 1))
+                  continue
+                  ;;
+                *)
+                  # The rewriter refused because the rewrite was WRONG (or it
+                  # broke). That is a defect in this mechanism, not in the target
+                  # repo, and it must fail the job loudly rather than skip a repo.
+                  echo "::error::glyph-pin-rewrite: rewriter exited $rc on $full $path — $(head -c 300 "$RUNNER_TEMP/rw.err" | tr '\n' ' ')"
+                  hard=1
+                  continue
+                  ;;
+              esac
+
+              cmp -s "$orig" "$new" && continue   # already level
+
+              echo "needs-rewrite: $full $path"
+              rewritten=$((rewritten + 1))
+              [ "$DRY" = "true" ] && continue
+
+              # Land it on the branch. The branch is created off the default
+              # branch the first time it is needed, so a repo with nothing to fix
+              # never grows one.
+              if [ -z "$changed_paths" ]; then
+                db="$(gh api "repos/$full" --jq .default_branch)" \
+                  || { echo "::warning::glyph-pin-rewrite: cannot read default branch for $full; skipping"; skipped=$((skipped + 1)); continue; }
+                if ! gh api "repos/$full/git/ref/heads/$branch" >/dev/null 2>/dev/null; then
+                  bsha="$(gh api "repos/$full/git/ref/heads/$db" --jq .object.sha)" \
+                    || { echo "::warning::glyph-pin-rewrite: cannot read $db tip for $full; skipping"; skipped=$((skipped + 1)); continue; }
+                  gh api -X POST "repos/$full/git/refs" -f "ref=refs/heads/$branch" -f "sha=$bsha" >/dev/null \
+                    || { echo "::warning::glyph-pin-rewrite: cannot create $branch on $full; skipping"; skipped=$((skipped + 1)); continue; }
+                fi
+              fi
+
+              # Re-read the path ON THE BRANCH for its blob sha: a re-run after a
+              # partial failure must update, not collide.
+              bsha2=""
+              if bjson="$(gh api "repos/$full/contents/$path?ref=$branch" 2>/dev/null)"; then
+                bsha2="$(printf '%s' "$bjson" | jq -r '.sha')"
+              fi
+              # The `[bot]` author is load-bearing, not cosmetic: glyph skips
+              # `*[bot]` commits in both the lint and the version fold, and
+              # ':robot:' is not a gitmoji-spec code — without it this mechanism's
+              # own commits would hard-fail the commit-lint it exists to keep level.
+              pargs=(-X PUT "repos/$full/contents/$path"
+                -f "message=:robot: chore(fleet): pin glyph $want in $path"
+                -f "author[name]=glyph-pin-rewrite[bot]"
+                -f "author[email]=glyph-pin-rewrite[bot]@users.noreply.github.com"
+                -f "content=$(base64 -w0 < "$new")" -f "branch=$branch")
+              [ -n "$bsha2" ] && pargs+=(-f "sha=$bsha2")
+              gh api "${pargs[@]}" >/dev/null \
+                || { echo "::warning::glyph-pin-rewrite: cannot write $path on $full@$branch; skipping"; skipped=$((skipped + 1)); continue; }
+              changed_paths="$changed_paths $path"
+            done <<< "$tree"
+
+            [ -n "$changed_paths" ] || continue
+
+            # One pull request per repo, carrying every pin site in it — the pair
+            # that must never move separately (`actions/install@` and the
+            # `version:` under it) is therefore never split across two reviews.
+            # shellcheck disable=SC2016  # the backticks are markdown code spans in the PR body, not command substitution
+            body="$(printf 'Moves every glyph pin in this repo to **%s**, the version `fleet/commit-lint.yml` distributes.\n\nThese sites are NOT fleet-managed: they live in files this repo owns, so `fleet-sync` cannot byte-copy them and until now they moved only by hand — one pull request per repo, per glyph release.\n\nFiles:\n%s\n\nOnly lines carrying a glyph pin were changed; the rewriter refuses and writes nothing if any other line moves. See `akira-toriyama/.github`: `scripts/glyph-pin-rewrite.sh`, `docs/glyph-rollout-runbook.md`.\n' \
+              "$want" "$(for p in $changed_paths; do printf -- '- %s\n' "$p"; done)")"
+            if pr_err="$(gh pr create --repo "$full" --base "$db" --head "$branch" \
+                 --title ":robot: chore(fleet): pin glyph $want" --body "$body" 2>&1)"; then
+              echo "pr-opened: $full ($changed_paths )"
+              prs=$((prs + 1))
+            else
+              case "$pr_err" in
+                *"already exists"*) echo "pr-exists: $full ($changed_paths )" ;;
+                *) echo "::warning::glyph-pin-rewrite: pr-create failed for $full: $pr_err" ;;
+              esac
+            fi
+          done
+
+          echo "done: canonical=$want rewrites=$rewritten prs=$prs unfixable=$unfixable skipped=$skipped dry-run=$DRY across ${#REPOS[@]} repo(s)"
+          # `skipped` is reported, not swallowed. It is the count of places this run
+          # is silent about — the difference between "the fleet is level" and "the
+          # fleet is level as far as I could see".
+          [ "$skipped" -eq 0 ] || echo "::warning::glyph-pin-rewrite: $skipped file(s)/repo(s) could not be read or written — they were NOT repaired and this run says nothing about them"
+          [ "$hard" -eq 0 ] || { echo "::error::the rewriter refused at least one file — that is a defect in glyph-pin-rewrite itself, not in a target repo"; exit 1; }
