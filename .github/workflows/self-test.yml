@@ -337,6 +337,23 @@ jobs:
       - name: Table-test glyph-pin-rewrite
         run: bash tests/glyph-pin-rewrite.test.sh
 
+  # RUN the bundled-commit writer over a case table (the real .sh, stubbed gh).
+  # fleet-sync lands every repo's manifest diff through this script, and the
+  # property it exists for — N changed files, ONE push — is invisible to
+  # actionlint and zizmor: only executing it against a recording stub can
+  # assert how many ref updates left the building (t-z7c1: each extra push
+  # fires a release run, and stacked runs collided in bare 403s).
+  fleet-commit-bundle-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # Runs a script against a stubbed gh; never pushes (zizmor artipacked). t-2nh8
+          persist-credentials: false
+      - name: Table-test fleet-commit-bundle
+        run: bash tests/fleet-commit-bundle.test.sh
+
   # RUN the covered-pull extractor over a case table (the real .sh).
   # glyph-covered-pull-audit.yml asserts an ABSENCE across every owned repo —
   # no bot-authored merge commit in any release window, no --merge/--rebase on
@@ -422,6 +439,7 @@ jobs:
           bash tests/glyph-pin-scan.test.sh
           bash tests/glyph-pin-rewrite.test.sh
           bash tests/covered-pull-scan.test.sh
+          bash tests/fleet-commit-bundle.test.sh
           bash tests/fleet-manifest.test.sh
           bash tests/apply-repo-settings.test.sh
 

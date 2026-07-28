@@ -228,49 +228,65 @@ jobs:
               rm -f "$dep_src"
             fi
 
-            # 1) sync each manifest file (create or update on the default branch)
+            # 1) sync the manifest files — decide per FILE, land per REPO. Every
+            #    changed file rides one bundled commit (scripts/fleet-commit-bundle.sh):
+            #    the Contents API wrote one commit per file, so a two-file sync
+            #    pushed twice a second apart, each push fired the target's release
+            #    run, and a fleet sweep stacked those windows until several repos'
+            #    draft PATCHes landed in the same second and drew bare 403s — the
+            #    intermittent red t-z7c1 measured. One push per repo removes the
+            #    stacking at its source; the [bot] author moves with the commit
+            #    (it is what keeps these out of glyph's lint and release folds,
+            #    t-kbqx — asserted by the bundle script's table test).
+            changed_pairs=()
             for pair in $MANIFEST $dep_pair; do
               src="${pair%%:*}"; dest="${pair##*:}"
               local_b64="$(base64 < "$src" | tr -d '\n')"
               if remote_json="$(gh api "repos/$full/contents/$dest" 2>/dev/null)"; then
                 remote_b64="$(printf '%s' "$remote_json" | jq -r '.content' | tr -d '\n')"
-                sha="$(printf '%s' "$remote_json" | jq -r '.sha')"
                 if [ "$remote_b64" = "$local_b64" ]; then
                   echo "ok(up-to-date): $full $dest"
                   continue
                 fi
-              else
-                sha=""
               fi
               echo "needs-sync: $full $dest"
               queued=$((queued + 1))
               [ "$DRY" = "true" ] && continue
+              changed_pairs+=("$pair")
+            done
 
-              # Try a direct commit to the default branch. The explicit [bot]
-              # author makes every fleet-sync commit machine-attributed, so
-              # glyph's commit-lint and release folds skip it by the *[bot]
-              # rule — ':robot:' is not a gitmoji-spec code and would otherwise
-              # hard-fail the lint on fleet-sync's own PRs (t-kbqx).
-              args=(-X PUT "repos/$full/contents/$dest"
-                -f "message=:robot: chore(fleet): sync $dest"
-                -f "author[name]=fleet-sync[bot]"
-                -f "author[email]=fleet-sync[bot]@users.noreply.github.com"
-                -f "content=$local_b64")
-              [ -n "$sha" ] && args+=(-f "sha=$sha")
-              if gh api "${args[@]}" >/dev/null 2>/dev/null; then
-                echo "synced: $full $dest"
-                applied=$((applied + 1))
-                continue
+            # Per-repo failures must NOT abort the rest of the fleet: warn, COUNT,
+            # and skip this repo's files for this run (the next run is idempotent).
+            # The count is what turns the run red at the end — a warning alone let
+            # run 29084025682 drop a write and still report success.
+            fallback_pairs=()
+            if [ "${#changed_pairs[@]}" -gt 0 ]; then
+              if ! db="$(gh api "repos/$full" --jq .default_branch)"; then
+                echo "::warning::fleet: cannot read default branch for $full; skipping its ${#changed_pairs[@]} changed file(s)"
+                failed=$((failed + ${#changed_pairs[@]}))
+              else
+                bundle_rc=0
+                out="$(bash scripts/fleet-commit-bundle.sh "$full" "$db" "${changed_pairs[@]}")" || bundle_rc=$?
+                if [ "$bundle_rc" -eq 0 ]; then
+                  echo "synced(one push): $full — $out"
+                  applied=$((applied + ${#changed_pairs[@]}))
+                elif [ "$bundle_rc" -eq 3 ]; then
+                  # Protected default branch: land each file as a PR, exactly as
+                  # the Contents-API path did. PR branches fire no release run,
+                  # so bundling buys nothing there, and the per-file branches
+                  # keep their names (pr-exists dedup depends on them).
+                  echo "direct push rejected for $full — landing each file as a PR"
+                  fallback_pairs=("${changed_pairs[@]}")
+                else
+                  echo "::warning::fleet: bundled commit failed for $full; skipping its ${#changed_pairs[@]} changed file(s) this run"
+                  failed=$((failed + ${#changed_pairs[@]}))
+                fi
               fi
+            fi
 
-              # Rejected (e.g. a protected default branch -> HTTP 409): land it as a PR.
-              echo "direct commit rejected for $full $dest — using a PR"
-              # Per-repo failures must NOT abort the rest of the fleet: warn, COUNT,
-              # and skip this file for this repo (the next run is idempotent). The
-              # count is what turns the run red at the end — a warning alone let
-              # run 29084025682 drop a write and still report success.
-              db="$(gh api "repos/$full" --jq .default_branch)" \
-                || { echo "::warning::fleet: cannot read default branch for $full; skipping $dest"; failed=$((failed + 1)); continue; }
+            for pair in ${fallback_pairs[@]+"${fallback_pairs[@]}"}; do
+              src="${pair%%:*}"; dest="${pair##*:}"
+              local_b64="$(base64 < "$src" | tr -d '\n')"
               # Strip whatever extension the dest has (.yml, .md, …) for a clean branch name.
               destbase="$(basename "$dest")"
               branch="fleet-sync/${destbase%.*}"
