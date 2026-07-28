@@ -4,8 +4,11 @@ glyph is shared infrastructure: the commit lint, the semver verdict and the
 release notes for **every** repo come out of one binary. A rollout therefore
 touches the whole fleet, and every step below exists because it was got wrong at
 least once. (No repo count here on purpose — the loops print the live one:
-`glyph-pin-audit` logs `auditing N repos` and `fleet-sync` logs `candidate repos: N`.
-A hand-kept number in prose only ever disagrees with them.) Machine checks come first; this document only covers what a check cannot.
+`glyph-pin-audit` logs `auditing N repos (P private)` and `fleet-sync` logs
+`candidate repos: N`. A hand-kept number in prose only ever disagrees with them.
+The two `N`s must agree — both loops list with the same PAT, after a week in which
+the audit's default token silently saw 29 repos to fleet-sync's 35: the six
+private ones were never audited and nothing was red.) Machine checks come first; this document only covers what a check cannot.
 
 This document is the **sequence**. Whether you have earned the right to run it —
 how far to verify before a change reaches the fleet at all — is
