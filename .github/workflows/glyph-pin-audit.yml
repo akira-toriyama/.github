@@ -32,6 +32,17 @@
 # this the hard way is why the check is written as a workflow and not a grep in
 # someone's notes.)
 #
+# THE AUDITOR MUST SEE WHAT THE WRITER WRITES. This ran on the default
+# GITHUB_TOKEN for its first week, and that token cannot list other repos'
+# private copies: on 2026-07-28 this audit logged `auditing 29 repos` while
+# fleet-sync — writing with FLEET_SYNC_PAT — logged `candidate repos: 35`. The
+# six private repos were outside the audit's view, so "fleet is level" was a
+# claim about 29 of 35, and nobody noticed because no single place showed both
+# numbers. Hence: the SAME credential as fleet-sync, a hard failure when it is
+# absent (a public-only audit is worse than a red one), and a private-repo
+# canary below proving the wider view is actually in effect — a count kept in
+# prose would rot, so the guard asserts the SHAPE of the list, not its size.
+#
 # Failure is the point: this reports via exit status, so the scheduled run turns
 # red and stays red until the fleet is level again. Bump a pin by editing
 # fleet/commit-lint.yml + fleet/version-preview.yml AND the hub's own
@@ -75,10 +86,19 @@ jobs:
 
       - name: Audit every repo's glyph pins against the canonical
         env:
-          GH_TOKEN: ${{ github.token }}
+          # fleet-sync's writing credential, NOT github.token — the default
+          # token sees no private repos, and an audit over a subset reports
+          # "fleet is level" about a fleet it cannot see (see header).
+          GH_TOKEN: ${{ secrets.FLEET_SYNC_PAT }}
           OWNER: akira-toriyama
         run: |
           set -euo pipefail
+
+          # Fail loud, not open: without the PAT this audit would still run,
+          # see only public repos, and hand out a green that claims less than
+          # it appears to. Dormancy (fleet-sync's gate) is wrong here — a
+          # degraded auditor must be RED, because its green is a false claim.
+          [ -n "${GH_TOKEN:-}" ] || { echo "::error::FLEET_SYNC_PAT is not set — refusing to audit with a public-only view (it would silently exclude every private repo)."; exit 1; }
 
           # The canonical pin: what fleet-sync hands to every repo. Read through
           # the SAME extractor as every repo below — one reader, one truth, and
@@ -88,10 +108,23 @@ jobs:
           [ -n "$want" ] || { echo "::error::could not read the canonical glyph pin from fleet/commit-lint.yml"; exit 1; }
           echo "canonical glyph pin: $want"
 
-          mapfile -t REPOS < <(gh repo list "$OWNER" --no-archived --source --limit 200 \
-            --json name,isFork -q '.[] | select(.isFork==false) | .name' | sort)
+          repo_rows="$(gh repo list "$OWNER" --no-archived --source --limit 200 \
+            --json name,isFork,visibility -q '.[] | select(.isFork==false) | .name + "\t" + .visibility' | sort)"
+          mapfile -t REPOS < <(printf '%s\n' "$repo_rows" | cut -f1)
           [ "${#REPOS[@]}" -ge 1 ] || { echo "::error::empty repo list from gh repo list — aborting (transient API failure?)."; exit 1; }
-          echo "auditing ${#REPOS[@]} repos"
+
+          # The private-repo canary. The failure mode this audit acquired on
+          # 2026-07-28 was not an error but a silently NARROWER list — six
+          # private repos gone with nothing red anywhere. A hand-kept expected
+          # count would rot (fleet-sync refuses one for the same reason), but
+          # the SHAPE is stable: this fleet always contains private repos, and
+          # every credential that can see zero of them is the degraded one.
+          private_n="$(printf '%s\n' "$repo_rows" | grep -c $'\tPRIVATE' || true)"
+          if [ "${private_n:-0}" -eq 0 ]; then
+            echo "::error::the repo list contains no private repos — the token's view is degraded (this is how the 29-of-35 audit happened), refusing to call this an audit of the fleet."
+            exit 1
+          fi
+          echo "auditing ${#REPOS[@]} repos ($private_n private)"
 
           drift=0
           for repo in "${REPOS[@]}"; do
