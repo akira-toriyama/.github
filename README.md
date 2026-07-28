@@ -75,6 +75,20 @@ repo; new repos are onboarded automatically (the repo list is fetched at run tim
 Edit the canonical copy in [`fleet/`](fleet/) — never a per-repo copy, which the
 next run overwrites. Mechanism, secrets, and PAT rotation: [`fleet/README.md`](fleet/README.md).
 
+## glyph-pin-rewrite — the other fleet writer
+
+fleet-sync distributes **whole files**, which works only where every repo may
+carry the identical one. Three of the five things that reference glyph are lines
+inside files each repo owns and writes differently — a repo's own release
+workflow, `actions/install@`, and the `version:` binary pin under it — so
+`fleet-sync` cannot reach them, and refuses those dests by name.
+[`glyph-pin-rewrite.yml`](.github/workflows/glyph-pin-rewrite.yml) moves those
+lines instead: it rewrites **only** the pin lines, in whatever file they are in,
+and opens one `glyph-pin/vX.Y.Z` pull request per repo. The confinement is proved
+rather than intended — [`scripts/glyph-pin-rewrite.sh`](scripts/glyph-pin-rewrite.sh)
+writes nothing at all if any other line moves. Merging the pull requests stays
+manual. Sequence: [`docs/glyph-rollout-runbook.md`](docs/glyph-rollout-runbook.md).
+
 ## Versioning the reusables
 
 Callers pin the **moving `@v2`** tag; merging to `main` does not reach them until

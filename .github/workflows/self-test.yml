@@ -319,6 +319,24 @@ jobs:
       - name: Table-test glyph-pin-scan
         run: bash tests/glyph-pin-scan.test.sh
 
+  # RUN the pin REWRITER over a case table (the real .sh). The scan test above
+  # guards what the fleet is SEEN through; this guards what it is WRITTEN with —
+  # glyph-pin-rewrite.yml edits files in ~36 repos that the hub cannot
+  # reconstruct, and every one of them is bespoke. Two of the cases are
+  # mutations: they break the rewriter on purpose in a copy and require its own
+  # refusals to fire, because a guard that only ever runs on correct input is
+  # decoration and reads exactly like this file passing.
+  glyph-pin-rewrite-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # Feeds YAML to a script on stdin; never pushes (zizmor artipacked). t-2nh8
+          persist-credentials: false
+      - name: Table-test glyph-pin-rewrite
+        run: bash tests/glyph-pin-rewrite.test.sh
+
   # The hub's own bookkeeping, which until now lived only in prose: that every
   # MANIFEST src exists, that no dest collides with a glyph reusable definition,
   # that every canonical is both distributed AND documented, that dependabot.d
@@ -352,7 +370,9 @@ jobs:
       - name: Table-test apply-repo-settings
         run: bash tests/apply-repo-settings.test.sh
 
-  # The same three pure-shell tables on macOS. Not redundancy: the author's
+  # The same pure-shell tables again, on macOS. (This comment used to say "three"
+  # while the step below ran four — a hand-kept count in prose next to the list it
+  # counts.) Not redundancy: the author's
   # machine is macOS with a BSD userland, so a GNU-only construct here means the
   # only local way to see this logic run is unavailable exactly when it is needed.
   # That was not hypothetical — bump-formula.sh used GNU `sed -i` with the
@@ -383,6 +403,7 @@ jobs:
           set -euo pipefail
           bash tests/bump-formula.test.sh
           bash tests/glyph-pin-scan.test.sh
+          bash tests/glyph-pin-rewrite.test.sh
           bash tests/fleet-manifest.test.sh
           bash tests/apply-repo-settings.test.sh
 
