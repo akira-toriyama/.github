@@ -110,14 +110,16 @@ fi
 #
 # A canonical that no MANIFEST line names is dead weight that reads as live: the
 # next author edits it, sees a green PR, and ships nothing. Excluded on purpose:
-# README.md (documentation), and dependabot.yml + dependabot.d/* (ASSEMBLED per
-# repo inside the sync loop rather than listed as a pair).
+# README.md (documentation), dependabot.yml + dependabot.d/* (ASSEMBLED per
+# repo inside the sync loop rather than listed as a pair), and rollout.json
+# (the rollout LEDGER fleet-sync reads before writing — hub-only state, never
+# distributed; tests/fleet-rollout-gate.test.sh is what holds it honest).
 # ---------------------------------------------------------------------------
 undistributed=""
 for f in "$root"/fleet/*; do
   [ -f "$f" ] || continue
   rel="fleet/${f##*/}"
-  case "$rel" in fleet/README.md | fleet/dependabot.yml) continue ;; esac
+  case "$rel" in fleet/README.md | fleet/dependabot.yml | fleet/rollout.json) continue ;; esac
   case " $MANIFEST " in *" $rel:"*) ;; *) undistributed="$undistributed $rel" ;; esac
 done
 if [ -n "$undistributed" ]; then

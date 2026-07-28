@@ -1,0 +1,10 @@
+{
+  "change": "introduce the rollout ledger itself (t-yyfv) — canonical bytes unchanged by this rollout",
+  "covers": "sha256:88d7323dd4fc3e84164f97a972390e2d1c13b294cd6a6dd3e638857b444e614b",
+  "stage": "canary",
+  "canary": ["glyph-test"],
+  "soak_until": null,
+  "evidence": {
+    "canary": {}
+  }
+}

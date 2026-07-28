@@ -21,7 +21,11 @@ name: fleet-sync
 #                       v0.3.0 with a stale tap cask; prq 401'd); rotation is now:
 #                       update THIS repo's secret once, the next run re-fans it.
 #
-# Safety: workflow_dispatch defaults to DRY-RUN (log only). Scheduled runs apply.
+# Safety: workflow_dispatch defaults to DRY-RUN (log only). Scheduled runs apply
+# — but EVERY apply run first passes the rollout ledger gate (fleet/rollout.json
+# via scripts/fleet-rollout-gate.sh, t-yyfv): a canonical change ships only after
+# its ledger entry has earned stage "fleet" (canary applied, evidence machine-
+# recorded, soak elapsed), so merging to the hub's main is no longer the deploy.
 # Honesty: an apply run does not end at "sent" — a read-back step re-fetches every
 # managed file from every repo and fails on any mismatch, and any write failure
 # fails the job (green = the fleet HOLDS the canonical, not "the loop finished").
@@ -91,6 +95,7 @@ jobs:
           EVENT: ${{ github.event_name }}
           DRY_RUN: ${{ inputs.dry-run }}
           ONLY_REPO: ${{ inputs.only-repo }}
+          ROLLOUT_HUB: ${{ github.repository }}
           WRITE_PAT: ${{ secrets.PROJECTS_WRITE_PAT }}
           TAP_PAT: ${{ secrets.HOMEBREW_TAP_TOKEN }}
           # Repos to skip (space-separated). .github is the hub itself.
@@ -105,6 +110,30 @@ jobs:
           # The read-back step gates on this: it verifies APPLY runs only (a
           # dry run distributes nothing, so there is nothing to read back).
           echo "dry=$DRY" >> "$GITHUB_OUTPUT"
+
+          # ROLLOUT LEDGER GATE (t-yyfv). An apply run — scheduled or manual —
+          # may write only bytes that fleet/rollout.json covers, at the stage
+          # the rollout has actually reached. Until this gate, merging a
+          # canonical to the hub's main WAS the deploy and the daily timer
+          # merely executed it; now a canonical change whose ledger entry has
+          # not earned stage "fleet" (canary applied, evidence recorded, soak
+          # elapsed) holds every write and fails LOUDLY instead. Dry runs pass
+          # freely — previewing a staged change is the point of them. A held
+          # red is the ledger working: advance the rollout, don't re-run.
+          if [ "$DRY" != "true" ]; then
+            if ! bash scripts/fleet-rollout-gate.sh fleet/rollout.json "$ONLY_REPO"; then
+              rc=$?
+              echo "held=true" >> "$GITHUB_OUTPUT"
+              {
+                echo "# HELD BY THE ROLLOUT LEDGER — NOTHING WAS DISTRIBUTED"
+                echo
+                echo "fleet/rollout.json does not allow this apply run to write (gate exit $rc)."
+                echo "The job log's rollout-gate lines carry the reason and the remediation."
+              } >> "$GITHUB_STEP_SUMMARY"
+              echo "::error::fleet-sync: held by the rollout ledger (gate exit $rc) — see the rollout-gate lines above. This red is the staged-rollout policy enforcing itself, not a malfunction."
+              exit 1
+            fi
+          fi
 
           # Manifest: "<src in this repo>:<dest in each target repo>". Add lines to
           # standardize more files. The zizmor pair distributes the Actions-security
@@ -513,7 +542,12 @@ jobs:
       # read back by design, so its truth remains the set-time exit codes the
       # counters above already enforce.
       - name: Read back what the fleet actually holds
-        if: ${{ !cancelled() && steps.gate.outputs.go == 'true' && steps.sync.outputs.dry == 'false' }}
+        id: readback
+        # held != 'true': a run the rollout ledger refused wrote nothing, and
+        # reading the fleet against a canonical that is deliberately NOT
+        # distributed yet would report the whole fleet stale — a truthful
+        # measurement of an intended state, presented as an error.
+        if: ${{ !cancelled() && steps.gate.outputs.go == 'true' && steps.sync.outputs.dry == 'false' && steps.sync.outputs.held != 'true' }}
         env:
           GH_TOKEN: ${{ secrets.FLEET_SYNC_PAT }}
           OWNER: ${{ github.repository_owner }}
@@ -530,6 +564,13 @@ jobs:
           [ -n "${MANIFEST:-}" ] || { echo "::error::read-back: MANIFEST not inherited from the sync step — refusing a vacuous pass."; exit 1; }
           [ -n "${PRUNE:-}" ] || { echo "::error::read-back: PRUNE not inherited from the sync step — refusing a vacuous pass."; exit 1; }
           [ -n "${EXCLUDE:-}" ] || { echo "::error::read-back: EXCLUDE not inherited from the sync step — the hub would be misread as a stale fleet repo."; exit 1; }
+
+          # Every per-file verdict is also recorded as one JSON line, so the
+          # canary-evidence recorder below can quote what was actually READ
+          # rather than re-fetching (and possibly re-judging) it.
+          RESULTS="$RUNNER_TEMP/readback-results.jsonl"
+          : > "$RESULTS"
+          record() { jq -cn --arg repo "$1" --arg dest "$2" --arg state "$3" '{repo: $repo, dest: $dest, state: $state}' >> "$RESULTS"; }
 
           mapfile -t REPOS < <(gh repo list "$OWNER" --no-archived --source --limit 200 \
             --json name,isFork -q '.[] | select(.isFork==false) | .name' | sort)
@@ -559,10 +600,12 @@ jobs:
               err="$RUNNER_TEMP/readback.err"
               if got_json="$(gh api "repos/$full/contents/$dest" 2>"$err")"; then
                 if [ "$(printf '%s' "$got_json" | jq -r '.content' | tr -d '\n')" = "$want_b64" ]; then
+                  record "$full" "$dest" "ok"
                   ok=$((ok + 1)); continue
                 fi
               elif ! grep -q 'HTTP 404' "$err"; then
                 echo "::error::read-back: cannot read $full $dest — cannot confirm it was distributed: $(head -c 200 "$err")"
+                record "$full" "$dest" "unreadable"
                 unreadable=$((unreadable + 1)); continue
               fi
               # Missing or different on the default branch: acceptable ONLY as
@@ -573,9 +616,11 @@ jobs:
                  && [ "$(printf '%s' "$bjson" | jq -r '.content' | tr -d '\n')" = "$want_b64" ] \
                  && [ -n "$(gh pr list --repo "$full" --head "$branch" --state open --json number --jq '.[0].number // empty')" ]; then
                 echo "pending(pr-open): $full $dest"
+                record "$full" "$dest" "pending-pr"
                 pending=$((pending + 1)); continue
               fi
               echo "::error::read-back: $full $dest is STALE after an apply run — the write did not land and no open PR carries it"
+              record "$full" "$dest" "stale"
               stale=$((stale + 1))
             done
 
@@ -585,6 +630,7 @@ jobs:
                 # A reusable DEFINITION at a retired path is deliberately not
                 # pruned (see the sync step) — deliberate skips are not stale.
                 if printf '%s' "$dead_json" | jq -r '.content' | base64 -d 2>/dev/null | grep -q "workflow_call"; then
+                  record "$full" "$dead" "prune-skipped-reusable"
                   ok=$((ok + 1)); continue
                 fi
                 deadbase="$(basename "$dead")"
@@ -592,14 +638,18 @@ jobs:
                 if ! gh api "repos/$full/contents/$dead?ref=$branch" >/dev/null 2>&1 \
                    && [ -n "$(gh pr list --repo "$full" --head "$branch" --state open --json number --jq '.[0].number // empty')" ]; then
                   echo "pending(prune-pr-open): $full $dead"
+                  record "$full" "$dead" "prune-pending-pr"
                   pending=$((pending + 1)); continue
                 fi
                 echo "::error::read-back: $full still carries retired $dead after an apply run"
+                record "$full" "$dead" "prune-stale"
                 stale=$((stale + 1))
               elif ! grep -q 'HTTP 404' "$err"; then
                 echo "::error::read-back: cannot read $full $dead: $(head -c 200 "$err")"
+                record "$full" "$dead" "prune-unreadable"
                 unreadable=$((unreadable + 1))
               else
+                record "$full" "$dead" "prune-clean"
                 ok=$((ok + 1))
               fi
             done
@@ -612,4 +662,92 @@ jobs:
           if [ "$stale" -gt 0 ] || [ "$unreadable" -gt 0 ]; then
             echo "::error::read-back: the fleet does NOT hold what this apply run claims ($stale stale, $unreadable unreadable). Success above was a claim; this is the measurement."
             exit 1
+          fi
+
+      # CANARY EVIDENCE RECORDER (t-yyfv). The ledger's evidence records are
+      # MACHINE-written or they are worthless: a rollout advances on what a
+      # canary apply actually READ BACK, not on what a human typed. This step
+      # runs only after the read-back above verified a canary-scoped apply; it
+      # copies the read-back's own per-file verdicts into
+      # evidence.canary.<repo>, and — once every listed canary carries
+      # evidence for exactly these bytes — sets soak_until (48h) and advances
+      # stage to "fleet", so the first scheduled run after the soak applies
+      # fleet-wide with no further ceremony. The hub's main is protected, so
+      # the updated ledger lands as a PR: merging it is the one human act in
+      # the sequence — branch protection, not an approval flow. The gate's
+      # run-id check (it must name a real, successful fleet-sync run) is what
+      # keeps a typed-in evidence block from passing as this step's output.
+      - name: Record canary evidence (lands as a PR on the hub)
+        if: ${{ !cancelled() && steps.readback.outcome == 'success' && steps.sync.outputs.dry == 'false' && inputs.only-repo != '' }}
+        env:
+          GH_TOKEN: ${{ secrets.FLEET_SYNC_PAT }}
+          HUB: ${{ github.repository }}
+          OWNER: ${{ github.repository_owner }}
+          ONLY_REPO: ${{ inputs.only-repo }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          LEDGER=fleet/rollout.json
+
+          stage="$(jq -r '.stage' "$LEDGER")"
+          if [ "$stage" != "canary" ]; then
+            echo "skip: ledger stage is '$stage' — evidence is recorded only while a rollout is at stage canary"
+            exit 0
+          fi
+          if ! jq -e --arg r "$ONLY_REPO" '.canary | index($r) != null' "$LEDGER" >/dev/null; then
+            echo "skip: $ONLY_REPO is not a listed canary"
+            exit 0
+          fi
+
+          covers="$(bash scripts/fleet-rollout-gate.sh --print-covers "$LEDGER")"
+          now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          soak="$(date -u -d '+48 hours' +%Y-%m-%dT%H:%M:%SZ)"
+          reads="$(jq -c --arg repo "$OWNER/$ONLY_REPO" 'select(.repo == $repo)' \
+            "$RUNNER_TEMP/readback-results.jsonl" | jq -s -c '.')"
+          [ "$(printf '%s' "$reads" | jq 'length')" -ge 1 ] \
+            || { echo "::error::recorder: the read-back recorded no verdicts for $OWNER/$ONLY_REPO — refusing to write empty evidence"; exit 1; }
+
+          jq --arg r "$ONLY_REPO" --argjson run "$RUN_ID" --arg now "$now" \
+             --arg covers "$covers" --arg soak "$soak" --argjson reads "$reads" '
+            .evidence.canary[$r] = {run_id: $run, recorded_at: $now, covers: $covers, reads: $reads}
+            | . as $doc
+            | if ([.canary[] | $doc.evidence.canary[.] | select(. != null and .covers == $covers)] | length) == (.canary | length)
+              then .stage = "fleet" | .soak_until = $soak
+              else .
+              end
+          ' "$LEDGER" > "$RUNNER_TEMP/rollout-new.json"
+
+          b64="$(base64 < "$RUNNER_TEMP/rollout-new.json" | tr -d '\n')"
+          db="$(gh api "repos/$HUB" --jq .default_branch)"
+          branch="fleet-sync/rollout-evidence"
+          # A leftover branch from a MERGED evidence PR would make this PUT
+          # build on a stale base; recreate it unless an open PR still rides it.
+          if gh api "repos/$HUB/git/ref/heads/$branch" >/dev/null 2>/dev/null; then
+            if [ -z "$(gh pr list --repo "$HUB" --head "$branch" --state open --json number --jq '.[0].number // empty')" ]; then
+              gh api -X DELETE "repos/$HUB/git/refs/heads/$branch" >/dev/null
+            fi
+          fi
+          if ! gh api "repos/$HUB/git/ref/heads/$branch" >/dev/null 2>/dev/null; then
+            bsha="$(gh api "repos/$HUB/git/ref/heads/$db" --jq .object.sha)"
+            gh api -X POST "repos/$HUB/git/refs" -f "ref=refs/heads/$branch" -f "sha=$bsha" >/dev/null
+          fi
+          fargs=(-X PUT "repos/$HUB/contents/$LEDGER"
+            -f "message=:robot: chore(fleet): record canary evidence ($ONLY_REPO, run $RUN_ID)"
+            -f "author[name]=fleet-sync[bot]"
+            -f "author[email]=fleet-sync[bot]@users.noreply.github.com"
+            -f "content=$b64" -f "branch=$branch")
+          lsha="$(gh api "repos/$HUB/contents/$LEDGER?ref=$branch" --jq .sha 2>/dev/null || true)"
+          [ -n "$lsha" ] && fargs+=(-f "sha=$lsha")
+          gh api "${fargs[@]}" >/dev/null
+
+          new_stage="$(jq -r '.stage' "$RUNNER_TEMP/rollout-new.json")"
+          if pr_err="$(gh pr create --repo "$HUB" --base "$db" --head "$branch" \
+               --title ":robot: chore(fleet): record canary evidence ($ONLY_REPO)" \
+               --body "$(printf 'fleet-sync run %s applied the current rollout to canary %s and read every managed file back. This PR records that read-back as evidence in fleet/rollout.json (stage after merge: %s).\n\nMerging this is what lets the rollout proceed: the gate refuses fleet-wide writes until the ledger carries verified canary evidence and the soak has elapsed.' "$RUN_ID" "$ONLY_REPO" "$new_stage")" 2>&1)"; then
+            echo "evidence-pr-opened: $HUB ($ONLY_REPO, stage after merge: $new_stage)"
+          else
+            case "$pr_err" in
+              *"already exists"*) echo "evidence-pr-exists: $HUB ($ONLY_REPO)" ;;
+              *) echo "::error::recorder: evidence pr-create failed for $HUB: $pr_err"; exit 1 ;;
+            esac
           fi

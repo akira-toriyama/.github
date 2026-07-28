@@ -90,17 +90,35 @@ is worse than no rule.
   proves nothing about the case it exists for.
 - Branch protection on the repos that have it: fleet-sync opens a PR instead of
   pushing, so a bad canonical cannot land silently there.
+- **Stage 3 → 4, for the `fleet/` canonicals: the rollout ledger** (t-yyfv).
+  Every fleet-sync apply run — scheduled ones included — first passes
+  `scripts/fleet-rollout-gate.sh` against `fleet/rollout.json`. A canonical
+  change cannot distribute until its ledger entry covers exactly the bytes on
+  disk (and `tests/fleet-rollout-gate.test.sh` fails the PR that edits a
+  canonical without updating the ledger), a canary-scoped apply has run, its
+  read-back was machine-recorded as evidence — the gate verifies the recorded
+  run id names a real, successful fleet-sync run, so a typed-in evidence block
+  does not pass — and a 48-hour soak has elapsed. Merging to the hub's main is
+  no longer the deploy. Mechanics: `fleet/README.md`, "Rollout ledger".
+- **Read-back after an apply** (t-dk1e): an apply run re-fetches every managed
+  file from every repo and fails on any mismatch — "counting the artefact" is
+  no longer a discipline for fleet-sync-managed files; it is the last step of
+  the run. The canary evidence above is this read-back, recorded.
 
 **Not enforced — carried by whoever is doing the work**
 
-- Stages 1–3 themselves. Nothing checks that a POC was built, that `glyph-test`
-  was fired at, or that a canary went first. Nothing stops a canonical pin bump
-  and a `-f dry-run=false` in the same five minutes.
+- Stages 1 and 2. Nothing checks that a POC was built or that `glyph-test` was
+  fired at — the ledger's stage field can say `"glyph-test"`, and while it does
+  nothing distributes, but nothing verifies the rehearsal actually happened
+  before the stage advanced to `"canary"`.
 - "Both halves" in stage 2. A one-directional test looks identical to a
   two-directional one from outside.
-- Counting the real pins after a rollout, rather than trusting the run.
+- The same sequence for the **other** rollout path: the three glyph pins that
+  `glyph-pin-rewrite.yml` moves via PRs live outside `fleet/`, so the ledger
+  does not see them. Their safety net is the daily `glyph-pin-audit` (with the
+  blind spots named above), not a staged gate.
 
-Closing that gap is tracked work, not a footnote: the audit that reads the pins
-back after a sync, and the rehearsal that fires the release path at real GitHub,
-are open tasks. Until they exist, stages 1–3 are a discipline — write down which
-ones you actually performed, and say plainly which you skipped.
+Closing the stage-2 gap is tracked work, not a footnote: the rehearsal that
+fires the release path at real GitHub is an open task. Until it exists, stages
+1–2 are a discipline — write down which ones you actually performed, and say
+plainly which you skipped.
