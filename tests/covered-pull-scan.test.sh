@@ -188,6 +188,29 @@ EOF
 )" \
 ""
 
+# ---- the audit must not flag itself ---------------------------------------
+
+# The audit workflow sits inside its own scan scope, and its error messages
+# are executable echo lines with their quotes erased before matching — the
+# first run on main flagged its OWN two messages as unreadable invocations,
+# something no pre-merge check saw because the file was not on main yet. So
+# the REAL file is the fixture here: a future edit that spells the audited
+# command out inside a string turns this red locally, before it merges.
+audit_yml="$root/.github/workflows/glyph-covered-pull-audit.yml"
+if [ -f "$audit_yml" ]; then
+  self_scan="$(bash "$script" workflows < "$audit_yml" 2>&1)"
+  if [ -z "$self_scan" ]; then
+    echo "ok   - workflows: the audit workflow itself scans clean"
+  else
+    echo "FAIL - workflows: the audit workflow flags itself"
+    printf '%s\n' "$self_scan" | sed 's/^/         /'
+    fails=$((fails + 1))
+  fi
+else
+  echo "FAIL - workflows: $audit_yml is missing (self-scan fixture gone)"
+  fails=$((fails + 1))
+fi
+
 # ---- mode dispatch --------------------------------------------------------
 
 if usage_out="$(printf '' | bash "$script" 2>&1)"; then

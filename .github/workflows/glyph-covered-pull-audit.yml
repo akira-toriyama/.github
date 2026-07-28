@@ -190,8 +190,14 @@ jobs:
                 case "$kind" in
                   merge-strategy)
                     case "$strat" in
+                      # These messages must not spell out the audited command:
+                      # this file sits inside its own scan scope, an echo is an
+                      # executable line, and quotes are erased before matching —
+                      # the first run on main flagged its OWN two error strings
+                      # as unreadable invocations. The self-scan case in
+                      # tests/covered-pull-scan.test.sh keeps it that way.
                       merge|rebase)
-                        echo "::error::$full $path:$line invokes gh pr merge --$strat — one merged pull through this line writes a bot-authored merge commit, and glyph's release walk then silently drops that pull (covered-pull trap, t-q0jv). Use --squash, or revisit t-q0jv before keeping this."
+                        echo "::error::$full $path:$line merges pull requests with --$strat — one merged pull through this line writes a bot-authored merge commit, and glyph's release walk then silently drops that pull (covered-pull trap, t-q0jv). Use --squash, or revisit t-q0jv before keeping this."
                         armed=$((armed + 1))
                         ;;
                       squash)
@@ -200,7 +206,7 @@ jobs:
                     esac
                     ;;
                   merge-strategy-unreadable)
-                    echo "::error::$full $path:$line invokes gh pr merge with a strategy this audit cannot read — pass a literal --squash/--merge/--rebase so the fleet can be audited (unreadable is treated as armed, not as clean)."
+                    echo "::error::$full $path:$line merges pull requests with a strategy this audit cannot read — pass a literal --squash/--merge/--rebase so the fleet can be audited (unreadable is treated as armed, not as clean)."
                     armed=$((armed + 1))
                     ;;
                 esac
