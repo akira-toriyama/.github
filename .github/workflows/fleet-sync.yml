@@ -22,6 +22,11 @@ name: fleet-sync
 #                       update THIS repo's secret once, the next run re-fans it.
 #
 # Safety: workflow_dispatch defaults to DRY-RUN (log only). Scheduled runs apply.
+# Honesty: an apply run does not end at "sent" — a read-back step re-fetches every
+# managed file from every repo and fails on any mismatch, and any write failure
+# fails the job (green = the fleet HOLDS the canonical, not "the loop finished").
+# A dry run's summary says DRY-RUN — NOTHING WAS DISTRIBUTED, because its green
+# once read as "distributed" (t-dk1e: 34 of 35 repos stale behind a success).
 # Blast radius: each fanned-out secret is a least-privilege fine-grained PAT scoped
 # to ONE repo (tracker Contents:RW / tap Contents:RW) — far narrower than the
 # retired App private key the first of them replaced.
@@ -79,6 +84,7 @@ jobs:
 
       - name: Sync standard files + the tracker-write PAT across the fleet
         if: steps.gate.outputs.go == 'true'
+        id: sync
         env:
           GH_TOKEN: ${{ secrets.FLEET_SYNC_PAT }}
           OWNER: ${{ github.repository_owner }}
@@ -96,6 +102,9 @@ jobs:
           DRY="${DRY_RUN:-false}"
           [ "$EVENT" = "schedule" ] && DRY=false
           echo "event=$EVENT dry-run=$DRY"
+          # The read-back step gates on this: it verifies APPLY runs only (a
+          # dry run distributes nothing, so there is nothing to read back).
+          echo "dry=$DRY" >> "$GITHUB_OUTPUT"
 
           # Manifest: "<src in this repo>:<dest in each target repo>". Add lines to
           # standardize more files. The zizmor pair distributes the Actions-security
@@ -123,6 +132,12 @@ jobs:
           # reusable (see the collision guard). Leaving it would race the new caller
           # for the same sticky comment.
           PRUNE=".github/workflows/pr-verdict.yml"
+
+          # The read-back step re-checks these same lists; hand it the ONE
+          # definition rather than keeping a second copy to drift
+          # (tests/fleet-manifest.test.sh parses the assignments above, which
+          # is why they stay shell assignments here and not job-level env).
+          { echo "MANIFEST=$MANIFEST"; echo "PRUNE=$PRUNE"; echo "EXCLUDE=$EXCLUDE"; } >> "$GITHUB_ENV"
 
           # REUSABLE-COLLISION GUARD. glyph is inside this fleet, and the workflows it
           # ships as reusable DEFINITIONS live at the same kind of path a caller syncs
@@ -161,7 +176,17 @@ jobs:
           # t-dk1e tracks: verify what landed instead of trusting what was sent.
           [ "${#REPOS[@]}" -ge 1 ] || { echo "::error::empty repo list from gh repo list — aborting (transient API failure?)."; exit 1; }
 
-          changed=0
+          # Four counters, and only ONE of them is a promise. `queued` counts
+          # intent (a diff was seen — it increments BEFORE the dry-run gate,
+          # so it is the number a dry run reports); `applied` counts writes
+          # that actually returned success; `pending` counts changes parked in
+          # an open PR (a protected branch is a legitimate resting state, not
+          # a failure); `failed` counts every write-path error that used to be
+          # a ::warning:: on a green run. Run 29084025682 (2026-07-10) failed
+          # to write a file and still returned success — that is the precise
+          # lie this split exists to end: failed > 0 now fails the job.
+          queued=0 applied=0 pending=0 failed=0 secrets_set=0
+          mkdir -p "$RUNNER_TEMP/assembled"
           for repo in "${REPOS[@]}"; do
             case " $EXCLUDE " in *" $repo "*) echo "skip(excluded): $repo"; continue;; esac
             if [ -n "$ONLY_REPO" ] && [ "$repo" != "$ONLY_REPO" ]; then continue; fi
@@ -177,7 +202,10 @@ jobs:
             # PRs). Probes distinguish 404 (absent — normal) from transient API
             # errors, like the tap gate below: misreading an error as "absent"
             # would assemble the WRONG file and erase entries for a day.
-            dep_src="$RUNNER_TEMP/dependabot-assembled.yml"
+            # Assembled under a per-repo NAME so the read-back step can verify
+            # dependabot.yml against the exact bytes this run intended for
+            # this repo — reassembling there would duplicate the probe logic.
+            dep_src="$RUNNER_TEMP/assembled/$repo.yml"
             cp fleet/dependabot.yml "$dep_src"
             dep_ok=true
             for probe in go.mod:gomod Package.swift:swift package.json:npm; do
@@ -188,11 +216,17 @@ jobs:
               elif ! grep -q 'HTTP 404' "$probe_err"; then
                 echo "::warning::fleet: dependabot probe failed for $full $manifest (skipping dependabot.yml for this repo this run): $(head -c 200 "$probe_err")"
                 dep_ok=false
+                failed=$((failed + 1))
                 break
               fi
             done
             dep_pair=""
-            [ "$dep_ok" = true ] && dep_pair="$dep_src:.github/dependabot.yml"
+            if [ "$dep_ok" = true ]; then
+              dep_pair="$dep_src:.github/dependabot.yml"
+            else
+              # A half-assembled file must not survive into the read-back.
+              rm -f "$dep_src"
+            fi
 
             # 1) sync each manifest file (create or update on the default branch)
             for pair in $MANIFEST $dep_pair; do
@@ -209,7 +243,7 @@ jobs:
                 sha=""
               fi
               echo "needs-sync: $full $dest"
-              changed=$((changed + 1))
+              queued=$((queued + 1))
               [ "$DRY" = "true" ] && continue
 
               # Try a direct commit to the default branch. The explicit [bot]
@@ -225,23 +259,26 @@ jobs:
               [ -n "$sha" ] && args+=(-f "sha=$sha")
               if gh api "${args[@]}" >/dev/null 2>/dev/null; then
                 echo "synced: $full $dest"
+                applied=$((applied + 1))
                 continue
               fi
 
               # Rejected (e.g. a protected default branch -> HTTP 409): land it as a PR.
               echo "direct commit rejected for $full $dest — using a PR"
-              # Per-repo failures must NOT abort the rest of the fleet: warn + skip
-              # this file for this repo and carry on (the next run is idempotent).
+              # Per-repo failures must NOT abort the rest of the fleet: warn, COUNT,
+              # and skip this file for this repo (the next run is idempotent). The
+              # count is what turns the run red at the end — a warning alone let
+              # run 29084025682 drop a write and still report success.
               db="$(gh api "repos/$full" --jq .default_branch)" \
-                || { echo "::warning::fleet: cannot read default branch for $full; skipping $dest"; continue; }
+                || { echo "::warning::fleet: cannot read default branch for $full; skipping $dest"; failed=$((failed + 1)); continue; }
               # Strip whatever extension the dest has (.yml, .md, …) for a clean branch name.
               destbase="$(basename "$dest")"
               branch="fleet-sync/${destbase%.*}"
               if ! gh api "repos/$full/git/ref/heads/$branch" >/dev/null 2>/dev/null; then
                 bsha="$(gh api "repos/$full/git/ref/heads/$db" --jq .object.sha)" \
-                  || { echo "::warning::fleet: cannot read $db tip for $full; skipping $dest"; continue; }
+                  || { echo "::warning::fleet: cannot read $db tip for $full; skipping $dest"; failed=$((failed + 1)); continue; }
                 gh api -X POST "repos/$full/git/refs" -f "ref=refs/heads/$branch" -f "sha=$bsha" >/dev/null \
-                  || { echo "::warning::fleet: cannot create branch $branch on $full; skipping $dest"; continue; }
+                  || { echo "::warning::fleet: cannot create branch $branch on $full; skipping $dest"; failed=$((failed + 1)); continue; }
               fi
               # Update the branch file only if it differs (no empty commits on re-runs).
               bsha2=""; need_put=1
@@ -260,7 +297,7 @@ jobs:
                   -f "content=$local_b64" -f "branch=$branch")
                 [ -n "$bsha2" ] && pargs+=(-f "sha=$bsha2")
                 gh api "${pargs[@]}" >/dev/null \
-                  || { echo "::warning::fleet: cannot write $dest on $full@$branch; skipping"; continue; }
+                  || { echo "::warning::fleet: cannot write $dest on $full@$branch; skipping"; failed=$((failed + 1)); continue; }
               fi
               # `gh pr create` exits non-zero BOTH when a PR already exists and on a
               # real failure; capture stderr so a genuine error isn't logged as the
@@ -269,10 +306,11 @@ jobs:
                    --title ":robot: chore(fleet): sync $dest" \
                    --body "Automated standard-file sync from akira-toriyama/.github (fleet-sync). The default branch is protected, so this lands as a PR." 2>&1)"; then
                 echo "pr-opened: $full $dest"
+                pending=$((pending + 1))
               else
                 case "$pr_err" in
-                  *"already exists"*) echo "pr-exists: $full $dest" ;;
-                  *) echo "::warning::fleet: pr-create failed for $full $dest: $pr_err" ;;
+                  *"already exists"*) echo "pr-exists: $full $dest"; pending=$((pending + 1)) ;;
+                  *) echo "::warning::fleet: pr-create failed for $full $dest: $pr_err"; failed=$((failed + 1)) ;;
                 esac
               fi
             done
@@ -291,7 +329,7 @@ jobs:
                 continue
               fi
               echo "needs-prune: $full $dead"
-              changed=$((changed + 1))
+              queued=$((queued + 1))
               [ "$DRY" = "true" ] && continue
               dead_sha="$(printf '%s' "$dead_json" | jq -r '.sha')"
               dargs=(-X DELETE "repos/$full/contents/$dead"
@@ -301,20 +339,21 @@ jobs:
                 -f "sha=$dead_sha")
               if gh api "${dargs[@]}" >/dev/null 2>/dev/null; then
                 echo "pruned: $full $dead"
+                applied=$((applied + 1))
                 continue
               fi
               # Protected default branch: land the deletion as a PR, mirroring the
               # sync path's fallback. Per-repo failures warn and carry on.
               echo "direct delete rejected for $full $dead — using a PR"
               db="$(gh api "repos/$full" --jq .default_branch)" \
-                || { echo "::warning::fleet: cannot read default branch for $full; skipping prune of $dead"; continue; }
+                || { echo "::warning::fleet: cannot read default branch for $full; skipping prune of $dead"; failed=$((failed + 1)); continue; }
               deadbase="$(basename "$dead")"
               branch="fleet-sync/prune-${deadbase%.*}"
               if ! gh api "repos/$full/git/ref/heads/$branch" >/dev/null 2>/dev/null; then
                 bsha="$(gh api "repos/$full/git/ref/heads/$db" --jq .object.sha)" \
-                  || { echo "::warning::fleet: cannot read $db tip for $full; skipping prune of $dead"; continue; }
+                  || { echo "::warning::fleet: cannot read $db tip for $full; skipping prune of $dead"; failed=$((failed + 1)); continue; }
                 gh api -X POST "repos/$full/git/refs" -f "ref=refs/heads/$branch" -f "sha=$bsha" >/dev/null \
-                  || { echo "::warning::fleet: cannot create branch $branch on $full; skipping prune of $dead"; continue; }
+                  || { echo "::warning::fleet: cannot create branch $branch on $full; skipping prune of $dead"; failed=$((failed + 1)); continue; }
               fi
               # Only delete on the branch if it is still there (a re-run must not fail
               # on an already-pruned branch).
@@ -324,16 +363,17 @@ jobs:
                   -f "author[name]=fleet-sync[bot]" \
                   -f "author[email]=fleet-sync[bot]@users.noreply.github.com" \
                   -f "sha=$(printf '%s' "$bjson" | jq -r '.sha')" -f "branch=$branch" >/dev/null \
-                  || { echo "::warning::fleet: cannot delete $dead on $full@$branch; skipping"; continue; }
+                  || { echo "::warning::fleet: cannot delete $dead on $full@$branch; skipping"; failed=$((failed + 1)); continue; }
               fi
               if pr_err="$(gh pr create --repo "$full" --base "$db" --head "$branch" \
                    --title ":robot: chore(fleet): drop retired $dead" \
                    --body "Automated retirement of a standard file from akira-toriyama/.github (fleet-sync). The default branch is protected, so this lands as a PR." 2>&1)"; then
                 echo "prune-pr-opened: $full $dead"
+                pending=$((pending + 1))
               else
                 case "$pr_err" in
-                  *"already exists"*) echo "prune-pr-exists: $full $dead" ;;
-                  *) echo "::warning::fleet: prune pr-create failed for $full $dead: $pr_err" ;;
+                  *"already exists"*) echo "prune-pr-exists: $full $dead"; pending=$((pending + 1)) ;;
+                  *) echo "::warning::fleet: prune pr-create failed for $full $dead: $pr_err"; failed=$((failed + 1)) ;;
                 esac
               fi
             done
@@ -354,8 +394,10 @@ jobs:
             else
               if printf '%s' "$WRITE_PAT" | gh secret set PROJECTS_WRITE_PAT --repo "$full"; then
                 echo "secrets-set: $full"
+                secrets_set=$((secrets_set + 1))
               else
                 echo "::warning::fleet: secret fan-out failed for $full"
+                failed=$((failed + 1))
               fi
             fi
 
@@ -401,10 +443,157 @@ jobs:
             else
               if printf '%s' "$TAP_PAT" | gh secret set HOMEBREW_TAP_TOKEN --repo "$full"; then
                 echo "tap-secret-set: $full"
+                secrets_set=$((secrets_set + 1))
               else
                 echo "::warning::fleet: tap-secret fan-out failed for $full"
+                failed=$((failed + 1))
               fi
             fi
           done
 
-          echo "done: $changed file change(s); dry-run=$DRY across ${#REPOS[@]} repo(s)"
+          echo "done: queued=$queued applied=$applied pending(pr)=$pending failed=$failed secrets-set=$secrets_set; dry-run=$DRY across ${#REPOS[@]} repo(s)"
+
+          # The summary a human actually reads. A dry run's green USED to read
+          # exactly like "already up to date" — "green run, zero effect" is how
+          # v0.11.0 was reported distributed while 34 of 35 repos sat on the old
+          # pin (t-dk1e). The heading makes that misread impossible.
+          if [ "$DRY" = "true" ]; then
+            {
+              echo "# DRY-RUN — NOTHING WAS DISTRIBUTED"
+              echo
+              echo "$queued file change(s) across ${#REPOS[@]} repo(s) WOULD be applied."
+              echo "Re-run with \`-f dry-run=false\` to distribute."
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            {
+              echo "# fleet-sync applied"
+              echo
+              echo "| queued | applied | pending (PR) | failed | secrets set |"
+              echo "|---|---|---|---|---|"
+              echo "| $queued | $applied | $pending | $failed | $secrets_set |"
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          # Green must mean "the fleet is in the intended state", not "the loop
+          # finished". Every failure above already warned per repo and moved on
+          # (per-repo isolation is right — one broken repo must not starve the
+          # other 34); this is where the run stops pretending those were fine.
+          if [ "$failed" -gt 0 ]; then
+            echo "::error::fleet-sync: $failed write(s)/read(s) failed — the fleet is NOT in the state this run intended. See the warnings above; the read-back step below shows what actually landed."
+            exit 1
+          fi
+
+      # A workflow that claims "applied" verifies its own claim before it ends
+      # (t-dk1e). Everything above counts what this run SENT; this step reads
+      # back what the fleet actually HOLDS — from the API, not from the loop's
+      # own bookkeeping — and fails on any mismatch. It runs even when the sync
+      # step went red (!cancelled()), because "how much of the fleet is stale"
+      # is exactly what you need to know then. Two states are acceptable:
+      # byte-identical on the default branch, or parked in an OPEN PR carrying
+      # the canonical bytes (a protected branch cannot receive a direct push).
+      # A file this step cannot READ is a failure too — "could not verify" and
+      # "verified" must not both be green (the same fail-loud rule as
+      # glyph-pin-scan). Scope: this verifies FILES; secret fan-out cannot be
+      # read back by design, so its truth remains the set-time exit codes the
+      # counters above already enforce.
+      - name: Read back what the fleet actually holds
+        if: ${{ !cancelled() && steps.gate.outputs.go == 'true' && steps.sync.outputs.dry == 'false' }}
+        env:
+          GH_TOKEN: ${{ secrets.FLEET_SYNC_PAT }}
+          OWNER: ${{ github.repository_owner }}
+          ONLY_REPO: ${{ inputs.only-repo }}
+          # EXCLUDE arrives via GITHUB_ENV from the sync step, like MANIFEST.
+        run: |
+          set -euo pipefail
+
+          # MANIFEST and PRUNE arrive via GITHUB_ENV from the sync step — one
+          # definition, no drifting copy. Their ABSENCE means the sync step
+          # died before defining them; verifying zero files against zero
+          # canonicals would pass vacuously, which is the exact green-that-
+          # means-nothing this step exists to end.
+          [ -n "${MANIFEST:-}" ] || { echo "::error::read-back: MANIFEST not inherited from the sync step — refusing a vacuous pass."; exit 1; }
+          [ -n "${PRUNE:-}" ] || { echo "::error::read-back: PRUNE not inherited from the sync step — refusing a vacuous pass."; exit 1; }
+          [ -n "${EXCLUDE:-}" ] || { echo "::error::read-back: EXCLUDE not inherited from the sync step — the hub would be misread as a stale fleet repo."; exit 1; }
+
+          mapfile -t REPOS < <(gh repo list "$OWNER" --no-archived --source --limit 200 \
+            --json name,isFork -q '.[] | select(.isFork==false) | .name' | sort)
+          [ "${#REPOS[@]}" -ge 1 ] || { echo "::error::read-back: empty repo list from gh repo list — cannot verify anything."; exit 1; }
+
+          ok=0; pending=0; stale=0; unreadable=0; audited=0
+          for repo in "${REPOS[@]}"; do
+            case " $EXCLUDE " in *" $repo "*) continue;; esac
+            if [ -n "$ONLY_REPO" ] && [ "$repo" != "$ONLY_REPO" ]; then continue; fi
+            full="$OWNER/$repo"
+            audited=$((audited + 1))
+
+            # dependabot.yml is per-repo assembled; the sync step left this
+            # run's intended bytes under the repo's name. No file means the
+            # probe failed there — already counted as a failure by the sync
+            # step, so it is only noted here, not double-counted.
+            dep_pair=""
+            if [ -f "$RUNNER_TEMP/assembled/$repo.yml" ]; then
+              dep_pair="$RUNNER_TEMP/assembled/$repo.yml:.github/dependabot.yml"
+            else
+              echo "note: $full dependabot.yml not verified (assembly was skipped this run)"
+            fi
+
+            for pair in $MANIFEST $dep_pair; do
+              src="${pair%%:*}"; dest="${pair##*:}"
+              want_b64="$(base64 < "$src" | tr -d '\n')"
+              err="$RUNNER_TEMP/readback.err"
+              if got_json="$(gh api "repos/$full/contents/$dest" 2>"$err")"; then
+                if [ "$(printf '%s' "$got_json" | jq -r '.content' | tr -d '\n')" = "$want_b64" ]; then
+                  ok=$((ok + 1)); continue
+                fi
+              elif ! grep -q 'HTTP 404' "$err"; then
+                echo "::error::read-back: cannot read $full $dest — cannot confirm it was distributed: $(head -c 200 "$err")"
+                unreadable=$((unreadable + 1)); continue
+              fi
+              # Missing or different on the default branch: acceptable ONLY as
+              # an open PR whose branch carries the canonical bytes.
+              destbase="$(basename "$dest")"
+              branch="fleet-sync/${destbase%.*}"
+              if bjson="$(gh api "repos/$full/contents/$dest?ref=$branch" 2>/dev/null)" \
+                 && [ "$(printf '%s' "$bjson" | jq -r '.content' | tr -d '\n')" = "$want_b64" ] \
+                 && [ -n "$(gh pr list --repo "$full" --head "$branch" --state open --json number --jq '.[0].number // empty')" ]; then
+                echo "pending(pr-open): $full $dest"
+                pending=$((pending + 1)); continue
+              fi
+              echo "::error::read-back: $full $dest is STALE after an apply run — the write did not land and no open PR carries it"
+              stale=$((stale + 1))
+            done
+
+            for dead in $PRUNE; do
+              err="$RUNNER_TEMP/readback.err"
+              if dead_json="$(gh api "repos/$full/contents/$dead" 2>"$err")"; then
+                # A reusable DEFINITION at a retired path is deliberately not
+                # pruned (see the sync step) — deliberate skips are not stale.
+                if printf '%s' "$dead_json" | jq -r '.content' | base64 -d 2>/dev/null | grep -q "workflow_call"; then
+                  ok=$((ok + 1)); continue
+                fi
+                deadbase="$(basename "$dead")"
+                branch="fleet-sync/prune-${deadbase%.*}"
+                if ! gh api "repos/$full/contents/$dead?ref=$branch" >/dev/null 2>&1 \
+                   && [ -n "$(gh pr list --repo "$full" --head "$branch" --state open --json number --jq '.[0].number // empty')" ]; then
+                  echo "pending(prune-pr-open): $full $dead"
+                  pending=$((pending + 1)); continue
+                fi
+                echo "::error::read-back: $full still carries retired $dead after an apply run"
+                stale=$((stale + 1))
+              elif ! grep -q 'HTTP 404' "$err"; then
+                echo "::error::read-back: cannot read $full $dead: $(head -c 200 "$err")"
+                unreadable=$((unreadable + 1))
+              else
+                ok=$((ok + 1))
+              fi
+            done
+          done
+
+          echo "read-back: $audited repo(s) verified / ${#REPOS[@]} listed; $ok ok, $pending pending(pr), $stale stale, $unreadable unreadable"
+          {
+            echo "## read-back: $audited repo(s) — $ok ok, $pending pending (PR), $stale stale, $unreadable unreadable"
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$stale" -gt 0 ] || [ "$unreadable" -gt 0 ]; then
+            echo "::error::read-back: the fleet does NOT hold what this apply run claims ($stale stale, $unreadable unreadable). Success above was a claim; this is the measurement."
+            exit 1
+          fi
