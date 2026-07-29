@@ -1,65 +1,10 @@
 {
-  "change": "introduce the rollout ledger itself (t-yyfv) — canonical bytes unchanged by this rollout",
-  "covers": "sha256:88d7323dd4fc3e84164f97a972390e2d1c13b294cd6a6dd3e638857b444e614b",
-  "stage": "fleet",
+  "change": "adopt furrow v1.0.0 in the canonical task-status caller (#151) — the flag-day pin for board schema v6 (t-dgja)",
+  "covers": "sha256:d1059744ee42c19d69a1072132e3cfb7e0ab25113a4c57ac4a6138677a9bf25e",
+  "stage": "canary",
   "canary": [
     "glyph-test"
   ],
-  "soak_until": "2026-07-30T13:47:02Z",
-  "evidence": {
-    "canary": {
-      "glyph-test": {
-        "run_id": 30365094969,
-        "recorded_at": "2026-07-28T13:47:02Z",
-        "covers": "sha256:88d7323dd4fc3e84164f97a972390e2d1c13b294cd6a6dd3e638857b444e614b",
-        "reads": [
-          {
-            "repo": "akira-toriyama/glyph-test",
-            "dest": ".github/workflows/task-status.yml",
-            "state": "ok"
-          },
-          {
-            "repo": "akira-toriyama/glyph-test",
-            "dest": ".github/workflows/commit-lint.yml",
-            "state": "ok"
-          },
-          {
-            "repo": "akira-toriyama/glyph-test",
-            "dest": ".github/workflows/taplo.yml",
-            "state": "ok"
-          },
-          {
-            "repo": "akira-toriyama/glyph-test",
-            "dest": ".github/workflows/zizmor.yml",
-            "state": "ok"
-          },
-          {
-            "repo": "akira-toriyama/glyph-test",
-            "dest": ".github/zizmor.yml",
-            "state": "ok"
-          },
-          {
-            "repo": "akira-toriyama/glyph-test",
-            "dest": ".github/workflows/version-preview.yml",
-            "state": "ok"
-          },
-          {
-            "repo": "akira-toriyama/glyph-test",
-            "dest": "docs/commit-convention.md",
-            "state": "ok"
-          },
-          {
-            "repo": "akira-toriyama/glyph-test",
-            "dest": ".github/dependabot.yml",
-            "state": "ok"
-          },
-          {
-            "repo": "akira-toriyama/glyph-test",
-            "dest": ".github/workflows/pr-verdict.yml",
-            "state": "prune-clean"
-          }
-        ]
-      }
-    }
-  }
+  "soak_until": null,
+  "evidence": {}
 }
