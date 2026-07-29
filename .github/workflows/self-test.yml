@@ -334,6 +334,24 @@ jobs:
       - name: Table-test furrow-pin-scan
         run: bash tests/furrow-pin-scan.test.sh
 
+  # The same extractor/audit split, for the sill platform floor:
+  # platform-floor-audit.yml reads every consumer's macOS floor and sill
+  # dependency through scripts/platform-floor-scan.sh. A parser regression does
+  # not fail loudly — it silently stops SEEING a floor or a dependency, which
+  # reads exactly like a repo with nothing to audit. The table also pins the
+  # comment handling (sill's own Package.swift carries a floor inside a comment)
+  # and the cmp mode's numeric-not-lexical compare.
+  platform-floor-scan-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # Feeds Swift to a script on stdin; never pushes (zizmor artipacked). t-2nh8
+          persist-credentials: false
+      - name: Table-test platform-floor-scan
+        run: bash tests/platform-floor-scan.test.sh
+
   # RUN the pin REWRITER over a case table (the real .sh). The scan test above
   # guards what the fleet is SEEN through; this guards what it is WRITTEN with —
   # glyph-pin-rewrite.yml edits files in ~36 repos that the hub cannot
@@ -479,6 +497,7 @@ jobs:
           bash tests/fleet-manifest.test.sh
           bash tests/fleet-rollout-gate.test.sh
           bash tests/apply-repo-settings.test.sh
+          bash tests/platform-floor-scan.test.sh
 
   # RUN the go-bite gate over a case table (the real .sh) so a break fails HERE, not
   # in a fleet caller after @v2 moves. Each case builds a throwaway Go repo under
