@@ -319,6 +319,21 @@ jobs:
       - name: Table-test glyph-pin-scan
         run: bash tests/glyph-pin-scan.test.sh
 
+  # The same extractor/audit split, for the furrow pin: furrow-pin-audit.yml sees
+  # the whole fleet through scripts/furrow-pin-scan.sh, including the
+  # `go install …/cmd/furrow@vX` shape inside run: blocks that no uses:-shaped
+  # scan can see (ef243fc shipped exactly that drift).
+  furrow-pin-scan-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # Feeds YAML to a script on stdin; never pushes (zizmor artipacked). t-2nh8
+          persist-credentials: false
+      - name: Table-test furrow-pin-scan
+        run: bash tests/furrow-pin-scan.test.sh
+
   # RUN the pin REWRITER over a case table (the real .sh). The scan test above
   # guards what the fleet is SEEN through; this guards what it is WRITTEN with —
   # glyph-pin-rewrite.yml edits files in ~36 repos that the hub cannot
@@ -457,6 +472,7 @@ jobs:
           set -euo pipefail
           bash tests/bump-formula.test.sh
           bash tests/glyph-pin-scan.test.sh
+          bash tests/furrow-pin-scan.test.sh
           bash tests/glyph-pin-rewrite.test.sh
           bash tests/covered-pull-scan.test.sh
           bash tests/fleet-commit-bundle.test.sh

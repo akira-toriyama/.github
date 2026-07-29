@@ -1,0 +1,205 @@
+# Fleet audit: every repo must run ONE furrow, and it must be the CURRENT one.
+#
+# Why this exists. furrow is shared infrastructure — every repo's task-status
+# gate installs the furrow binary its `sync-task-status.yml@vX.Y.Z` pin names,
+# and they all write the same shared board — so a repo on an old pin is not a
+# cosmetic lag: after a flag-day `furrow upgrade` it silently stops writing the
+# board at all ("task not found" / exit 3, the 2026-07-13 outage). Two failure
+# shapes have already happened and neither was visible anywhere:
+#
+#   - THE CANONICAL LAGGED THE RELEASE. glyph-pin-audit derives its expected
+#     value from the canonical itself, and tests/fleet-manifest.test.sh checks
+#     only that the hub's own furrow references agree with each other — so a
+#     fleet uniformly one release behind is all green. The rollback window is
+#     structural: furrow's release-prep used to bump furrow's own (fleet-owned)
+#     task-status caller ahead of the tag, and the next scheduled fleet-sync —
+#     `schedule` is always apply — overwrote it back to the older canonical.
+#     That reverted 3 of the 4 caller-bump releases, once for ~46 hours (t-2268).
+#
+#   - THE PIN NAMED A TAG THAT DOES NOT EXIST. A caller bumped ahead of the tag
+#     produces a run with ZERO jobs (conclusion=failure, 0s — furrow runs
+#     30187876943 / 30187821262): no job means no check-run, so `gh pr checks`,
+#     statusCheckRollup and required checks all report nothing at all. The
+#     SetStatus footer sync just stops happening and nothing anywhere is red
+#     (t-c51t).
+#
+# What it checks, in order:
+#
+#   1. the canonical pin (fleet/task-status.yml) names a tag that EXISTS in
+#      akira-toriyama/furrow — else every caller dies jobless and invisibly;
+#   2. the canonical pin IS the latest furrow release — a release with no
+#      rollout started is exactly the state that used to be all green;
+#   3. every furrow reference in every owned repo carries the canonical tag —
+#      including `go install …/cmd/furrow@vX` inside run: blocks, the shape no
+#      uses:-shaped scan can see (ef243fc shipped that drift). Reading lives in
+#      scripts/furrow-pin-scan.sh, table-tested by tests/furrow-pin-scan.test.sh.
+#
+# COMMENTS ARE IGNORED and THE AUDITOR SEES WHAT THE WRITER WRITES (the same
+# credential as fleet-sync, a hard failure without it, and a private-repo canary)
+# — both for glyph-pin-audit.yml's reasons; see that file's header for the
+# incidents. Failure is the point: the scheduled run turns red and stays red
+# until the fleet is level again. Bump the pin by editing fleet/task-status.yml
+# AND the hub's own hand-maintained .github/workflows/task-status.yml (fleet-sync
+# EXCLUDEs the hub; tests/fleet-manifest.test.sh §6 fails first), then let
+# fleet-sync distribute it — never by editing a repo's synced copy, which is the
+# churn loop this audit exists to catch.
+
+name: furrow-pin-audit
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '45 6 * * *' # daily, after fleet-sync (06:00) has had time to land
+  push:
+    branches: [main]
+    paths:
+      - 'fleet/task-status.yml'
+      - '.github/workflows/furrow-pin-audit.yml'
+      # The extractor IS the audit's eyesight — a change to it must re-run.
+      - 'scripts/furrow-pin-scan.sh'
+
+concurrency:
+  group: furrow-pin-audit
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Audit every repo's furrow pins against the canonical and the canonical against upstream
+        env:
+          # fleet-sync's writing credential, NOT github.token — the default
+          # token sees no private repos, and an audit over a subset reports
+          # "fleet is level" about a fleet it cannot see (glyph-pin-audit's
+          # 29-of-35 incident).
+          GH_TOKEN: ${{ secrets.FLEET_SYNC_PAT }}
+          OWNER: akira-toriyama
+        run: |
+          set -euo pipefail
+
+          # Fail loud, not open: a degraded auditor must be RED, because its
+          # green is a false claim about repos it cannot see.
+          [ -n "${GH_TOKEN:-}" ] || { echo "::error::FLEET_SYNC_PAT is not set — refusing to audit with a public-only view (it would silently exclude every private repo)."; exit 1; }
+
+          # The canonical pin: what fleet-sync hands to every repo. Read through
+          # the SAME extractor as every repo below — one reader, one truth, and
+          # the canonical is covered by the extractor's own table test.
+          want="$(bash scripts/furrow-pin-scan.sh < fleet/task-status.yml \
+                  | awk -F'\t' '$1 == "uses" { print $2; exit }')"
+          [ -n "$want" ] || { echo "::error::could not read the canonical furrow pin from fleet/task-status.yml"; exit 1; }
+          echo "canonical furrow pin: $want"
+
+          # 1. The tag must EXIST. A pin bumped ahead of its tag does not fail
+          # visibly — every caller's run dies with zero jobs and therefore zero
+          # check-runs, invisible to gh pr checks and required checks alike
+          # (furrow runs 30187876943 / 30187821262). Distinguish "absent" from
+          # "could not ask": only a 404 proves absence; any other failure is an
+          # unverified claim and fails as itself.
+          ref_err="$RUNNER_TEMP/tag-ref.err"
+          if ! gh api "repos/$OWNER/furrow/git/ref/tags/$want" --jq .ref >/dev/null 2>"$ref_err"; then
+            if grep -qE 'HTTP 404' "$ref_err"; then
+              echo "::error::fleet/task-status.yml pins furrow $want but that tag does not exist — every caller's task-status run will die with zero jobs and NO check-run (invisible to gh pr checks and required checks)."
+            else
+              echo "::error::cannot verify that furrow tag $want exists — the canonical has not been audited: $(head -c 200 "$ref_err")"
+            fi
+            exit 1
+          fi
+
+          # 2. The canonical must BE the current release. Deriving the expected
+          # value only from the canonical itself is how a fleet uniformly one
+          # release behind stayed all green (t-2268) — so ask upstream what the
+          # latest release is and refuse to call a lagging fleet level.
+          latest="$(gh release view -R "$OWNER/furrow" --json tagName --jq .tagName)" \
+            || { echo "::error::cannot read the latest furrow release — the canonical's currency has not been audited."; exit 1; }
+          if [ "$want" != "$latest" ]; then
+            echo "::error::fleet/task-status.yml pins furrow $want but the latest furrow release is $latest — the fleet is uniformly enforcing an old release (this used to be all green; see t-2268). Start the rollout: bump fleet/task-status.yml and the hub's own task-status.yml together."
+            exit 1
+          fi
+          echo "canonical is current: $want == latest release"
+
+          repo_rows="$(gh repo list "$OWNER" --no-archived --source --limit 200 \
+            --json name,isFork,visibility -q '.[] | select(.isFork==false) | .name + "\t" + .visibility' | sort)"
+          mapfile -t REPOS < <(printf '%s\n' "$repo_rows" | cut -f1)
+          [ "${#REPOS[@]}" -ge 1 ] || { echo "::error::empty repo list from gh repo list — aborting (transient API failure?)."; exit 1; }
+
+          # The private-repo canary — the SHAPE of the list, not its size (a
+          # hand-kept count would rot; see glyph-pin-audit's header).
+          private_n="$(printf '%s\n' "$repo_rows" | grep -c $'\tPRIVATE' || true)"
+          if [ "${private_n:-0}" -eq 0 ]; then
+            echo "::error::the repo list contains no private repos — the token's view is degraded (this is how the 29-of-35 audit happened), refusing to call this an audit of the fleet."
+            exit 1
+          fi
+          echo "auditing ${#REPOS[@]} repos ($private_n private)"
+
+          # 3. Every repo, every reference. A repo this loop cannot READ is not
+          # a repo that PASSED — read failures are counted and fail the run at
+          # the end, next to drift. Absence stays normal: an empty repo answers
+          # HTTP 404/409 on the tree, and that is genuinely nothing to audit.
+          # furrow itself is audited like every other repo: its task-status.yml
+          # is a fleet-synced copy like everyone else's, and a release-prep that
+          # bumps it ahead of the canonical is exactly the drift to catch. Its
+          # reusable's `furrow-version` default is an input default, not a
+          # `…furrow…@ref` reference, so the extractor never reads it.
+          drift=0
+          apifail=0
+          for repo in "${REPOS[@]}"; do
+            full="$OWNER/$repo"
+            tree_err="$RUNNER_TEMP/audit-tree.err"
+            if ! tree="$(gh api "repos/$full/git/trees/HEAD?recursive=1" --jq \
+              '.tree[] | select(.path | startswith(".github/")) | select(.path | test("\\.ya?ml$")) | .path' 2>"$tree_err")"; then
+              if grep -qE 'HTTP (404|409)' "$tree_err"; then continue; fi # empty repo / no default branch — nothing to audit
+              echo "::error::cannot list the tree of $full — this repo was NOT audited: $(head -c 200 "$tree_err")"
+              apifail=$((apifail + 1))
+              continue
+            fi
+            [ -n "$tree" ] || continue # no .github/**.yml — nothing to audit
+
+            while IFS= read -r path; do
+              [ -n "$path" ] || continue
+              body_err="$RUNNER_TEMP/audit-body.err"
+              if ! raw="$(gh api "repos/$full/contents/$path" --jq '.content' 2>"$body_err")"; then
+                echo "::error::cannot read $full $path — this file was NOT audited: $(head -c 200 "$body_err")"
+                apifail=$((apifail + 1))
+                continue
+              fi
+              if ! body="$(printf '%s\n' "$raw" | base64 -d 2>/dev/null)"; then
+                echo "::error::cannot decode $full $path — this file was NOT audited"
+                apifail=$((apifail + 1))
+                continue
+              fi
+              [ -n "$body" ] || continue # an empty file carries no pin
+              while IFS="$(printf '\t')" read -r kind ref line; do
+                [ -n "$kind" ] || continue
+                case "$kind" in
+                  uses|go-install|ref)
+                    if [ "$ref" != "$want" ]; then
+                      echo "::error::$full $path:$line pins furrow $ref ($kind) — canonical is $want"
+                      drift=$((drift + 1))
+                    fi
+                    ;;
+                  *-unpinned)
+                    # A branch, @latest, a SHA, a moving major or a prerelease.
+                    # Whatever it resolves to today it can resolve to something
+                    # else tomorrow, so it is drift even when it currently
+                    # points at $want.
+                    echo "::error::$full $path:$line references furrow at '$ref' ($kind), which is not a concrete release tag — canonical is $want"
+                    drift=$((drift + 1))
+                    ;;
+                esac
+              done < <(printf '%s\n' "$body" | bash scripts/furrow-pin-scan.sh)
+            done <<< "$tree"
+          done
+
+          if [ "$drift" -gt 0 ] || [ "$apifail" -gt 0 ]; then
+            echo "::error::furrow pin audit failed: $drift reference(s) off $want, $apifail read failure(s) — a repo that could not be read has not passed."
+            exit 1
+          fi
+          echo "fleet is level on furrow $want, and $want is the latest release"

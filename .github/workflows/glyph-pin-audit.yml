@@ -26,6 +26,13 @@
 # tests/glyph-pin-scan.test.sh, because a parser nobody can run is a parser
 # nobody can trust.
 #
+# Before any repo is read, the canonical itself is audited both ways: the tag it
+# pins must EXIST in akira-toriyama/glyph (a pin ahead of its tag kills every
+# caller's run with zero jobs and zero check-runs — invisible to gh pr checks and
+# required checks; t-c51t), and it must BE the latest glyph release (every check
+# below derives its expected value from the canonical, so a fleet uniformly one
+# release behind used to be all green; t-2268).
+#
 # COMMENTS ARE IGNORED. Every glyph reusable carries a commented caller stub
 # showing an example pin, and those examples are always stale. Matching them
 # produces permanent false drift, so only real `uses:` lines are read. (Finding
@@ -107,6 +114,37 @@ jobs:
                   | awk -F'\t' '$1 == "uses" { print $2; exit }')"
           [ -n "$want" ] || { echo "::error::could not read the canonical glyph pin from fleet/commit-lint.yml"; exit 1; }
           echo "canonical glyph pin: $want"
+
+          # The tag must EXIST. A pin bumped ahead of its tag does not fail
+          # visibly — every caller's run dies with zero jobs and therefore zero
+          # check-runs, invisible to gh pr checks, statusCheckRollup and
+          # required checks alike (furrow runs 30187876943 / 30187821262 are
+          # that shape; t-c51t). Only a 404 proves absence; any other failure
+          # is an unverified claim and fails as itself.
+          ref_err="$RUNNER_TEMP/tag-ref.err"
+          if ! gh api "repos/$OWNER/glyph/git/ref/tags/$want" --jq .ref >/dev/null 2>"$ref_err"; then
+            if grep -qE 'HTTP 404' "$ref_err"; then
+              echo "::error::fleet/commit-lint.yml pins glyph $want but that tag does not exist — every caller's run would die with zero jobs and NO check-run (invisible to gh pr checks and required checks)."
+            else
+              echo "::error::cannot verify that glyph tag $want exists — the canonical has not been audited: $(head -c 200 "$ref_err")"
+            fi
+            exit 1
+          fi
+
+          # The canonical must BE the current release. Every check below derives
+          # its expected value from the canonical itself, so a fleet uniformly
+          # one release behind is all green unless upstream is asked (t-2268 —
+          # the furrow pin sat reverted for ~46h with nothing red anywhere).
+          # Red here means "a release exists that no rollout has started";
+          # during a rollout the canonical has already moved, so a ledger soak
+          # does not trip this.
+          latest="$(gh release view -R "$OWNER/glyph" --json tagName --jq .tagName)" \
+            || { echo "::error::cannot read the latest glyph release — the canonical's currency has not been audited."; exit 1; }
+          if [ "$want" != "$latest" ]; then
+            echo "::error::fleet/commit-lint.yml pins glyph $want but the latest glyph release is $latest — the fleet is uniformly enforcing an old release. Start the rollout (docs/glyph-rollout-runbook.md)."
+            exit 1
+          fi
+          echo "canonical is current: $want == latest release"
 
           repo_rows="$(gh repo list "$OWNER" --no-archived --source --limit 200 \
             --json name,isFork,visibility -q '.[] | select(.isFork==false) | .name + "\t" + .visibility' | sort)"
