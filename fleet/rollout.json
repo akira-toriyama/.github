@@ -1,65 +1,12 @@
 {
-  "change": "adopt furrow v2.0.0 in the canonical task-status caller (#160) — the flag-day pin for board schema v7 (t-65cf: epic deps + standing/pinned); soak shortened to 2026-07-30 by operator decision — for a flag-day pin the soak is circularly uninformative (the canary's sync cannot go green until the board upgrades, which waits on the fleet apply this soak gates)",
-  "covers": "sha256:3e6f32516aaca2be316934ab7673eb6197a6c0e9d4e47d75aeec8caa6636641c",
-  "stage": "fleet",
+  "change": "dependabot: ignore akira-toriyama/* in the github-actions block — house pins are moved by house automation, never by bot bumps (t-nq3w)",
+  "covers": "sha256:763c470ef47014708d635cef37c662b83b8bd0801e820aec5cc530118a458bb6",
+  "stage": "canary",
   "canary": [
     "glyph-test"
   ],
-  "soak_until": "2026-07-30T10:18:40Z",
+  "soak_until": null,
   "evidence": {
-    "canary": {
-      "glyph-test": {
-        "run_id": 30503496001,
-        "recorded_at": "2026-07-30T00:42:51Z",
-        "covers": "sha256:3e6f32516aaca2be316934ab7673eb6197a6c0e9d4e47d75aeec8caa6636641c",
-        "reads": [
-          {
-            "repo": "akira-toriyama/glyph-test",
-            "dest": ".github/workflows/task-status.yml",
-            "state": "ok"
-          },
-          {
-            "repo": "akira-toriyama/glyph-test",
-            "dest": ".github/workflows/commit-lint.yml",
-            "state": "ok"
-          },
-          {
-            "repo": "akira-toriyama/glyph-test",
-            "dest": ".github/workflows/taplo.yml",
-            "state": "ok"
-          },
-          {
-            "repo": "akira-toriyama/glyph-test",
-            "dest": ".github/workflows/zizmor.yml",
-            "state": "ok"
-          },
-          {
-            "repo": "akira-toriyama/glyph-test",
-            "dest": ".github/zizmor.yml",
-            "state": "ok"
-          },
-          {
-            "repo": "akira-toriyama/glyph-test",
-            "dest": ".github/workflows/version-preview.yml",
-            "state": "ok"
-          },
-          {
-            "repo": "akira-toriyama/glyph-test",
-            "dest": "docs/commit-convention.md",
-            "state": "ok"
-          },
-          {
-            "repo": "akira-toriyama/glyph-test",
-            "dest": ".github/dependabot.yml",
-            "state": "ok"
-          },
-          {
-            "repo": "akira-toriyama/glyph-test",
-            "dest": ".github/workflows/pr-verdict.yml",
-            "state": "prune-clean"
-          }
-        ]
-      }
-    }
+    "canary": {}
   }
 }
