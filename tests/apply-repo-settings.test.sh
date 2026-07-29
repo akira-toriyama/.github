@@ -36,6 +36,9 @@ trap 'rm -rf "$stub_dir"' EXIT
 #   $STUB_HOME/fail-mutations         present = every -X call fails (403/expired token)
 #   $STUB_HOME/alerts-off.<name>      present = that repo's vulnerability-alerts GET
 #                                     404s, i.e. Dependabot alerts are OFF (drift)
+#   $STUB_HOME/check-runs.<name>      that repo's HEAD check-run names, one per
+#                                     line (absent = a repo whose HEAD ran nothing)
+#   $STUB_HOME/check-runs-fail        present = the check-runs GET fails (transient)
 cat >"$stub_dir/gh" <<'STUB'
 #!/usr/bin/env bash
 set -uo pipefail
@@ -75,6 +78,14 @@ case "$rest" in
     exit 0 ;;
   automated-security-fixes)                  emit '{"enabled":true}' ;;
   rulesets)                                  emit '[]' ;;
+  commits/HEAD/check-runs)
+    [ -e "$STUB_HOME/check-runs-fail" ] && exit 1
+    f="$STUB_HOME/check-runs.$name"
+    if [ -f "$f" ]; then
+      emit "$(jq -Rn '{check_runs: [inputs | {name: .}]}' <"$f")"
+    else
+      emit '{"check_runs":[]}'
+    fi ;;
   branches/main/protection)                  exit 1 ;;
   contents/.github/workflows/commit-lint.yml)
     f="$STUB_HOME/commit-lint.$name"
@@ -187,6 +198,42 @@ if [ "$RC" -eq 0 ] \
 else
   fail "ONLY= limits the run to one repo"
 fi
+
+# ---------------------------------------------------------------------------
+# The `build` context (t-jvdr): required ONLY where a check-run named `build`
+# exists on the default branch HEAD — ground truth, because a required context
+# that no run produces wedges every PR invisibly (the t-c51t shape). The swift
+# family's `build` was hand-added per repo; every new repo opened the hole again.
+# ---------------------------------------------------------------------------
+STUB_HOME="$stub_dir/fleet-build"; mkdir -p "$STUB_HOME"
+printf 'appish\tPUBLIC\nlibish\tPUBLIC\n' >"$STUB_HOME/repos"
+cp "$canonical" "$STUB_HOME/commit-lint.appish"
+cp "$canonical" "$STUB_HOME/commit-lint.libish"
+printf 'build\nbite / bite\nAnalyze (actions)\n' >"$STUB_HOME/check-runs.appish"
+# libish has runs on HEAD, none of them named `build`.
+printf 'test-macos\ntest-linux\n' >"$STUB_HOME/check-runs.libish"
+
+run_script WITH_PROTECTION=1
+if [ "$RC" -eq 0 ] \
+  && printf '%s' "$OUT" | grep -q "would: protection(PUT new): require \[build, lint / lint\]" \
+  && printf '%s' "$OUT" | grep -q "would: protection(PUT new): require \[lint / lint\] (admin bypass"; then
+  pass "build is required where HEAD demonstrably runs it, and only there"
+else
+  fail "build is required where HEAD demonstrably runs it, and only there"
+fi
+
+# A transient check-runs failure must NOT decide "no build" silently: it warns,
+# requires lint alone this run, and leaves build to the next (idempotent) run.
+: >"$STUB_HOME/check-runs-fail"
+run_script WITH_PROTECTION=1
+if [ "$RC" -eq 0 ] \
+  && printf '%s' "$OUT" | grep -q "warn: cannot read check-runs on appish@HEAD" \
+  && printf '%s' "$OUT" | grep -q "would: protection(PUT new): require \[lint / lint\] (admin bypass"; then
+  pass "an unreadable check-run probe warns instead of silently deciding"
+else
+  fail "an unreadable check-run probe warns instead of silently deciding"
+fi
+rm -f "$STUB_HOME/check-runs-fail"
 
 # ---------------------------------------------------------------------------
 # FAIL_ON_DIFF — the audit mode repo-settings-audit.yml runs on a schedule.
