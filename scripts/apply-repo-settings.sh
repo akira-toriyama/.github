@@ -6,6 +6,7 @@
 #
 # Usage:
 #   ./apply-repo-settings.sh                 # DRY RUN: report the diff, change nothing
+#   FAIL_ON_DIFF=1 ./apply-repo-settings.sh  # DRY RUN that exits 1 when any drift exists
 #   APPLY=1 ./apply-repo-settings.sh         # apply the SAFE baseline (5 settings)
 #   APPLY=1 WITH_TOKEN_FLIP=1 ...            # also flip default token -> read (see SKIP_TOKEN_FLIP)
 #   APPLY=1 WITH_PROTECTION=1 ...            # also add the commit-lint required check (additive)
@@ -21,6 +22,7 @@ set -uo pipefail
 
 OWNER=akira-toriyama
 APPLY="${APPLY:-0}"                       # 0 = dry run
+FAIL_ON_DIFF="${FAIL_ON_DIFF:-0}"         # 1 = dry run exits 1 on any drift (audit mode)
 ONLY="${ONLY:-}"
 WITH_TOKEN_FLIP="${WITH_TOKEN_FLIP:-0}"
 WITH_PROTECTION="${WITH_PROTECTION:-0}"
@@ -55,6 +57,12 @@ root="$(dirname "$here")"
 # all of them to notice that (say) an expired token 403'd every single one, and
 # the script would still exit 0 under "done (mode: APPLY)".
 failures=0
+# Every mutation a dry run WOULD make. This is what lets a scheduled audit run
+# (FAIL_ON_DIFF=1) turn red on drift instead of exiting 0 over a wall of
+# `would:` lines nobody reads — the script only ever ran by hand, and every repo
+# created after the last hand-run sat with Dependabot alerts OFF, invisibly
+# (t-qsea: 10 of 35 repos, 6 of them actually missing alerts).
+drift=0
 
 run() { # echo + (apply) a gh api mutation
   local desc="$1"; shift
@@ -67,6 +75,7 @@ run() { # echo + (apply) a gh api mutation
     fi
   else
     echo "    would: $desc"
+    drift=$((drift + 1))
   fi
 }
 
@@ -310,6 +319,11 @@ if [ "$WITH_PROTECTION" = "1" ] && [ "$protection_considered" -gt 0 ] && [ "$pro
 fi
 if [ "$failures" -gt 0 ]; then
   echo "::error:: $failures mutation(s) FAILED — see the ::FAILED:: lines above."
+  rc=1
+fi
+if [ "$APPLY" != "1" ] && [ "$FAIL_ON_DIFF" = "1" ] && [ "$drift" -gt 0 ]; then
+  echo "::error:: $drift setting(s) drifted from the baseline — the \`would:\` lines above name each one."
+  echo "          Read the diff, then re-apply by hand: APPLY=1 ./scripts/apply-repo-settings.sh"
   rc=1
 fi
 exit "$rc"

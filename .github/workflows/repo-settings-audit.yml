@@ -1,0 +1,75 @@
+# Fleet audit: every repo's SETTINGS must match the safe baseline that
+# scripts/apply-repo-settings.sh enforces (Dependabot alerts + security updates,
+# private vulnerability reporting, CodeQL `actions`, branch auto-delete).
+#
+# Why this exists (t-qsea). The script has the full recipe, but nothing ever RAN
+# it: it only ran by hand, the last hand-run was 2026-07-03..10, and every repo
+# created after that was born with the baseline OFF — invisibly. On 2026-07-26,
+# 10 of 35 repos had Dependabot vulnerability alerts disabled, and 6 of them
+# (ridge / mergeprobe / prmap / revpost / vista / glyph-test) carry real
+# dependency manifests, i.e. were actually missing alerts, not merely drifted.
+#
+# This runs the SAME script, dry-run, with FAIL_ON_DIFF=1: red = the fleet has
+# drifted from the baseline, and the log's `would:` lines name each drift.
+# APPLYING stays a human act (`APPLY=1 ./scripts/apply-repo-settings.sh` after
+# reading the diff) — repo settings have destructive directions, so the machine
+# only measures. Baseline only: the WITH_* opt-ins need per-repo judgement and
+# are not audited here.
+#
+# THE AUDITOR SEES WHAT THE WRITER WRITES: the same credential as fleet-sync, a
+# hard failure without it, and a private-repo canary — a degraded token lists
+# only public repos, and the script would then audit a subset while its green
+# read as "the fleet is compliant" (glyph-pin-audit's 29-of-35 incident).
+
+name: repo-settings-audit
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '15 7 * * *' # daily, after fleet-sync (06:00) and furrow-pin-audit (06:45)
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/apply-repo-settings.sh'
+      - '.github/workflows/repo-settings-audit.yml'
+
+concurrency:
+  group: repo-settings-audit
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Audit every repo's settings against the safe baseline (dry run, red on drift)
+        env:
+          # fleet-sync's credential, NOT github.token — the default token sees no
+          # private repos, and reading repo security settings needs `repo` scope.
+          GH_TOKEN: ${{ secrets.FLEET_SYNC_PAT }}
+          OWNER: akira-toriyama
+        run: |
+          set -euo pipefail
+
+          # Fail loud, not open: a degraded auditor must be RED, because its
+          # green is a false claim about repos it cannot see.
+          [ -n "${GH_TOKEN:-}" ] || { echo "::error::FLEET_SYNC_PAT is not set — refusing to audit with a public-only view (drift in a private repo would read as compliance)."; exit 1; }
+
+          # The private-repo canary — the SHAPE of the list, not its size (a
+          # hand-kept count would rot; see glyph-pin-audit's header).
+          private_n="$(gh repo list "$OWNER" --no-archived --source --limit 200 \
+            --json visibility -q '[.[] | select(.visibility=="PRIVATE")] | length')"
+          if [ "${private_n:-0}" -eq 0 ]; then
+            echo "::error::the repo list contains no private repos — the token's view is degraded (this is how the 29-of-35 audit happened); refusing to call this a fleet audit."
+            exit 1
+          fi
+          echo "token sees $private_n private repo(s) — auditing"
+
+          FAIL_ON_DIFF=1 bash scripts/apply-repo-settings.sh

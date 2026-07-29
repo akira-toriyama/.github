@@ -83,6 +83,18 @@ ONLY=facet APPLY=1 ./scripts/apply-repo-settings.sh   # one repo
 
 New repos are picked up automatically (the repo list is fetched at run time).
 
+## Drift audit (scheduled)
+
+[`repo-settings-audit.yml`](../.github/workflows/repo-settings-audit.yml) runs
+the same script daily as a dry run with `FAIL_ON_DIFF=1`: red = some repo has
+drifted from the safe baseline, and the log's `would:` lines name each drift.
+It audits the baseline only (the `WITH_*` opt-ins need per-repo judgement), and
+**applying stays manual** — read the diff, then `APPLY=1` by hand. Before the
+audit existed the script only ever ran by hand, and every repo created after
+the last hand-run was born with the baseline OFF: on 2026-07-26, 10 of 35 repos
+had Dependabot alerts disabled, 6 of them with real dependency manifests
+(t-qsea).
+
 ## Immutable releases — enabled (hardened)
 
 Compatible with the rolling-DRAFT flow: immutability is conferred at *publish*, so
