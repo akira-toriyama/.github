@@ -122,8 +122,15 @@ jobs:
 
       # v9 installs golangci-lint v2 (repo .golangci.yml is v2 format). Lint once,
       # on Linux only — it is OS-independent.
+      #
+      # `--enable` is the fleet lint FLOOR (t-5xyp, ratified 2026-07-26): these
+      # linters run in every caller whether or not its .golangci.yml lists them.
+      # It ADDS to the repo config — `linters.settings` and `exclusions` there
+      # still apply (unlike `--enable-only`, which would replace the set), so a
+      # repo can scope a floor linter (e.g. gosec to G204/G304) but not drop it.
       - name: golangci-lint
         if: runner.os == 'Linux'
         uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
         with:
           version: ${{ inputs.golangci-lint-version }}
+          args: --enable=errcheck,govet,ineffassign,misspell,revive,staticcheck,unconvert,unused,gosec
