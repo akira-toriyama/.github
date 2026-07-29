@@ -37,10 +37,18 @@ Opt-in (need per-repo judgement, hence flags):
   `akira-toriyama` and `dotfiles` (the only write-default repos) were audited and
   cleared; `SKIP_TOKEN_FLIP` lists any repo to hold back.
 - `WITH_PROTECTION=1` — make `lint / lint` a required check (admin bypass:
-  `enforce_admins:false`). Already-protected repos are **PATCH**ed (only the
+  `enforce_admins:false`), **plus `build` where the default branch HEAD carries a
+  check-run named `build`** (t-jvdr). The probe is ground truth, not file
+  inference: a required context that no run produces wedges every PR invisibly
+  (the t-c51t shape), so the script requires only what the repo demonstrably
+  runs — the swift family's hand-added `build` is now distributed, and a new
+  app repo gets it on the first run after its first `build` lands on main. A
+  transient probe failure warns and requires `lint` alone that run (never a
+  silent "no build"); the next run heals. Already-protected repos are
+  **PATCH**ed (only the
   status-check contexts change, preserving `strict`/force-push/reviews); unprotected
-  repos get a fresh **PUT** matching the `.github` template. Repos whose *ruleset*
-  already requires it (e.g. `canon`) are skipped. `PROTECT_REPOS` is an allowlist so
+  repos get a fresh **PUT** matching the `.github` template. Contexts whose *ruleset*
+  already requires them (e.g. `canon`) are skipped. `PROTECT_REPOS` is an allowlist so
   the merge-blocking check stays on the intended app repos, not every repo that
   gained a commit-lint caller via a fleet-sync gap-fill.
   A repo counts as having a caller when its `.github/workflows/commit-lint.yml`

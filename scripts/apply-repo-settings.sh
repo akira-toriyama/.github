@@ -242,18 +242,25 @@ for line in "${REPOS[@]}"; do
     fi
   fi
 
-  # 6) branch protection: make "lint / lint" a required check (admin bypass).
-  #    A real caller is the file fleet-sync distributes (fleet/commit-lint.yml,
-  #    job `lint` calling glyph's reusable ⇒ context "lint / lint"). The hub itself
-  #    never appears here: fleet-sync EXCLUDEs `.github`, and its hand-maintained
+  # 6) branch protection: make the repo's required checks required (admin bypass).
+  #    "lint / lint" for every repo carrying the fleet's commit-lint caller (the
+  #    file fleet-sync distributes: fleet/commit-lint.yml, job `lint` calling
+  #    glyph's reusable ⇒ context "lint / lint"). The hub itself never appears
+  #    here: fleet-sync EXCLUDEs `.github`, and its hand-maintained
   #    self-commit-lint.yml uses job id `commit-lint` ⇒ a different context.
+  #    PLUS "build" — but only where a check-run named `build` exists on the
+  #    default branch HEAD (t-jvdr). The swift family's `build` was hand-added
+  #    per repo, so every new repo opened the same hole: red bite/build PRs that
+  #    were still mergeable. The probe is ground truth, not file inference: a
+  #    required context that no run produces wedges every PR invisibly (the
+  #    t-c51t shape), so we require only what the repo demonstrably runs — a
+  #    build.yml whose job never fired on main is exactly the case to skip.
   #    For already-protected repos we PATCH only the status-check contexts
   #    (preserving enforce_admins / force-push / strict / reviews — a full PUT
   #    would reset allow_force_pushes etc.). For unprotected repos we PUT a fresh
-  #    config matching the .github reference. Repos whose ruleset already requires
-  #    it, or outside PROTECT_REPOS, are skipped.
+  #    config matching the .github reference. Contexts an active ruleset already
+  #    requires, and repos outside PROTECT_REPOS, are skipped.
   if [ "$WITH_PROTECTION" = "1" ] && { [ -z "$PROTECT_REPOS" ] || in_list "$R" "$PROTECT_REPOS"; }; then
-    want="lint / lint"
     protection_considered=$((protection_considered + 1))
     cl=$(gh api -H "Accept: application/vnd.github.raw" \
       "repos/$full/contents/.github/workflows/commit-lint.yml" 2>/dev/null || true)
@@ -261,29 +268,53 @@ for line in "${REPOS[@]}"; do
       echo "    skip(protection): no commit-lint caller in $R"
     else
       protection_matched=$((protection_matched + 1))
-      if ruleset_requires "$full" "$want"; then
-        echo "    ok: a ruleset already requires '$want' in $R"
+      wants="lint / lint"
+      if cr=$(gh api "repos/$full/commits/HEAD/check-runs" --jq '[.check_runs[].name]' 2>/dev/null); then
+        if printf '%s' "$cr" | jq -e 'index("build") != null' >/dev/null 2>&1; then
+          wants=$(printf 'build\n%s' "$wants")
+        fi
+      else
+        echo "    warn: cannot read check-runs on $R@HEAD — 'build' not considered this run (the next run heals)"
+      fi
+      # Drop whatever an active ruleset already requires; protect the rest.
+      need=""
+      while IFS= read -r w; do
+        [ -n "$w" ] || continue
+        if ruleset_requires "$full" "$w"; then
+          echo "    ok: a ruleset already requires '$w' in $R"
+        else
+          need="$need$w
+"
+        fi
+      done <<<"$wants"
+      if [ -z "$need" ]; then
+        : # every wanted context is ruleset-held
       else
         prot=$(gh api "repos/$full/branches/main/protection" 2>/dev/null) || prot=""
         if [ -n "$prot" ]; then
           existing=$(printf '%s' "$prot" | jq -r '(.required_status_checks.contexts // [])[]' 2>/dev/null || true)
-          if printf '%s\n' "$existing" | grep -qxF "$want"; then
-            echo "    ok: branch protection already requires '$want'"
+          missing=$(printf '%s' "$need" | while IFS= read -r w; do
+            [ -n "$w" ] || continue
+            printf '%s\n' "$existing" | grep -qxF "$w" || printf '%s\n' "$w"
+          done)
+          if [ -z "$missing" ]; then
+            echo "    ok: branch protection already requires [$(printf '%s' "$need" | sed '/^$/d' | jq -R . | jq -rsc 'join(", ")')]"
           else
             strict=$(printf '%s' "$prot" | jq -r '.required_status_checks.strict // false' 2>/dev/null)
-            merged=$(printf '%s\n%s\n' "$existing" "$want" | sed '/^$/d' | sort -u | jq -R . | jq -sc .)
+            merged=$(printf '%s\n%s\n' "$existing" "$missing" | sed '/^$/d' | sort -u | jq -R . | jq -sc .)
             patch=$(jq -nc --argjson ctx "$merged" --argjson strict "$strict" '{strict:$strict, contexts:$ctx}')
             run "protection(PATCH): require [$(printf '%s' "$merged" | jq -r 'join(", ")')] (preserve other settings)" \
               gh api -X PATCH "repos/$full/branches/main/protection/required_status_checks" --input - <<<"$patch"
           fi
         else
-          body=$(jq -nc --arg want "$want" '{
-            required_status_checks:{strict:false, contexts:[$want]},
+          ctxs=$(printf '%s' "$need" | sed '/^$/d' | sort -u | jq -R . | jq -sc .)
+          body=$(jq -nc --argjson ctx "$ctxs" '{
+            required_status_checks:{strict:false, contexts:$ctx},
             enforce_admins:false, required_pull_request_reviews:null, restrictions:null,
             allow_force_pushes:false, allow_deletions:false,
             required_linear_history:false, required_conversation_resolution:false
           }')
-          run "protection(PUT new): require [$want] (admin bypass, .github template)" \
+          run "protection(PUT new): require [$(printf '%s' "$ctxs" | jq -r 'join(", ")')] (admin bypass, .github template)" \
             gh api -X PUT "repos/$full/branches/main/protection" --input - <<<"$body"
         fi
       fi
