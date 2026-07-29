@@ -1,10 +1,65 @@
 {
   "change": "adopt furrow v1.0.0 in the canonical task-status caller (#151) — the flag-day pin for board schema v6 (t-dgja)",
   "covers": "sha256:d1059744ee42c19d69a1072132e3cfb7e0ab25113a4c57ac4a6138677a9bf25e",
-  "stage": "canary",
+  "stage": "fleet",
   "canary": [
     "glyph-test"
   ],
-  "soak_until": null,
-  "evidence": {}
+  "soak_until": "2026-07-31T08:31:37Z",
+  "evidence": {
+    "canary": {
+      "glyph-test": {
+        "run_id": 30435840989,
+        "recorded_at": "2026-07-29T08:31:37Z",
+        "covers": "sha256:d1059744ee42c19d69a1072132e3cfb7e0ab25113a4c57ac4a6138677a9bf25e",
+        "reads": [
+          {
+            "repo": "akira-toriyama/glyph-test",
+            "dest": ".github/workflows/task-status.yml",
+            "state": "ok"
+          },
+          {
+            "repo": "akira-toriyama/glyph-test",
+            "dest": ".github/workflows/commit-lint.yml",
+            "state": "ok"
+          },
+          {
+            "repo": "akira-toriyama/glyph-test",
+            "dest": ".github/workflows/taplo.yml",
+            "state": "ok"
+          },
+          {
+            "repo": "akira-toriyama/glyph-test",
+            "dest": ".github/workflows/zizmor.yml",
+            "state": "ok"
+          },
+          {
+            "repo": "akira-toriyama/glyph-test",
+            "dest": ".github/zizmor.yml",
+            "state": "ok"
+          },
+          {
+            "repo": "akira-toriyama/glyph-test",
+            "dest": ".github/workflows/version-preview.yml",
+            "state": "ok"
+          },
+          {
+            "repo": "akira-toriyama/glyph-test",
+            "dest": "docs/commit-convention.md",
+            "state": "ok"
+          },
+          {
+            "repo": "akira-toriyama/glyph-test",
+            "dest": ".github/dependabot.yml",
+            "state": "ok"
+          },
+          {
+            "repo": "akira-toriyama/glyph-test",
+            "dest": ".github/workflows/pr-verdict.yml",
+            "state": "prune-clean"
+          }
+        ]
+      }
+    }
+  }
 }
