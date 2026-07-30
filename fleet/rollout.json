@@ -1,12 +1,65 @@
 {
   "change": "adopt furrow v2.0.0 in the canonical task-status caller (#160) — the flag-day pin for board schema v7 (t-65cf: epic deps + standing/pinned)",
   "covers": "sha256:3e6f32516aaca2be316934ab7673eb6197a6c0e9d4e47d75aeec8caa6636641c",
-  "stage": "canary",
+  "stage": "fleet",
   "canary": [
     "glyph-test"
   ],
-  "soak_until": null,
+  "soak_until": "2026-08-01T00:42:51Z",
   "evidence": {
-    "canary": {}
+    "canary": {
+      "glyph-test": {
+        "run_id": 30503496001,
+        "recorded_at": "2026-07-30T00:42:51Z",
+        "covers": "sha256:3e6f32516aaca2be316934ab7673eb6197a6c0e9d4e47d75aeec8caa6636641c",
+        "reads": [
+          {
+            "repo": "akira-toriyama/glyph-test",
+            "dest": ".github/workflows/task-status.yml",
+            "state": "ok"
+          },
+          {
+            "repo": "akira-toriyama/glyph-test",
+            "dest": ".github/workflows/commit-lint.yml",
+            "state": "ok"
+          },
+          {
+            "repo": "akira-toriyama/glyph-test",
+            "dest": ".github/workflows/taplo.yml",
+            "state": "ok"
+          },
+          {
+            "repo": "akira-toriyama/glyph-test",
+            "dest": ".github/workflows/zizmor.yml",
+            "state": "ok"
+          },
+          {
+            "repo": "akira-toriyama/glyph-test",
+            "dest": ".github/zizmor.yml",
+            "state": "ok"
+          },
+          {
+            "repo": "akira-toriyama/glyph-test",
+            "dest": ".github/workflows/version-preview.yml",
+            "state": "ok"
+          },
+          {
+            "repo": "akira-toriyama/glyph-test",
+            "dest": "docs/commit-convention.md",
+            "state": "ok"
+          },
+          {
+            "repo": "akira-toriyama/glyph-test",
+            "dest": ".github/dependabot.yml",
+            "state": "ok"
+          },
+          {
+            "repo": "akira-toriyama/glyph-test",
+            "dest": ".github/workflows/pr-verdict.yml",
+            "state": "prune-clean"
+          }
+        ]
+      }
+    }
   }
 }
