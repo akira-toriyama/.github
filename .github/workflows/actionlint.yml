@@ -1,0 +1,87 @@
+name: actionlint
+
+# Reusable workflow lint (actionlint) as a hard PR gate, called by each repo's
+# thin caller workflow. Runs in the CALLER repo's context: actions/checkout pulls
+# the caller's tree, so it lints the caller's .github/workflows — and actionlint
+# auto-discovers the caller's own .github/actionlint.yaml, so per-repo waivers
+# (glyph's job.workflow_* schema lag, tmp-skipprop-audit's constant `if:`) need
+# no input plumbing here.
+#
+# Complements zizmor, does not overlap it: actionlint covers workflow SYNTAX,
+# expression types, and shellcheck over `run:` blocks (which is what makes the
+# hub invariant "verify run: blocks under bash, not zsh" machine-held); zizmor
+# covers Actions SECURITY (template injection, artipacked, cache poisoning).
+# One tool = one reusable + one fleet stub, same as taplo / zizmor.
+#
+# rhysd/actionlint ships no first-party action, so this downloads the release
+# binary and SHA256-verifies it before running — the same "trust nothing
+# mutable" posture the third-party `uses:` steps get from SHA pins, applied to
+# a downloaded tool. VERSION and SHA256 live HERE once and move TOGETHER (the
+# hash is in the release's actionlint_<version>_checksums.txt); they are
+# deliberately not caller inputs — a caller-supplied version without its hash
+# could never verify, and a per-repo pin would hand every repo's Dependabot a
+# knob this central pin exists to remove. Dependabot does not track this pin;
+# bump it by hand here, and in self-test.yml nothing — the hub's own gate calls
+# this same file via `uses: ./`.
+#
+# Caller skeleton (.github/workflows/actionlint.yml in each repo):
+#   on:
+#     pull_request:
+#   permissions:
+#     contents: read
+#   jobs:
+#     actionlint:
+#       uses: akira-toriyama/.github/.github/workflows/actionlint.yml@v2
+
+on:
+  workflow_call:
+    inputs:
+      extra-files:
+        description: >-
+          Space-separated additional workflow FILES to lint beyond actionlint's
+          default `.github/workflows` tree walk. The hub passes its fleet/
+          canonicals (complete workflows bound for every repo that the default
+          walk never sees); fleet callers pass nothing.
+        required: false
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  actionlint:
+    runs-on: ubuntu-latest
+    # Sub-second over a typical repo's workflows; bound it anyway (house rule).
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # Lint-only, never pushes — drop the persisted checkout token (the
+          # zizmor artipacked finding). t-2nh8
+          persist-credentials: false
+
+      - name: Run actionlint (pinned binary, checksum verified)
+        env:
+          VERSION: 1.7.12
+          SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
+          EXTRA_FILES: ${{ inputs.extra-files }}
+        run: |
+          set -euo pipefail
+          workdir="$(mktemp -d)"
+          tarball="$workdir/actionlint.tar.gz"
+          url="https://github.com/rhysd/actionlint/releases/download/v${VERSION}/actionlint_${VERSION}_linux_amd64.tar.gz"
+          curl --fail --silent --show-error --location "$url" -o "$tarball"
+          echo "${SHA256}  ${tarball}" | sha256sum -c -
+          tar -xzf "$tarball" -C "$workdir" actionlint
+          # ubuntu-latest ships shellcheck and actionlint auto-detects it; if a
+          # future runner image drops it, actionlint would SILENTLY skip its
+          # run:-block checks — fail loud instead of quietly losing coverage.
+          command -v shellcheck >/dev/null \
+            || { echo "::error::shellcheck not on runner — actionlint would skip run: checks"; exit 1; }
+          "$workdir/actionlint" -color
+          if [ -n "${EXTRA_FILES:-}" ]; then
+            # Intentional word-split: EXTRA_FILES is a space-separated file list.
+            # shellcheck disable=SC2086
+            "$workdir/actionlint" -color $EXTRA_FILES
+          fi

@@ -13,8 +13,9 @@ name: self test
 # Four kinds of check close that gap, cheapest-first:
 #
 #   actionlint  — static-lints the hub's own workflow files (YAML / expression /
-#                 shellcheck). It bundles shellcheck for `run:` blocks and
-#                 validates local `uses: ./...` references, so a change under
+#                 shellcheck), via the same reusable the fleet gets (dogfooded
+#                 below, like zizmor). It bundles shellcheck for `run:` blocks
+#                 and validates local `uses: ./...` references, so a change under
 #                 actions/ is covered too (that is why actions/** is in the path
 #                 filter — the composite itself is not a workflow file, but the
 #                 workflows that consume it are re-linted when it changes).
@@ -41,7 +42,7 @@ name: self test
 #                   (tests/*.test.sh), plus the hub's own bookkeeping invariants
 #                   (fleet-manifest-test). Extraction is what made that logic
 #                   testable; it also moved it out of actionlint's reach, so the
-#                   shellcheck step above covers scripts/, actions/ and tests/
+#                   shellcheck-scripts job covers scripts/, actions/ and tests/
 #                   directly. posix-portability re-runs the pure-shell tables on
 #                   macOS, because the author's machine is the one place these
 #                   have to be debuggable by hand.
@@ -91,9 +92,36 @@ permissions:
   contents: read
 
 jobs:
+  # Static workflow lint. This DOGFOODS the reusable the hub distributes to the
+  # fleet (actionlint.yml, t-ya55) the same way the zizmor job below dogfoods
+  # its own: `uses: ./` exercises it at PR time, so a break in the reusable
+  # fails HERE, not in a fleet caller after @v2 moves. The binary pin
+  # (VERSION + SHA256) lives in the reusable — the hub carries no second copy
+  # to drift. Only the hub passes extra-files: the fleet canonicals are
+  # complete workflows bound for every repo, yet actionlint's no-argument
+  # default walk (`.github/workflows/**`) never sees them — before they were
+  # named here they were the least-linted workflow files in the repo and the
+  # most widely distributed. Named explicitly rather than globbed:
+  # fleet/dependabot.yml and fleet/zizmor-config.yml are configs, not
+  # workflows, and actionlint syntax-errors on them.
   actionlint:
+    uses: ./.github/workflows/actionlint.yml
+    with:
+      extra-files: >-
+        fleet/commit-lint.yml
+        fleet/task-status.yml
+        fleet/taplo.yml
+        fleet/version-preview.yml
+        fleet/zizmor.yml
+
+  # Standalone shell scripts are NOT covered by the actionlint job above:
+  # actionlint shellchecks `run:` blocks inside workflow files and never opens
+  # scripts/ or tests/. Extracting logic out of a `run:` block to make it
+  # testable therefore silently dropped it out of shellcheck's reach — and
+  # that is where the fleet-mutating code now lives.
+  shellcheck-scripts:
     runs-on: ubuntu-latest
-    # actionlint over ~10 small workflows is sub-second; bound it anyway (house rule).
+    # Sub-second; bound it anyway (house rule).
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
@@ -101,49 +129,6 @@ jobs:
           # Lint-only, never pushes — drop the persisted checkout token (zizmor
           # artipacked); nothing downstream needs it. t-2nh8
           persist-credentials: false
-
-      # rhysd/actionlint ships no first-party action, so pin the release binary
-      # and SHA256-verify it before running — the same "trust nothing mutable"
-      # posture the third-party `uses:` steps get from SHA pins, applied to a
-      # downloaded tool. Bump VERSION and SHA256 together (the hash lives in the
-      # release's actionlint_<version>_checksums.txt). Dependabot does not track
-      # this pin.
-      - name: Run actionlint
-        env:
-          VERSION: 1.7.12
-          SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
-        run: |
-          set -euo pipefail
-          tarball="actionlint_${VERSION}_linux_amd64.tar.gz"
-          url="https://github.com/rhysd/actionlint/releases/download/v${VERSION}/${tarball}"
-          curl --fail --silent --show-error --location "$url" -o "$tarball"
-          echo "${SHA256}  ${tarball}" | sha256sum -c -
-          tar -xzf "$tarball" actionlint
-          # ubuntu-latest ships shellcheck and actionlint auto-detects it; if a
-          # future runner image drops it, actionlint would SILENTLY skip its
-          # run:-block checks — fail loud instead of quietly losing that coverage.
-          command -v shellcheck >/dev/null \
-            || { echo "::error::shellcheck not on runner — actionlint would skip run: checks"; exit 1; }
-          ./actionlint -color
-          # The fleet canonicals are complete workflows bound for every repo, but
-          # they live under fleet/ and actionlint's no-argument default only walks
-          # `.github/workflows/**` — so until this line they were the least-linted
-          # workflow files in the repo and the most widely distributed. Named
-          # explicitly rather than globbed: fleet/dependabot.yml and
-          # fleet/zizmor-config.yml are configs, not workflows, and actionlint
-          # syntax-errors on them.
-          ./actionlint -color \
-            fleet/commit-lint.yml \
-            fleet/task-status.yml \
-            fleet/taplo.yml \
-            fleet/version-preview.yml \
-            fleet/zizmor.yml
-
-      # Standalone shell scripts are NOT covered by the actionlint run above:
-      # actionlint shellchecks `run:` blocks inside workflow files and never opens
-      # scripts/ or tests/. Extracting logic out of a `run:` block to make it
-      # testable therefore silently dropped it out of shellcheck's reach — and
-      # that is where the fleet-mutating code now lives.
       - name: Shellcheck the standalone scripts
         run: |
           set -euo pipefail
