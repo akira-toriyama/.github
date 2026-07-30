@@ -1,11 +1,11 @@
 {
-  "change": "adopt furrow v2.0.0 in the canonical task-status caller (#160) — the flag-day pin for board schema v7 (t-65cf: epic deps + standing/pinned)",
+  "change": "adopt furrow v2.0.0 in the canonical task-status caller (#160) — the flag-day pin for board schema v7 (t-65cf: epic deps + standing/pinned); soak shortened to 2026-07-30 by operator decision — for a flag-day pin the soak is circularly uninformative (the canary's sync cannot go green until the board upgrades, which waits on the fleet apply this soak gates)",
   "covers": "sha256:3e6f32516aaca2be316934ab7673eb6197a6c0e9d4e47d75aeec8caa6636641c",
   "stage": "fleet",
   "canary": [
     "glyph-test"
   ],
-  "soak_until": "2026-08-01T00:42:51Z",
+  "soak_until": "2026-07-30T10:18:40Z",
   "evidence": {
     "canary": {
       "glyph-test": {
