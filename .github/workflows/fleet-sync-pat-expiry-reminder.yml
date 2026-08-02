@@ -158,7 +158,7 @@ jobs:
           git config user.name  'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add -A
-          git commit -m ':robot: chore(tracker): auto-file FLEET_SYNC_PAT expiry reminder'
+          git commit -m ':card_file_box:(tracker) auto-file FLEET_SYNC_PAT expiry reminder'
           # Match sync-task-status / pat-expiry-reminder: rebase-retry so a concurrent
           # push from another tracker writer doesn't drop this week's reminder.
           # Track success explicitly: the loop's last command is the (usually clean)

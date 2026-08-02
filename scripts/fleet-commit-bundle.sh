@@ -27,9 +27,10 @@
 #     authors, and these commits must stay out of both (t-kbqx). The Git Data
 #     API takes the author explicitly; the committer stays the PAT user, same
 #     as the Contents API path this replaces.
-#   - the single-file commit message, byte for byte — tooling and humans have
-#     seen `:robot: chore(fleet): sync <dest>` since the first sync; only the
-#     multi-file case gets a new (subject + body) shape.
+#   - the single-file commit message SHAPE — subject only, naming the one dest;
+#     the multi-file case gets a (subject + body) shape. The grammar is glyph's
+#     one sanctioned form (`:wrench:(fleet) sync …`, t-271n) — the legacy
+#     `:robot: chore(fleet):` token retired with the producers that wrote it.
 #   - no force. The ref update names the base it built on; if the branch moved
 #     meanwhile the update fails, the script re-reads the tip and rebuilds ON
 #     the new base (twice at most). A REFUSED update with an unmoved tip is not
@@ -50,13 +51,13 @@ fi
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 
-# One message for one push. n=1 keeps the historical form exactly; n>1 says
+# One message for one push. n=1 names the dest in the subject; n>1 says
 # how many and lists them in the body, one per line.
 message() {
   if [ "$#" -eq 1 ]; then
-    printf ':robot: chore(fleet): sync %s' "$1"
+    printf ':wrench:(fleet) sync %s' "$1"
   else
-    printf ':robot: chore(fleet): sync %d standard files in one push\n\n' "$#"
+    printf ':wrench:(fleet) sync %d standard files in one push\n\n' "$#"
     printf '%s\n' "$@"
   fi
 }

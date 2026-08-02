@@ -108,6 +108,7 @@ jobs:
     uses: ./.github/workflows/actionlint.yml
     with:
       extra-files: >-
+        fleet/actionlint.yml
         fleet/commit-lint.yml
         fleet/task-status.yml
         fleet/taplo.yml

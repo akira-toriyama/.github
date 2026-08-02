@@ -40,6 +40,14 @@ line to `MANIFEST` in [`.github/workflows/fleet-sync.yml`](../.github/workflows/
   caller carries no third-party pin for a per-repo Dependabot to bump.
 - `zizmor-config.yml` → each repo's `.github/zizmor.yml` (the `unpinned-uses` policy
   the gate reads; pairs with `zizmor.yml` above).
+- `actionlint.yml` → each repo's `.github/workflows/actionlint.yml` (caller stub
+  for the shared [`actionlint`](../.github/workflows/actionlint.yml) reusable —
+  workflow-syntax + expression-type lint, with shellcheck over `run:` blocks, as
+  a PR gate). Complements `zizmor.yml` above without overlapping it (zizmor =
+  Actions *security*). The actionlint version + SHA256 live in the reusable, so
+  this caller carries no third-party pin for a per-repo Dependabot to bump;
+  per-repo waivers go in that repo's own `.github/actionlint.yaml`, which
+  actionlint auto-discovers.
 - `version-preview.yml` → each repo's `.github/workflows/version-preview.yml`
   (caller stub for [glyph](https://github.com/akira-toriyama/glyph)'s `pr-verdict.yml`
   reusable, pinned at a concrete release tag — bump it here per adopted glyph

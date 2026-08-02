@@ -122,15 +122,15 @@ check "the commit is authored by fleet-sync[bot] on the read base" \
 # trailing newline — harmless in a commit message, pinned here so it is a
 # choice and not an accident.
 check "the multi-file message says how many and lists them" \
-  jqe '.message == ":robot: chore(fleet): sync 2 standard files in one push\n\n.github/workflows/one.yml\ndocs/two.md"' \
+  jqe '.message == ":wrench:(fleet) sync 2 standard files in one push\n\n.github/workflows/one.yml\ndocs/two.md"' \
   "$STUB_HOME/commit-payload.json"
 
-# ---- one file keeps the historical message, byte for byte ------------------
+# ---- one file keeps the subject-only shape, in glyph's grammar -------------
 fresh base-1
 out="$(run_script o/r main "$stub_dir/one.yml:.github/workflows/one.yml")"; rc=$?
 check "single file exits 0" [ "$rc" -eq 0 ]
-check "single-file message is the Contents-API form exactly" \
-  jqe '.message == ":robot: chore(fleet): sync .github/workflows/one.yml"' \
+check "single-file message is the subject-only glyph form exactly" \
+  jqe '.message == ":wrench:(fleet) sync .github/workflows/one.yml"' \
   "$STUB_HOME/commit-payload.json"
 
 # ---- a refused update with an unmoved tip is the PR-fallback verdict -------

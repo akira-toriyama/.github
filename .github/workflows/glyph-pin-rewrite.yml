@@ -247,11 +247,12 @@ jobs:
                 bsha2="$(printf '%s' "$bjson" | jq -r '.sha')"
               fi
               # The `[bot]` author is load-bearing, not cosmetic: glyph skips
-              # `*[bot]` commits in both the lint and the version fold, and
-              # ':robot:' is not a gitmoji-spec code — without it this mechanism's
-              # own commits would hard-fail the commit-lint it exists to keep level.
+              # `*[bot]` commits in the version fold, so a pin move never bumps
+              # the consumer repo's release. The message rides glyph's own
+              # grammar (t-271n) — the lint no longer needs the bot skip to
+              # tolerate it.
               pargs=(-X PUT "repos/$full/contents/$path"
-                -f "message=:robot: chore(fleet): pin glyph $want in $path"
+                -f "message=:arrow_up:(ci) pin glyph $want in $path"
                 -f "author[name]=glyph-pin-rewrite[bot]"
                 -f "author[email]=glyph-pin-rewrite[bot]@users.noreply.github.com"
                 -f "content=$(base64 -w0 < "$new")" -f "branch=$branch")
@@ -270,7 +271,7 @@ jobs:
             body="$(printf 'Moves every glyph pin in this repo to **%s**, the version `fleet/commit-lint.yml` distributes.\n\nThese sites are NOT fleet-managed: they live in files this repo owns, so `fleet-sync` cannot byte-copy them and until now they moved only by hand — one pull request per repo, per glyph release.\n\nFiles:\n%s\n\nOnly lines carrying a glyph pin were changed; the rewriter refuses and writes nothing if any other line moves. See `akira-toriyama/.github`: `scripts/glyph-pin-rewrite.sh`, `docs/glyph-rollout-runbook.md`.\n' \
               "$want" "$(for p in $changed_paths; do printf -- '- %s\n' "$p"; done)")"
             if pr_err="$(gh pr create --repo "$full" --base "$db" --head "$branch" \
-                 --title ":robot: chore(fleet): pin glyph $want" --body "$body" 2>&1)"; then
+                 --title ":arrow_up:(ci) pin glyph $want" --body "$body" 2>&1)"; then
               echo "pr-opened: $full ($changed_paths )"
               prs=$((prs + 1))
             else

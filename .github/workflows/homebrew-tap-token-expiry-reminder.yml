@@ -168,7 +168,7 @@ jobs:
           git config user.name  'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add -A
-          git commit -m ':robot: chore(tracker): auto-file HOMEBREW_TAP_TOKEN rotation task'
+          git commit -m ':card_file_box:(tracker) auto-file HOMEBREW_TAP_TOKEN rotation task'
           # Match the sibling reminder: rebase-retry so a concurrent tracker
           # writer doesn't drop this week's reminder, and track success
           # explicitly so a 3-loss fall-through can't exit 0 silently.
