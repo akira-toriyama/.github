@@ -11,3 +11,9 @@ updates:
     groups:
       actions:
         patterns: ["*"]
+    # House pins are moved by house automation, never by Dependabot — same rule
+    # the canonical fleet/dependabot.yml distributes to every fleet repo. The hub
+    # itself is outside fleet-sync's reach, so the ignore must live here too:
+    # without it, Dependabot froze bump-formula@v2 to a concrete tag (#167).
+    ignore:
+      - dependency-name: "akira-toriyama/*"
