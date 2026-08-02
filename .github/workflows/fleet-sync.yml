@@ -157,7 +157,7 @@ jobs:
           # dest is version-preview.yml, NOT pr-verdict.yml — see the collision guard.
           # dependabot.yml is NOT in this list — it is ASSEMBLED per repo inside
           # the loop below (base + fleet/dependabot.d/ blocks; t-s3fp, t-vhr9).
-          MANIFEST="fleet/task-status.yml:.github/workflows/task-status.yml fleet/commit-lint.yml:.github/workflows/commit-lint.yml fleet/taplo.yml:.github/workflows/taplo.yml fleet/zizmor.yml:.github/workflows/zizmor.yml fleet/zizmor-config.yml:.github/zizmor.yml fleet/version-preview.yml:.github/workflows/version-preview.yml fleet/commit-convention.md:docs/commit-convention.md"
+          MANIFEST="fleet/task-status.yml:.github/workflows/task-status.yml fleet/commit-lint.yml:.github/workflows/commit-lint.yml fleet/taplo.yml:.github/workflows/taplo.yml fleet/zizmor.yml:.github/workflows/zizmor.yml fleet/zizmor-config.yml:.github/zizmor.yml fleet/actionlint.yml:.github/workflows/actionlint.yml fleet/version-preview.yml:.github/workflows/version-preview.yml fleet/commit-convention.md:docs/commit-convention.md"
 
           # PRUNE: paths to DELETE from every target repo if present — how a canonical
           # is retired. Renaming one (fleet/x.yml -> fleet/y.yml) otherwise leaves the

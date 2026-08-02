@@ -1,65 +1,10 @@
 {
-  "change": "dependabot: ignore akira-toriyama/* in the github-actions block — house pins are moved by house automation, never by bot bumps (t-nq3w)",
-  "covers": "sha256:763c470ef47014708d635cef37c662b83b8bd0801e820aec5cc530118a458bb6",
-  "stage": "fleet",
+  "change": "actionlint.yml: new caller stub for the hub's actionlint reusable — workflow lint + shellcheck over run: blocks as a fleet-wide PR gate (t-ya55)",
+  "covers": "sha256:15377363a4c87754d2ca0d84577c31c10a2e5f92888c97d702d1a27fb18441c1",
+  "stage": "canary",
   "canary": [
     "glyph-test"
   ],
-  "soak_until": "2026-08-02T10:33:40Z",
-  "evidence": {
-    "canary": {
-      "glyph-test": {
-        "run_id": 30623950425,
-        "recorded_at": "2026-07-31T10:33:40Z",
-        "covers": "sha256:763c470ef47014708d635cef37c662b83b8bd0801e820aec5cc530118a458bb6",
-        "reads": [
-          {
-            "repo": "akira-toriyama/glyph-test",
-            "dest": ".github/workflows/task-status.yml",
-            "state": "ok"
-          },
-          {
-            "repo": "akira-toriyama/glyph-test",
-            "dest": ".github/workflows/commit-lint.yml",
-            "state": "ok"
-          },
-          {
-            "repo": "akira-toriyama/glyph-test",
-            "dest": ".github/workflows/taplo.yml",
-            "state": "ok"
-          },
-          {
-            "repo": "akira-toriyama/glyph-test",
-            "dest": ".github/workflows/zizmor.yml",
-            "state": "ok"
-          },
-          {
-            "repo": "akira-toriyama/glyph-test",
-            "dest": ".github/zizmor.yml",
-            "state": "ok"
-          },
-          {
-            "repo": "akira-toriyama/glyph-test",
-            "dest": ".github/workflows/version-preview.yml",
-            "state": "ok"
-          },
-          {
-            "repo": "akira-toriyama/glyph-test",
-            "dest": "docs/commit-convention.md",
-            "state": "ok"
-          },
-          {
-            "repo": "akira-toriyama/glyph-test",
-            "dest": ".github/dependabot.yml",
-            "state": "ok"
-          },
-          {
-            "repo": "akira-toriyama/glyph-test",
-            "dest": ".github/workflows/pr-verdict.yml",
-            "state": "prune-clean"
-          }
-        ]
-      }
-    }
-  }
+  "soak_until": null,
+  "evidence": {}
 }
