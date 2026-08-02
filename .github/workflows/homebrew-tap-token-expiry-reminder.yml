@@ -60,6 +60,13 @@ jobs:
             echo "proceed=true" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Checkout the hub (for scripts/token-expiry-probe.sh)
+        if: steps.gate.outputs.proceed == 'true'
+        uses: actions/checkout@v7
+        with:
+          # Read-only: this job writes to the TRACKER, never back to the hub.
+          persist-credentials: false
+
       - name: Probe the tap with the token (liveness + expiry header)
         id: probe
         if: steps.gate.outputs.proceed == 'true'
@@ -74,42 +81,19 @@ jobs:
             -H "Authorization: Bearer $TAP_PAT" \
             -H "X-GitHub-Api-Version: 2022-11-28" \
             https://api.github.com/repos/akira-toriyama/homebrew-tap || echo 000)"
-          case "$code" in
-            401)
-              # Invalid credential — revoked or expired. The cask channel is down NOW.
-              echo "::warning::HOMEBREW_TAP_TOKEN probe got 401 — the token is dead; cask pushes are failing."
-              echo "due=true" >> "$GITHUB_OUTPUT"
-              echo "kind=dead" >> "$GITHUB_OUTPUT"
-              exit 0 ;;
-            200) ;;
-            *)
-              echo "::notice::probe returned $code (transient?) — skipping this run; retries next week."
-              echo "due=false" >> "$GITHUB_OUTPUT"
-              exit 0 ;;
-          esac
-          hdr="$(tr -d '\r' < "$RUNNER_TEMP/hdrs" \
-            | awk -F': ' 'tolower($1)=="github-authentication-token-expiration"{print $2; exit}')"
-          if [ -z "$hdr" ]; then
-            echo "::notice::No expiration header — HOMEBREW_TAP_TOKEN is non-expiring. Reissue it WITH an expiry to arm the calendar path."
-            echo "due=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          exp_s="$(date -u -d "$hdr" +%s 2>/dev/null || true)"
-          if [ -z "$exp_s" ]; then
-            echo "::notice::could not parse expiry '$hdr' — skipping this run."
-            echo "due=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          now_s="$(date -u +%s)"
-          days=$(( (exp_s - now_s) / 86400 ))
-          echo "token expires: $hdr (${days} days from now)"
-          echo "days=$days" >> "$GITHUB_OUTPUT"
-          if [ "$days" -le "${EXPIRY_WARN_DAYS}" ]; then
-            echo "due=true" >> "$GITHUB_OUTPUT"
-            echo "kind=expiry" >> "$GITHUB_OUTPUT"
+          # The DECISION lives in a script so it is reachable from a test: the
+          # 401 liveness branch below only fires when a real token is really
+          # dead, so inline it shipped unexecuted for weeks (t-j72g). The curl
+          # stays here — only what the probe SAW is portable to a table test.
+          bash scripts/token-expiry-probe.sh "$code" "$RUNNER_TEMP/hdrs" > "$RUNNER_TEMP/probe.out"
+          grep -vE '^reason=' "$RUNNER_TEMP/probe.out" >> "$GITHUB_OUTPUT"
+          reason="$(sed -n 's/^reason=//p' "$RUNNER_TEMP/probe.out")"
+          # Annotate from the step itself so the workflow command is definitely
+          # on the runner's stdout, and so the script stays a pure decision.
+          if grep -qx 'kind=dead' "$RUNNER_TEMP/probe.out"; then
+            echo "::warning::HOMEBREW_TAP_TOKEN $reason"
           else
-            echo "due=false (>${EXPIRY_WARN_DAYS}d) — nothing to do"
-            echo "due=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::HOMEBREW_TAP_TOKEN $reason"
           fi
 
       - name: Checkout the furrow tracker
