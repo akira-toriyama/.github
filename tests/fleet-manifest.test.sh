@@ -302,5 +302,50 @@ else
   ok "README.md indexes every consumable and design record"
 fi
 
+# ---------------------------------------------------------------------------
+# The rollout gate's exit code must survive being captured.
+#
+# The gate publishes FIVE distinct codes (2 broken ledger / 10 held / 11
+# uncovered / 12 soaking / 13 evidence) and their remediations differ; the job
+# summary and the ::error:: annotation are where an operator reads which one
+# held the run. fleet-sync captured it with `if ! <gate>; then rc=$?`, and in
+# the then-branch of a NEGATED condition `$?` is the status of the compound the
+# `!` already inverted — 0, always. Measured on run 30691779105: the annotation
+# said "(gate exit 0)" while the gate had exited 12. Nothing was wrong with the
+# rollout and nothing was wrong with the gate; the one number naming the reason
+# was a constant.
+#
+# Two parts, and the first is the canary the second needs: a guard that asserts
+# an ABSENCE dies green the day its premise stops holding, so the premise is
+# executed here rather than trusted.
+# ---------------------------------------------------------------------------
+gate_stub() { return 12; }
+
+negated_rc=""
+if ! gate_stub; then negated_rc=$?; fi
+capture_rc=0
+gate_stub || capture_rc=$?
+
+if [ "$negated_rc" = "0" ] && [ "$capture_rc" = "12" ]; then
+  ok "the \`if ! …; then rc=\$?\` idiom really does lose the exit code (canary)"
+else
+  bad "the \`if ! …; then rc=\$?\` idiom really does lose the exit code (canary)" \
+    "negated-if captured '$negated_rc' (expected 0), || captured '$capture_rc' (expected 12)" \
+    "this shell no longer behaves as the guard below assumes — re-derive the guard and the comment in fleet-sync.yml before touching either"
+fi
+
+gate_call='scripts/fleet-rollout-gate.sh fleet/rollout.json'
+if grep -q "if ! bash $gate_call" "$sync"; then
+  bad "fleet-sync captures the rollout gate's exit code, not the negation's" \
+    "fleet-sync.yml still calls the gate inside \`if ! …; then\`, so \$? is 0 whatever the gate returned" \
+    "capture it first: rc=0; bash $gate_call \"\$ONLY_REPO\" || rc=\$?"
+elif ! grep -q "$gate_call .* || rc=\$?" "$sync"; then
+  bad "fleet-sync captures the rollout gate's exit code, not the negation's" \
+    "no \`|| rc=\$?\` capture found on the gate call in fleet-sync.yml" \
+    "the summary and the ::error:: annotation both interpolate \$rc; an uncaptured code makes both lie"
+else
+  ok "fleet-sync captures the rollout gate's exit code, not the negation's"
+fi
+
 [ "$fails" -eq 0 ] || { echo "$fails fleet-manifest case(s) failed"; exit 1; }
 echo "all fleet-manifest cases passed"
