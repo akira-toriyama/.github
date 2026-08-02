@@ -120,9 +120,19 @@ jobs:
           # elapsed) holds every write and fails LOUDLY instead. Dry runs pass
           # freely — previewing a staged change is the point of them. A held
           # red is the ledger working: advance the rollout, don't re-run.
+          #
+          # `|| rc=$?`, never `if ! …; then rc=$?`: inside the then-branch of a
+          # NEGATED condition, `$?` is the status of the compound the `!`
+          # already inverted — 0, always. Measured on run 30691779105, which
+          # reported "(gate exit 0)" for a gate that had exited 12; the gate
+          # publishes five distinct codes (2 broken ledger / 10 held / 11
+          # uncovered / 12 soaking / 13 evidence) whose remediations differ, and
+          # the summary was presenting a constant in the one place it names the
+          # discriminator.
           if [ "$DRY" != "true" ]; then
-            if ! bash scripts/fleet-rollout-gate.sh fleet/rollout.json "$ONLY_REPO"; then
-              rc=$?
+            rc=0
+            bash scripts/fleet-rollout-gate.sh fleet/rollout.json "$ONLY_REPO" || rc=$?
+            if [ "$rc" -ne 0 ]; then
               echo "held=true" >> "$GITHUB_OUTPUT"
               {
                 echo "# HELD BY THE ROLLOUT LEDGER — NOTHING WAS DISTRIBUTED"
