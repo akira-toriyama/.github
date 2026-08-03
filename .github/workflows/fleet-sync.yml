@@ -14,12 +14,16 @@ name: fleet-sync
 #                       Contents: Read & write ONLY, auto-expiring (fanned out to each repo).
 #                       This REPLACES the old furrow-status-bot App master key: a leak now
 #                       reaches only the tracker, and expires on its own. (t-ke0v)
-#   HOMEBREW_TAP_TOKEN  fine-grained PAT, scoped to homebrew-tap with Contents: Read &
-#                       write ONLY — the cask-push credential, fanned out to every repo
-#                       whose release-channel workflow actually references it (t-21yv).
-#                       Hand-placed per-repo copies rotted silently (rundiff shipped
-#                       v0.3.0 with a stale tap cask; prq 401'd); rotation is now:
-#                       update THIS repo's secret once, the next run re-fans it.
+#   HOMEBREW_TAP_DEPLOY_KEY  private half of homebrew-tap's WRITE deploy key — the
+#                       cask-push credential, fanned out to every repo whose
+#                       release-channel workflow references it (same content gate
+#                       as the PAT it replaces, t-21yv/t-6bhz). No expiry, and a
+#                       leak grants git push to ONE repo, not an API surface.
+#   HOMEBREW_TAP_TOKEN  DEPRECATED (t-6bhz): the fine-grained cask-push PAT the
+#                       deploy key above replaces. Still fanned out to repos whose
+#                       release channel references it; delete this secret, its
+#                       fan-out pair, and the PAT itself when the last consumer
+#                       migrates.
 #
 # Safety: workflow_dispatch defaults to DRY-RUN (log only). Scheduled runs apply
 # — but EVERY apply run first passes the rollout ledger gate (fleet/rollout.json
@@ -98,6 +102,7 @@ jobs:
           ROLLOUT_HUB: ${{ github.repository }}
           WRITE_PAT: ${{ secrets.PROJECTS_WRITE_PAT }}
           TAP_PAT: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          TAP_KEY: ${{ secrets.HOMEBREW_TAP_DEPLOY_KEY }}
           # Repos to skip (space-separated). .github is the hub itself.
           EXCLUDE: '.github'
         run: |
@@ -462,54 +467,69 @@ jobs:
               fi
             fi
 
-            # 4) fan out the cask-push PAT — same shape as (3), gated on the
-            #    consumer workflow. Unlike (3) the gate reads CONTENT, not mere
-            #    existence: the secret goes to a repo iff one of the fleet's
+            # 4) fan out the cask-push credential — same shape as (3), gated on
+            #    the consumer workflow. Unlike (3) the gate reads CONTENT, not
+            #    mere existence: a secret goes to a repo iff one of the fleet's
             #    release-channel files — release.yml (Go GoReleaser flavor),
             #    update-tap.yml (Swift flavor), goreleaser.yml (glyph, whose
-            #    release.yml is the family reusable) — references
-            #    HOMEBREW_TAP_TOKEN on the default branch. Existence alone
-            #    proved too broad on the first dry-run (dotfiles/canon/
-            #    glyph-test/swift-toml-edit carry a cask-less release.yml). The
-            #    gate kills the per-repo "does this one need it?" judgment that
-            #    let hand-placed copies rot (t-21yv: rundiff's tap cask silently
-            #    stuck at v0.2.0, prq released into a 401). Idempotent
-            #    overwrite; this only gates NEW fan-out and never prunes an
-            #    already-set secret.
-            tap_consumer=false
-            if [ -n "${TAP_PAT:-}" ]; then
-              for wf in release.yml update-tap.yml goreleaser.yml; do
-                # Fetch and match SEPARATELY: a transient API failure must not
-                # be misread as "not a consumer" — the second dry-run silently
-                # skipped furrow exactly that way. 404 = file absent (normal);
-                # anything else is warned so a skipped repo is findable in the
-                # log (the daily idempotent rerun heals it).
-                gate_err="$RUNNER_TEMP/tap-gate.err"
-                if content="$(gh api "repos/$full/contents/.github/workflows/$wf" --jq '.content' 2>"$gate_err")"; then
-                  if printf '%s' "$content" | base64 -d 2>/dev/null | grep -q 'HOMEBREW_TAP_TOKEN'; then
-                    tap_consumer=true
-                    break
-                  fi
-                elif ! grep -q 'HTTP 404' "$gate_err"; then
-                  echo "::warning::fleet: tap-gate read failed for $full $wf (treated as non-consumer this run): $(head -c 200 "$gate_err")"
-                fi
-              done
-            fi
-            if [ -z "${TAP_PAT:-}" ]; then
-              echo "::warning::HOMEBREW_TAP_TOKEN not set on .github; skipping tap-secret fan-out for $full"
-            elif [ "$tap_consumer" != "true" ]; then
-              echo "skip-tap-secret(no HOMEBREW_TAP_TOKEN consumer in release-channel workflows): $full"
-            elif [ "$DRY" = "true" ]; then
-              echo "would-set-secrets: $full (HOMEBREW_TAP_TOKEN)"
-            else
-              if printf '%s' "$TAP_PAT" | gh secret set HOMEBREW_TAP_TOKEN --repo "$full"; then
-                echo "tap-secret-set: $full"
-                secrets_set=$((secrets_set + 1))
+            #    release.yml is the family reusable) — references that secret's
+            #    NAME on the default branch. Existence alone proved too broad on
+            #    the first dry-run (dotfiles/canon/glyph-test/swift-toml-edit
+            #    carry a cask-less release.yml). The gate kills the per-repo
+            #    "does this one need it?" judgment that let hand-placed copies
+            #    rot (t-21yv: rundiff's tap cask silently stuck at v0.2.0, prq
+            #    released into a 401). Idempotent overwrite; this only gates NEW
+            #    fan-out and never prunes an already-set secret.
+            #
+            #    TWO tap secrets exist while the deploy-key migration (t-6bhz)
+            #    is in flight: HOMEBREW_TAP_DEPLOY_KEY (the tap's write deploy
+            #    key — no expiry, git-push-to-one-repo blast radius) and the
+            #    deprecated PAT HOMEBREW_TAP_TOKEN. Each repo receives exactly
+            #    the one(s) its own release channel references, so migrating a
+            #    repo's workflow automatically migrates its secret on the next
+            #    run. When the last consumer moves, delete the PAT pair here,
+            #    the hub secret, and the PAT itself.
+            for tap_secret in HOMEBREW_TAP_DEPLOY_KEY HOMEBREW_TAP_TOKEN; do
+              if [ "$tap_secret" = "HOMEBREW_TAP_DEPLOY_KEY" ]; then
+                tap_value="${TAP_KEY:-}"
               else
-                echo "::warning::fleet: tap-secret fan-out failed for $full"
-                failed=$((failed + 1))
+                tap_value="${TAP_PAT:-}"
               fi
-            fi
+              tap_consumer=false
+              if [ -n "$tap_value" ]; then
+                for wf in release.yml update-tap.yml goreleaser.yml; do
+                  # Fetch and match SEPARATELY: a transient API failure must not
+                  # be misread as "not a consumer" — the second dry-run silently
+                  # skipped furrow exactly that way. 404 = file absent (normal);
+                  # anything else is warned so a skipped repo is findable in the
+                  # log (the daily idempotent rerun heals it).
+                  gate_err="$RUNNER_TEMP/tap-gate.err"
+                  if content="$(gh api "repos/$full/contents/.github/workflows/$wf" --jq '.content' 2>"$gate_err")"; then
+                    if printf '%s' "$content" | base64 -d 2>/dev/null | grep -q "$tap_secret"; then
+                      tap_consumer=true
+                      break
+                    fi
+                  elif ! grep -q 'HTTP 404' "$gate_err"; then
+                    echo "::warning::fleet: tap-gate read failed for $full $wf (treated as non-consumer this run): $(head -c 200 "$gate_err")"
+                  fi
+                done
+              fi
+              if [ -z "$tap_value" ]; then
+                echo "::warning::$tap_secret not set on .github; skipping its fan-out for $full"
+              elif [ "$tap_consumer" != "true" ]; then
+                echo "skip-tap-secret(no $tap_secret consumer in release-channel workflows): $full"
+              elif [ "$DRY" = "true" ]; then
+                echo "would-set-secrets: $full ($tap_secret)"
+              else
+                if printf '%s' "$tap_value" | gh secret set "$tap_secret" --repo "$full"; then
+                  echo "tap-secret-set: $full ($tap_secret)"
+                  secrets_set=$((secrets_set + 1))
+                else
+                  echo "::warning::fleet: tap-secret fan-out failed for $full ($tap_secret)"
+                  failed=$((failed + 1))
+                fi
+              fi
+            done
           done
 
           echo "done: queued=$queued applied=$applied pending(pr)=$pending failed=$failed secrets-set=$secrets_set; dry-run=$DRY across ${#REPOS[@]} repo(s)"
