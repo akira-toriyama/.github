@@ -122,7 +122,7 @@ jobs:
         if: steps.probe.outputs.due == 'true'
         # v0.6.0+ grammar (repos-pivot): the reminder task carries -r for the hub,
         # where the rotation actually happens.
-        run: go install github.com/akira-toriyama/furrow/cmd/furrow@v2.0.0
+        run: go install github.com/akira-toriyama/furrow/cmd/furrow@v3.0.0
 
       - name: File a rotation task if none is open
         if: steps.probe.outputs.due == 'true'
