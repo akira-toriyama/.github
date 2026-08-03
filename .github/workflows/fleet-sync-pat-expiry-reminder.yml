@@ -121,7 +121,7 @@ jobs:
 
       - name: Install furrow
         if: steps.expiry.outputs.due == 'true'
-        run: go install github.com/akira-toriyama/furrow/cmd/furrow@v2.0.0
+        run: go install github.com/akira-toriyama/furrow/cmd/furrow@v3.0.0
 
       - name: File a rotation reminder if none is open
         if: steps.expiry.outputs.due == 'true'
