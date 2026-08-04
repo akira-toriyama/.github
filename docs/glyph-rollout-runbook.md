@@ -63,6 +63,21 @@ from one glyph release; there is no combination of the two that is deliberate.
 
 ## The sequence
 
+0. **Before the tag**, run glyph's own `scripts/fleet-preflight.sh ./bin/glyph`
+   against the binary you are about to ship. It is the only thing that answers
+   "how many repos does this release change the verdict for" while the answer is
+   still free — a tag is cut on a frozen tree, so from step 1 onward the question
+   is rhetorical. It probes every repo twice, once with the tag the fleet is
+   pinned at and once with the candidate, and reports only the repos whose
+   verdict MOVES. Read three things rather than assume them: a `lint` move is a
+   **prediction** (CI lints a pull request's own commits, so nothing already
+   merged is re-judged and no existing run turns red), a `bump` move is
+   **retroactive** (that repo's next release cuts a different version, having
+   changed nothing), and the `✓` line stamps the count a **FLOOR** whenever
+   anything weakened the claim — including repos pinned *below* the baseline,
+   whose real change is larger than their row. On the v1.0.0 rollout it found 18
+   of 35 moving, all on lint, and named 11 repos still pinned below v0.12.0
+   before step 5 went looking for them.
 1. Merge the glyph PR, tag, and confirm the release actually published:
    `gh release view vX.Y.Z --json isDraft,assets` — assets must be non-zero and
    `isDraft` false. Pins resolve to a tag, but `actions/install` downloads
