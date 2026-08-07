@@ -1,70 +1,10 @@
 {
-  "change": "commit-lint.yml / version-preview.yml: move the glyph pin v0.12.0 -> v1.0.0 — glyph's first breaking release (glyph #86/#94/#95/#99/#100). Measured before the tag with glyph's scripts/fleet-preflight.sh across 35 of 35 repos: 18 move, every one on the COMMIT-LINT gate and none on the release path (each `bump --since-tag` verdict is identical between v0.12.0 and v1.0.0). No existing CI run turns red — the lint gate judges a pull request's own commits, so nothing already merged is re-judged; the 18 are repos whose merged history still carries the retired Conventional token, and from here the hook rejects it at authoring time instead.",
-  "covers": "sha256:260c6c96350d93702ff94537c15fcee818e447ff98f49fce154bbb9519c0272e",
-  "stage": "fleet",
+  "change": "fleet/dependabot.yml + dependabot.d/{gomod,swift,npm}.yml: retire the legacy Conventional token from the dependabot commit prefix — \":arrow_up: build(deps)\" -> \":arrow_up:(deps) \". The trailing space suppresses dependabot's \": \" separator (pr_name_prefixer.rb only appends it after [A-Za-z0-9)\\]]); measured hosted on glyph-test #39, where title and commit both read back as lint rc=0. Closes the last machine producer of the retired token (t-271n); existing open dependabot PRs keep the old prefix until their next weekly or a recreate, and bots are lint-exempt so nothing turns red meanwhile.",
+  "covers": "sha256:361e38459dc97fe222e2cb2453a31be60671342bd08ab5fbc9c73efb603ba2b7",
+  "stage": "canary",
   "canary": [
     "glyph-test"
   ],
-  "evidence": {
-    "canary": {
-      "glyph-test": {
-        "run_id": 30865937300,
-        "recorded_at": "2026-08-04T00:33:43Z",
-        "covers": "sha256:260c6c96350d93702ff94537c15fcee818e447ff98f49fce154bbb9519c0272e",
-        "reads": [
-          {
-            "repo": "akira-toriyama/glyph-test",
-            "dest": ".github/workflows/task-status.yml",
-            "state": "ok"
-          },
-          {
-            "repo": "akira-toriyama/glyph-test",
-            "dest": ".github/workflows/commit-lint.yml",
-            "state": "ok"
-          },
-          {
-            "repo": "akira-toriyama/glyph-test",
-            "dest": ".github/workflows/taplo.yml",
-            "state": "ok"
-          },
-          {
-            "repo": "akira-toriyama/glyph-test",
-            "dest": ".github/workflows/zizmor.yml",
-            "state": "ok"
-          },
-          {
-            "repo": "akira-toriyama/glyph-test",
-            "dest": ".github/zizmor.yml",
-            "state": "ok"
-          },
-          {
-            "repo": "akira-toriyama/glyph-test",
-            "dest": ".github/workflows/actionlint.yml",
-            "state": "ok"
-          },
-          {
-            "repo": "akira-toriyama/glyph-test",
-            "dest": ".github/workflows/version-preview.yml",
-            "state": "ok"
-          },
-          {
-            "repo": "akira-toriyama/glyph-test",
-            "dest": "docs/commit-convention.md",
-            "state": "ok"
-          },
-          {
-            "repo": "akira-toriyama/glyph-test",
-            "dest": ".github/dependabot.yml",
-            "state": "ok"
-          },
-          {
-            "repo": "akira-toriyama/glyph-test",
-            "dest": ".github/workflows/pr-verdict.yml",
-            "state": "prune-clean"
-          }
-        ]
-      }
-    }
-  },
-  "soak_until": "2026-08-06T00:33:43Z"
+  "evidence": {},
+  "soak_until": null
 }
