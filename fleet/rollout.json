@@ -1,10 +1,70 @@
 {
   "change": "fleet/dependabot.yml + dependabot.d/{gomod,swift,npm}.yml: retire the legacy Conventional token from the dependabot commit prefix — \":arrow_up: build(deps)\" -> \":arrow_up:(deps) \". The trailing space suppresses dependabot's \": \" separator (pr_name_prefixer.rb only appends it after [A-Za-z0-9)\\]]); measured hosted on glyph-test #39, where title and commit both read back as lint rc=0. Closes the last machine producer of the retired token (t-271n); existing open dependabot PRs keep the old prefix until their next weekly or a recreate, and bots are lint-exempt so nothing turns red meanwhile.",
   "covers": "sha256:361e38459dc97fe222e2cb2453a31be60671342bd08ab5fbc9c73efb603ba2b7",
-  "stage": "canary",
+  "stage": "fleet",
   "canary": [
     "glyph-test"
   ],
-  "evidence": {},
-  "soak_until": null
+  "evidence": {
+    "canary": {
+      "glyph-test": {
+        "run_id": 31210618560,
+        "recorded_at": "2026-08-07T19:15:01Z",
+        "covers": "sha256:361e38459dc97fe222e2cb2453a31be60671342bd08ab5fbc9c73efb603ba2b7",
+        "reads": [
+          {
+            "repo": "akira-toriyama/glyph-test",
+            "dest": ".github/workflows/task-status.yml",
+            "state": "ok"
+          },
+          {
+            "repo": "akira-toriyama/glyph-test",
+            "dest": ".github/workflows/commit-lint.yml",
+            "state": "ok"
+          },
+          {
+            "repo": "akira-toriyama/glyph-test",
+            "dest": ".github/workflows/taplo.yml",
+            "state": "ok"
+          },
+          {
+            "repo": "akira-toriyama/glyph-test",
+            "dest": ".github/workflows/zizmor.yml",
+            "state": "ok"
+          },
+          {
+            "repo": "akira-toriyama/glyph-test",
+            "dest": ".github/zizmor.yml",
+            "state": "ok"
+          },
+          {
+            "repo": "akira-toriyama/glyph-test",
+            "dest": ".github/workflows/actionlint.yml",
+            "state": "ok"
+          },
+          {
+            "repo": "akira-toriyama/glyph-test",
+            "dest": ".github/workflows/version-preview.yml",
+            "state": "ok"
+          },
+          {
+            "repo": "akira-toriyama/glyph-test",
+            "dest": "docs/commit-convention.md",
+            "state": "ok"
+          },
+          {
+            "repo": "akira-toriyama/glyph-test",
+            "dest": ".github/dependabot.yml",
+            "state": "ok"
+          },
+          {
+            "repo": "akira-toriyama/glyph-test",
+            "dest": ".github/workflows/pr-verdict.yml",
+            "state": "prune-clean"
+          }
+        ]
+      }
+    }
+  },
+  "soak_until": "2026-08-09T19:15:01Z"
 }
