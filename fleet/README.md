@@ -104,7 +104,8 @@ until its secrets exist:
 |---|---|
 | `FLEET_SYNC_PAT` | classic PAT with `repo` + `workflow` scopes. `workflow` is **required** to write `.github/workflows/*` in other repos; the default `GITHUB_TOKEN` cannot. It is the widest-privilege secret here, so give it a bounded **expiry** (e.g. 1 year); the `fleet-sync-pat-expiry-reminder` workflow files a rotation task ~30 days before it lapses. |
 | `PROJECTS_WRITE_PAT` | fine-grained PAT scoped to the tracker repo (`projects`) with **Contents: Read & write only**, auto-expiring — fanned out to each repo as `PROJECTS_WRITE_PAT`. Replaces the retired furrow-status-bot App master key (t-ke0v): a leak now reaches only the tracker and expires on its own. |
-| `HOMEBREW_TAP_TOKEN` | fine-grained PAT scoped to `homebrew-tap` with **Contents: Read & write only** — the cask-push credential every releasing repo uses. Fanned out to each repo whose release-channel workflow (`release.yml`, `update-tap.yml`, or `goreleaser.yml`) references it (t-21yv). Replaces hand-placed per-repo copies, which rotted silently (a missed rotation 401'd prq's release and left rundiff's cask stale at an old version). |
+| `HOMEBREW_TAP_DEPLOY_KEY` | private half of `homebrew-tap`'s **write deploy key** — the cask-push credential every releasing repo uses (t-6bhz). Fanned out to each repo whose release-channel workflow (`release.yml`, `update-tap.yml`, or `goreleaser.yml`) references it. No expiry by design: a deploy key has no rotation calendar to miss, and a leak grants git push to the one tap repo, not an account-scoped API surface. |
+| `HOMEBREW_TAP_TOKEN` | **DEPRECATED** (t-6bhz): the fine-grained cask-push PAT the deploy key above replaces. Still fanned out to repos whose release channel references it while they migrate; when the last consumer moves, delete this hub secret, its fan-out pair in `fleet-sync.yml`, and revoke the PAT. |
 
 Manual runs **default to dry-run** (log only). Use `only-repo` to target one repo.
 
@@ -151,23 +152,29 @@ is never forgotten.
 **Audit**: the Fine-grained tokens page lists each token's expiry; `gh secret list --repo <r>`
 shows where `PROJECTS_WRITE_PAT` exists per repo.
 
-## Rotating `HOMEBREW_TAP_TOKEN`
+## Replacing `HOMEBREW_TAP_DEPLOY_KEY` (no rotation calendar)
 
-Same procedure and rationale as `PROJECTS_WRITE_PAT` above — generate-new → update the
-hub → redistribute → revoke-old, so the cask channel never has a dead window. The
-`homebrew-tap-token-expiry-reminder` workflow files a furrow task both ~30 days before
-expiry **and immediately when the token goes dead** (its weekly probe gets a 401 —
-this token's observed failure mode was a rotation that missed hand-placed copies, not
-a calendar lapse).
+The deploy key does not expire, so there is no scheduled rotation — this procedure
+is for a **suspected compromise** (or a deliberate re-key). Same
+never-a-dead-window ordering as the PAT rotations above: add-new → redistribute →
+remove-old.
 
-1. **Generate** a new fine-grained PAT scoped to **only** `akira-toriyama/homebrew-tap`
-   with **Contents: Read and write**, expiry e.g. 1 year.
-2. **Update** the hub secret:
-   `gh secret set HOMEBREW_TAP_TOKEN --repo akira-toriyama/.github` (paste the token).
-3. **Redistribute**: run `fleet-sync` (Actions → Run workflow with dry-run **off**, or
-   wait for the daily run) — every repo whose release-channel workflow references the
-   token gets the new value.
-4. **Revoke the OLD token** in the Fine-grained tokens page once step 3 has run.
+1. **Generate** a fresh keypair: `ssh-keygen -t ed25519 -N '' -f tap-deploy-key`.
+2. **Register** the public half as a second write deploy key on the tap:
+   `gh api -X POST repos/akira-toriyama/homebrew-tap/keys -f title=… -f key=@tap-deploy-key.pub -F read_only=false`
+   (a repo can hold several deploy keys, so the old one keeps working meanwhile).
+3. **Update** the hub secret with the private half:
+   `gh secret set HOMEBREW_TAP_DEPLOY_KEY --repo akira-toriyama/.github < tap-deploy-key`.
+4. **Redistribute**: run `fleet-sync` (Actions → Run workflow with dry-run **off**, or
+   wait for the daily run).
+5. **Delete the OLD deploy key** (`gh api repos/akira-toriyama/homebrew-tap/keys` →
+   `gh api -X DELETE repos/akira-toriyama/homebrew-tap/keys/<id>`) once step 4 has
+   run, and shred the local private-key files.
+
+The retired PAT's `homebrew-tap-token-expiry-reminder` workflow probed for token
+death by HTTP 401 — SSH has no equivalent signal worth a weekly probe, and a dead
+key fails the next release loudly at `git push`, so the reminder retires with the
+PAT rather than being rebuilt for SSH.
 
 ## Rotating `FLEET_SYNC_PAT`
 

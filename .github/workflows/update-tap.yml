@@ -15,9 +15,15 @@ name: update-tap
 # repo-qualified first-match seds and a no-downgrade guard are baked in for
 # everyone; the only knobs are the formula name and an explicit rollback opt-in.
 #
-# Cross-repo write needs a PAT (GITHUB_TOKEN can only touch the caller
-# repo). Add a fine-grained PAT with `Contents: Read & write` scoped to
-# homebrew-tap, as the caller repo secret `HOMEBREW_TAP_TOKEN`.
+# Cross-repo write needs a credential (GITHUB_TOKEN can only touch the caller
+# repo). The credential is the tap's WRITE deploy key, passed as the caller
+# repo secret `HOMEBREW_TAP_DEPLOY_KEY` (fleet-sync fans it out). A deploy key
+# beats the PAT it replaced on every axis that matters here: no expiry (so no
+# rotation calendar), and a leak grants git push to ONE repo instead of an
+# account-scoped API surface (t-6bhz). `HOMEBREW_TAP_TOKEN` (the old
+# fine-grained PAT) is still accepted while callers migrate; the token path
+# and the secret die together when the last caller moves — do not add new
+# callers on it.
 #
 # Caller skeleton (.github/workflows/update-tap.yml in each app repo):
 #   on:
@@ -36,7 +42,7 @@ name: update-tap
 #         formula: facet
 #         tag: ${{ github.event.inputs.tag || '' }}
 #       secrets:
-#         HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+#         HOMEBREW_TAP_DEPLOY_KEY: ${{ secrets.HOMEBREW_TAP_DEPLOY_KEY }}
 
 on:
   workflow_call:
@@ -56,9 +62,12 @@ on:
         type: boolean
         default: false
     secrets:
+      HOMEBREW_TAP_DEPLOY_KEY:
+        description: "Private half of homebrew-tap's write deploy key (preferred; fleet-sync fans it out)."
+        required: false
       HOMEBREW_TAP_TOKEN:
-        description: "Fine-grained PAT with Contents: Read & write on homebrew-tap."
-        required: true
+        description: "DEPRECATED migration fallback: fine-grained PAT with Contents: Read & write on homebrew-tap. Removed once every caller passes the deploy key."
+        required: false
 
 # Serializes bump runs WITHIN one caller repo (a called workflow's top-level
 # concurrency is enforced on the caller's run, and concurrency groups are
@@ -114,18 +123,52 @@ jobs:
           echo "sha=$s" >> "$GITHUB_OUTPUT"
           echo "::notice::sha256 = $s"
 
-      - name: Checkout homebrew-tap (PAT)
+      # Secrets are not readable in step-level `if:`, so a shell step turns
+      # "which credential did the caller pass" into an output the two checkout
+      # variants below can branch on. Neither secret present is a caller
+      # mistake — fail HERE with the remediation, not three steps later with
+      # checkout's opaque auth error.
+      - name: Select tap credential
+        id: cred
+        env:
+          KEY: ${{ secrets.HOMEBREW_TAP_DEPLOY_KEY }}
+          TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -n "${KEY:-}" ]; then
+            echo "mode=ssh" >> "$GITHUB_OUTPUT"
+          elif [ -n "${TOKEN:-}" ]; then
+            echo "mode=token" >> "$GITHUB_OUTPUT"
+            echo "::warning::update-tap is running on the deprecated HOMEBREW_TAP_TOKEN — pass HOMEBREW_TAP_DEPLOY_KEY instead (t-6bhz); the token path will be removed."
+          else
+            echo "::error::no tap credential — pass HOMEBREW_TAP_DEPLOY_KEY (preferred) or HOMEBREW_TAP_TOKEN in the caller's secrets: block."
+            exit 1
+          fi
+
+      # Two checkout variants, one per credential shape (checkout's ssh-key and
+      # token inputs are mutually exclusive ways to authenticate). Exactly one
+      # runs, selected above. persist-credentials stays true on both: the bump
+      # step's pull-rebase-push retry loop runs plain git against this checkout,
+      # so the credential must stay configured — explicit true marks the
+      # persistence as intentional (zizmor artipacked stays silent on an
+      # explicit opt-in). checkout v6+ keeps the credential under $RUNNER_TEMP,
+      # outside the workdir, and this job uploads no artifacts. t-2nh8
+      - name: Checkout homebrew-tap (deploy key)
+        if: steps.cred.outputs.mode == 'ssh'
+        uses: actions/checkout@v7
+        with:
+          repository: akira-toriyama/homebrew-tap
+          ssh-key: ${{ secrets.HOMEBREW_TAP_DEPLOY_KEY }}
+          path: tap
+          persist-credentials: true
+
+      - name: Checkout homebrew-tap (deprecated PAT)
+        if: steps.cred.outputs.mode == 'token'
         uses: actions/checkout@v7
         with:
           repository: akira-toriyama/homebrew-tap
           token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
           path: tap
-          # The bump step's pull-rebase-push retry loop runs plain git against
-          # this checkout, so the PAT must stay configured — explicit true marks
-          # the persistence as intentional (zizmor artipacked stays silent on an
-          # explicit opt-in). checkout v6+ keeps the credential under
-          # $RUNNER_TEMP, outside the workdir, and this job uploads no
-          # artifacts. t-2nh8
           persist-credentials: true
 
       # The pure formula-mutation half lives in the bump-formula composite so
