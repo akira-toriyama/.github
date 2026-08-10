@@ -1,10 +1,70 @@
 {
   "change": "task-status.yml: bump the furrow pin v3.0.0 -> v4.0.0 — step (1) of the board-layout v9 flag day (furrow #253/#254, per-epic reviewed + epic_review_due). Order per t-22cf (the 2026-07-13 outage lesson): every caller installs a v9-capable furrow FIRST; the shared board upgrades only after fleet-sync propagates these pins, so task-status gates keep writing v8 until the flip.",
   "covers": "sha256:724811630625ad3431458dc0d6de228314fef56a29d69a5a35ce42ff139e3c91",
-  "stage": "canary",
+  "stage": "fleet",
   "canary": [
     "glyph-test"
   ],
-  "soak_until": null,
-  "evidence": {}
+  "soak_until": "2026-08-12T05:52:58Z",
+  "evidence": {
+    "canary": {
+      "glyph-test": {
+        "run_id": 31359987301,
+        "recorded_at": "2026-08-10T05:52:58Z",
+        "covers": "sha256:724811630625ad3431458dc0d6de228314fef56a29d69a5a35ce42ff139e3c91",
+        "reads": [
+          {
+            "repo": "akira-toriyama/glyph-test",
+            "dest": ".github/workflows/task-status.yml",
+            "state": "ok"
+          },
+          {
+            "repo": "akira-toriyama/glyph-test",
+            "dest": ".github/workflows/commit-lint.yml",
+            "state": "ok"
+          },
+          {
+            "repo": "akira-toriyama/glyph-test",
+            "dest": ".github/workflows/taplo.yml",
+            "state": "ok"
+          },
+          {
+            "repo": "akira-toriyama/glyph-test",
+            "dest": ".github/workflows/zizmor.yml",
+            "state": "ok"
+          },
+          {
+            "repo": "akira-toriyama/glyph-test",
+            "dest": ".github/zizmor.yml",
+            "state": "ok"
+          },
+          {
+            "repo": "akira-toriyama/glyph-test",
+            "dest": ".github/workflows/actionlint.yml",
+            "state": "ok"
+          },
+          {
+            "repo": "akira-toriyama/glyph-test",
+            "dest": ".github/workflows/version-preview.yml",
+            "state": "ok"
+          },
+          {
+            "repo": "akira-toriyama/glyph-test",
+            "dest": "docs/commit-convention.md",
+            "state": "ok"
+          },
+          {
+            "repo": "akira-toriyama/glyph-test",
+            "dest": ".github/dependabot.yml",
+            "state": "ok"
+          },
+          {
+            "repo": "akira-toriyama/glyph-test",
+            "dest": ".github/workflows/pr-verdict.yml",
+            "state": "prune-clean"
+          }
+        ]
+      }
+    }
+  }
 }
