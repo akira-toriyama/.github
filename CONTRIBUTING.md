@@ -39,6 +39,14 @@ every PR (the fleet-wide `commit-lint.yml` caller runs glyph's reusable
   (or use a `BREAKING CHANGE: <desc>` footer).
 - **subject** — required; imperative, present tense, concise. **English**,
   lowercase start, no trailing period.
+- **A pull-request title is a commit subject.** A squash merge records the PR
+  title as the subject of the commit that lands on `main`, so the title is not
+  display metadata — it is the one line of the landed message and this grammar
+  governs it like any other subject. Versioning is immune by construction (the
+  bump is folded from each PR's individual commits, never from post-squash
+  subjects — see below), so a malformed title cannot bend a release; what it
+  breaks is the history itself, the line every human and tool downstream
+  reads.
 
 ### gitmoji → semver
 
