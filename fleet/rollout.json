@@ -1,10 +1,70 @@
 {
   "change": "commit-lint.yml / version-preview.yml: move the glyph pin v1.0.0 -> v2.0.0 — glyph's second breaking release (glyph #137 pre-push hook, #157 the release write refuses a non-default ref). Measured before the tag with glyph's scripts/fleet-preflight.sh across 35 of 35 repos: 3 verdicts move and 19 bodies re-render. The two lint moves (dotfiles, zmk-ble-hid-host) add exactly one finding each and it is cjk-subject both times — the intended strictening, and a prediction rather than breakage, since the lint gate judges a pull request's own commits. The third row, projects bump refused -> exit 4, is the #109 unbounded-walk cap on a repo with no version tag; it reaches no live gate, because projects runs no glyph release path and neither does any other tagless repo in the fleet. #157 was live-fired in glyph-test at this exact tree: the hand-copy shape refuses from a topic branch (exit 4, nothing written) and still writes from the default branch (exit 0).",
   "covers": "sha256:dbe2aad7673c95c60cf8979d98f2c9204a969f312f5d927a683039190ca32ce6",
-  "stage": "canary",
+  "stage": "fleet",
   "canary": [
     "glyph-test"
   ],
-  "soak_until": null,
-  "evidence": {}
+  "soak_until": "2026-08-14T14:14:02Z",
+  "evidence": {
+    "canary": {
+      "glyph-test": {
+        "run_id": 31605621449,
+        "recorded_at": "2026-08-12T14:14:02Z",
+        "covers": "sha256:dbe2aad7673c95c60cf8979d98f2c9204a969f312f5d927a683039190ca32ce6",
+        "reads": [
+          {
+            "repo": "akira-toriyama/glyph-test",
+            "dest": ".github/workflows/task-status.yml",
+            "state": "ok"
+          },
+          {
+            "repo": "akira-toriyama/glyph-test",
+            "dest": ".github/workflows/commit-lint.yml",
+            "state": "ok"
+          },
+          {
+            "repo": "akira-toriyama/glyph-test",
+            "dest": ".github/workflows/taplo.yml",
+            "state": "ok"
+          },
+          {
+            "repo": "akira-toriyama/glyph-test",
+            "dest": ".github/workflows/zizmor.yml",
+            "state": "ok"
+          },
+          {
+            "repo": "akira-toriyama/glyph-test",
+            "dest": ".github/zizmor.yml",
+            "state": "ok"
+          },
+          {
+            "repo": "akira-toriyama/glyph-test",
+            "dest": ".github/workflows/actionlint.yml",
+            "state": "ok"
+          },
+          {
+            "repo": "akira-toriyama/glyph-test",
+            "dest": ".github/workflows/version-preview.yml",
+            "state": "ok"
+          },
+          {
+            "repo": "akira-toriyama/glyph-test",
+            "dest": "docs/commit-convention.md",
+            "state": "ok"
+          },
+          {
+            "repo": "akira-toriyama/glyph-test",
+            "dest": ".github/dependabot.yml",
+            "state": "ok"
+          },
+          {
+            "repo": "akira-toriyama/glyph-test",
+            "dest": ".github/workflows/pr-verdict.yml",
+            "state": "prune-clean"
+          }
+        ]
+      }
+    }
+  }
 }
