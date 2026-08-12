@@ -13,14 +13,17 @@ name: self commit-lint
 on:
   pull_request:
 
-# Cap the token the caller hands the reusable: glyph-lint only checks out and
-# reads the PR's commit range, so contents:read is all it needs. Without this
+# Cap the token the caller hands the reusable, but grant everything it needs:
+# a reusable can only downgrade the caller's token, never raise it. Without this
 # block the job inherits the repo-default token scope (which zizmor's
-# excessive-permissions audit flags), and the reusable can't request more than
-# the caller grants.
+# excessive-permissions audit flags). pull-requests:read joined it at glyph
+# v2.0.0, which reads the pull request's TITLE — the subject a squash merge
+# lands — over the API; measured on #186, contents:read alone does not fail the
+# lint, it stops the run from starting at all (startup_failure).
 permissions:
   contents: read
+  pull-requests: read
 
 jobs:
   commit-lint:
-    uses: akira-toriyama/glyph/.github/workflows/lint.yml@v1.0.0
+    uses: akira-toriyama/glyph/.github/workflows/lint.yml@v2.0.0
