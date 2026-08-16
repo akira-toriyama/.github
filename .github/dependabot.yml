@@ -17,3 +17,12 @@ updates:
     # without it, Dependabot froze bump-formula@v2 to a concrete tag (#167).
     ignore:
       - dependency-name: "akira-toriyama/*"
+    # Bot PRs ride glyph's one sanctioned grammar (t-271n) — same block as the
+    # canonical fleet/dependabot.yml, which never syncs HERE (the hub is
+    # EXCLUDEd), so without this local copy the hub was the one repo still
+    # producing bare `build(deps):` subjects (#182). The TRAILING SPACE is
+    # load-bearing: dependabot appends ": " only when the prefix ends in
+    # [A-Za-z0-9)\]] (pr_name_prefixer.rb), so ")" would yield the legacy
+    # separator again. Measured live on glyph-test (#39 recreate).
+    commit-message:
+      prefix: ":arrow_up:(deps) "
