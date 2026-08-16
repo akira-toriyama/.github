@@ -103,8 +103,12 @@ jobs:
           WRITE_PAT: ${{ secrets.PROJECTS_WRITE_PAT }}
           TAP_PAT: ${{ secrets.HOMEBREW_TAP_TOKEN }}
           TAP_KEY: ${{ secrets.HOMEBREW_TAP_DEPLOY_KEY }}
-          # Repos to skip (space-separated). .github is the hub itself.
-          EXCLUDE: '.github'
+          # Repos to skip (space-separated). .github is the hub itself;
+          # glyph-test2 is the conventional-profile live-fire range, whose
+          # commit-lint.yml / version-preview.yml deliberately diverge from
+          # the canonical (gitmoji-profile) callers — a sync would overwrite
+          # the very configuration that repository exists to run.
+          EXCLUDE: '.github glyph-test2'
         run: |
           set -euo pipefail
 
