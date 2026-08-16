@@ -20,7 +20,7 @@ uses: akira-toriyama/.github/.github/workflows/<name>.yml@v2
 |---|---|---|
 | [`taplo.yml`](.github/workflows/taplo.yml) | TOML lint + `fmt --check` (Taplo); a no-op without `*.toml` | fleet-sync |
 | [`zizmor.yml`](.github/workflows/zizmor.yml) | Actions-security lint (zizmor) as a PR gate — unpinned actions, template injection, over-broad `permissions:` | fleet-sync (caller + `.github/zizmor.yml` config) |
-| [`actionlint.yml`](.github/workflows/actionlint.yml) | Workflow lint (actionlint) as a PR gate — syntax, expression types, shellcheck over `run:` blocks; complements zizmor | hub self-CI today; fleet-sync stub pending the rollout queue (t-ya55) |
+| [`actionlint.yml`](.github/workflows/actionlint.yml) | Workflow lint (actionlint) as a PR gate — syntax, expression types, shellcheck over `run:` blocks; complements zizmor | fleet-sync |
 | [`swift-format.yml`](.github/workflows/swift-format.yml) | `swift format lint` for Swift packages (macOS, pinned Xcode) | per-repo caller (opt-in, paths-limited) |
 | [`design-md-lint.yml`](.github/workflows/design-md-lint.yml) | `DESIGN.md` validator (`@google/design.md`); fails on broken refs | per-repo caller (DESIGN.md repos only) |
 | [`go-ci.yml`](.github/workflows/go-ci.yml) | Go build / vet / `test -race` / module-hygiene / golangci-lint v2 | per-repo caller (repo-specific jobs) |
