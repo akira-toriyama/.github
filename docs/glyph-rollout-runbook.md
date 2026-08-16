@@ -61,6 +61,44 @@ pin audit read `uses:` only, so none of it registered.
 **Bump the `@tag` and the `version:` in the same edit, always.** They ship lockstep
 from one glyph release; there is no combination of the two that is deliberate.
 
+## v2 (the sigil engine): what must be true before the sequence applies
+
+The v2 engine (glyph e-qzpz, shipping as the next major) reads each
+repository's own `glyph.toml` instead of any embedded grammar, so a v2 pin
+move has a prerequisite no earlier rollout had: **the repository must carry a
+committed `glyph.toml` before any v2-pinned workflow runs there.** A v2 binary
+in a config-less repo answers usage (2) on every gate — not red-as-violation,
+red-as-misconfigured, on every push. The per-repo order is therefore
+config first, pins second, and it changes the sequence above in four ways:
+
+1. **Before step 0**: land the sigil grammar in CONTRIBUTING (this repo — the
+   convention's canonical copy) and commit a `glyph.toml` to every consumer:
+   the gemoji preset plus the v1-acceptance window pattern (a sigil-less
+   gitmoji subject folds as none; v1's breaking `!` already sits where the v2
+   major sigil does). glyph and glyph-test carry the reference copy of that
+   window. The natural vehicle is glyph-pin-rewrite growing a config arm —
+   include the preset in the same per-repo PR that moves the pins — or one
+   fleet-wide config pass before the pin pass; either way, a repo must never
+   receive the pin without the file.
+2. **Step 0 reads differently**: fleet-preflight's probes run the candidate
+   binary inside each consumer clone, so before configs land fleet-wide every
+   probe answers usage (2) and the differential is meaningless — and after
+   configs land, every lint verdict "moves" by construction (the grammar
+   changed). Run it after the config pass to enumerate surprises, but the
+   go/no-go for v2 is per-repo config readiness plus the glyph-test E2E
+   (t-dz5c, green 2026-08-16), not a zero-move preflight.
+3. **History stops counting**: under the acceptance window, pre-sigil commits
+   fold as none. A repo whose next release should reflect pre-migration work
+   must cut it under the old pin first (or accept the none-fold); after
+   migration, the first sigil-carrying commit is the first one that can move
+   the version. Remove the window from a repo's `glyph.toml` once the release
+   walk's base tag sits past its sigil-less history.
+4. **Rollback stays per-repo and cheap**: pin back to the last v1 tag —
+   `glyph.toml` is inert under v1, which reads no config, so the file needs no
+   revert. The hooks need nothing either way: an installed hook calls the
+   binary and blocks only on exit 3, so a v2 binary meeting a config-less repo
+   at authoring time warns and lets the commit through.
+
 ## The sequence
 
 0. **Before the tag**, run glyph's own `scripts/fleet-preflight.sh ./bin/glyph`
