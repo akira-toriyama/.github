@@ -113,15 +113,30 @@ jobs:
           # and this job uploads no artifacts. t-2nh8
           persist-credentials: true
 
-      - name: Set up Go
+      - name: Install furrow (pinned release binary)
         if: steps.expiry.outputs.due == 'true'
-        uses: actions/setup-go@v7
-        with:
-          go-version: stable
-
-      - name: Install furrow
-        if: steps.expiry.outputs.due == 'true'
-        run: go install github.com/akira-toriyama/furrow/cmd/furrow@v4.0.0
+        env:
+          # NOT `go install`: furrow's module path carries no /vN suffix, so Go
+          # refuses source installs of every v2+ tag ("module path must match
+          # major version" — measured, t-22cf). Because this step is gated on
+          # `due`, that failure would have first fired on the exact day the
+          # reminder mattered. The release tarball is how the fleet's own
+          # sync-task-status gate installs furrow; checksum-pinned here
+          # (ridge#13 shape). FURROW_RELEASE is the one furrow pin in this
+          # file — the shell parses the version out of it, and
+          # tests/fleet-manifest.test.sh §8 holds it in lockstep with the
+          # other call sites.
+          FURROW_RELEASE: akira-toriyama/furrow@v4.0.0
+          FURROW_SHA256: 32a19beea1871d6ca8df359d92e857e1a4642f57d7267b25c95c422d3abb9e10
+        run: |
+          set -euo pipefail
+          ver="${FURROW_RELEASE#*@}"
+          curl -fsSL --retry 3 -o /tmp/furrow.tgz \
+            "https://github.com/${FURROW_RELEASE%@*}/releases/download/${ver}/furrow_${ver#v}_linux_amd64.tar.gz"
+          echo "${FURROW_SHA256}  /tmp/furrow.tgz" | sha256sum -c -
+          tar -C /tmp -xzf /tmp/furrow.tgz furrow
+          sudo install -m 0755 /tmp/furrow /usr/local/bin/furrow
+          furrow --help >/dev/null
 
       - name: File a rotation reminder if none is open
         if: steps.expiry.outputs.due == 'true'
@@ -130,9 +145,6 @@ jobs:
           DAYS: ${{ steps.expiry.outputs.days }}
         run: |
           set -euo pipefail
-          gobin="$(go env GOPATH)/bin"
-          export PATH="$gobin:$PATH"
-
           tasks="$(furrow ls -l security --json || echo '[]')"
 
           # Already an open (not-done) FLEET_SYNC_PAT-rotation task? -> nothing to do.
