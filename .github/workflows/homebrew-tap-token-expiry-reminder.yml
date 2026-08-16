@@ -147,9 +147,6 @@ jobs:
           DAYS: ${{ steps.probe.outputs.days }}
         run: |
           set -euo pipefail
-          gobin="$(go env GOPATH)/bin"
-          export PATH="$gobin:$PATH"
-
           tasks="$(furrow ls -l security --json || echo '[]')"
 
           # Already an open (not-done) HOMEBREW_TAP_TOKEN task? -> nothing to do.

@@ -145,9 +145,6 @@ jobs:
           DAYS: ${{ steps.expiry.outputs.days }}
         run: |
           set -euo pipefail
-          gobin="$(go env GOPATH)/bin"
-          export PATH="$gobin:$PATH"
-
           tasks="$(furrow ls -l security --json || echo '[]')"
 
           # Already an open (not-done) FLEET_SYNC_PAT-rotation task? -> nothing to do.
