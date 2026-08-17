@@ -108,7 +108,19 @@ jobs:
           # commit-lint.yml / version-preview.yml deliberately diverge from
           # the canonical (gitmoji-profile) callers — a sync would overwrite
           # the very configuration that repository exists to run.
-          EXCLUDE: '.github glyph-test2'
+          #
+          # glyph-test joins them for the duration of the glyph v2 live fire,
+          # for the same reason one clause up: its two callers are pinned at a
+          # v3 release CANDIDATE so the new grammar can be executed as a real
+          # gate before the fleet's pins move, and this job applies on its own
+          # cron (schedule ⇒ DRY=false, below) — so an unattended 06:00 run
+          # would reset them to the canonical v2.0.0 mid-experiment and hand
+          # the next verdict to the v1 binary, in a repository whose glyph.toml
+          # only the v2 binary can read. REMOVE THIS ENTRY at rollout: once the
+          # canonical callers carry the v3 pin, glyph-test must be exactly as
+          # synced as everything else, or the range stops representing the
+          # fleet it is supposed to rehearse. Tracked by glyph t-6gt5.
+          EXCLUDE: '.github glyph-test2 glyph-test'
         run: |
           set -euo pipefail
 
