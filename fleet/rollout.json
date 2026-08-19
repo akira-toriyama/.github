@@ -1,7 +1,7 @@
 {
   "change": "repo-policy.yml: NEW canonical (t-5sas) — the tool-free house-policy PR gate: (1) tracked *.ja.* paths are banned (doc-consistency-policy; measured 0 hits across 17 fleet repos' origin/main — the perch README.ja.md exists only in a stale local checkout), and (2) an available(macOS …) gate at or below the repo's own Package.swift floor is dead code (measured exactly 1 hit fleet-wide: wand Sources/WandAdapterMacOS/LauncherPanel.swift:1971, #available(macOS 14) under floor 26.0; wand's packaging/icon script is out of scope by design). Logic is scripts/repo-policy-check.sh, table-tested by tests/repo-policy-check.test.sh (14 cases, both directions per check). Canary is wand, per the task: the one repo with a real hit, so the canary shows the gate firing, not just passing.",
   "covers": "sha256:ea44dfd24baa627e8d41de4684bcb980236931fb129bd2f9c262818ea85f9b22",
-  "stage": "glyph-test",
+  "stage": "canary",
   "canary": [
     "wand"
   ],
