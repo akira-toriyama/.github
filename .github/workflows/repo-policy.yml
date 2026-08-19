@@ -1,0 +1,71 @@
+name: repo-policy
+
+# Reusable house-policy gate, called by each repo's thin caller workflow. Two
+# checks, both tool-free (t-5sas):
+#
+#   1. Translation files are banned — a tracked path whose basename contains
+#      `.ja.` (README.ja.md). Path-only on purpose: the policy document itself
+#      names README.ja.md in prose, so a content grep would flag the rule's own
+#      text forever. Policy: docs/doc-consistency-policy.md.
+#   2. An available(macOS …) gate at or below the repo's OWN declared floor
+#      (root Package.swift, read via platform-floor-scan.sh) is dead code —
+#      the floor already guarantees the API, so the gate is always-true and its
+#      fallback branch can never run. Never hardcodes "the latest macOS":
+#      raising the floor tightens the check by itself, and a gate ABOVE the
+#      floor (new-API adoption) passes. Repos without a root Package.swift or
+#      a declared macOS floor skip check 2 (floor presence for sill consumers
+#      is platform-floor-audit's job).
+#
+# It runs in the CALLER repo's context: the first checkout pulls the caller's
+# tree, which is what gets judged. The logic lives in the HUB's
+# scripts/repo-policy-check.sh (table-tested — tests/repo-policy-check.test.sh)
+# rather than inline here, so the second checkout pulls the hub at
+# job.workflow_sha — the exact commit THIS reusable was resolved from — and
+# script and workflow can never skew (the same self-checkout go-bite.yml /
+# swift-bite.yml use; `github.job_workflow_sha` is NOT it — that documented
+# name is always null at runtime, an OIDC claim only).
+#
+# Caller skeleton (.github/workflows/repo-policy.yml in each repo):
+#   on:
+#     pull_request:
+#   permissions:
+#     contents: read
+#   jobs:
+#     repo-policy:
+#       uses: akira-toriyama/.github/.github/workflows/repo-policy.yml@v2
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  repo-policy:
+    runs-on: ubuntu-latest
+    # Two greps over one tree; bound it anyway (house rule).
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # Lint-only, never pushes — drop the persisted checkout token (zizmor
+          # artipacked); nothing downstream needs it. t-2nh8
+          persist-credentials: false
+
+      # job.workflow_repository / job.workflow_sha (runner v2.334.0) name the
+      # repository and the resolved commit of the workflow file defining this
+      # job — i.e. THIS file, at whatever tag the caller pinned — the same
+      # self-checkout go-bite.yml uses, waived in .github/actionlint.yaml
+      # (actionlint's `job` schema predates the properties).
+      - name: Fetch the check scripts (hub, at this reusable's own commit)
+        uses: actions/checkout@v7
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .repo-policy-hub
+          persist-credentials: false
+
+      - name: Repo policy check
+        # The hub checkout sits UNTRACKED inside the caller's tree; check 1
+        # reads `git ls-files`, so it can never see itself.
+        run: bash .repo-policy-hub/scripts/repo-policy-check.sh

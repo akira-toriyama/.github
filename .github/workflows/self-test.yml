@@ -110,6 +110,7 @@ jobs:
       extra-files: >-
         fleet/actionlint.yml
         fleet/commit-lint.yml
+        fleet/repo-policy.yml
         fleet/task-status.yml
         fleet/taplo.yml
         fleet/version-preview.yml
@@ -226,6 +227,14 @@ jobs:
     with:
       paths: tests/fixtures/swift
 
+  smoke-repo-policy:
+    # The house-policy gate run against the hub itself (no *.ja.* files, no
+    # Package.swift — both paths exercise the clean/skip side; the violation
+    # side is pinned by repo-policy-check-test below). Also executes the
+    # reusable's job.workflow_sha self-checkout before @v2 moves, so a break
+    # in that plumbing fails here, not in a fleet caller.
+    uses: ./.github/workflows/repo-policy.yml
+
   # RUN the extracted formula-mutation logic over a case table (the real .sh,
   # drift-free) so a break fails HERE, not in a caller after @v2 moves. This is
   # the coverage #98 lacked — actionlint/zizmor never executed the sed, so the
@@ -304,6 +313,23 @@ jobs:
           persist-credentials: false
       - name: Table-test glyph-pin-scan
         run: bash tests/glyph-pin-scan.test.sh
+
+  # The repo-policy gate's decision half. Both checks fail SILENTLY when a
+  # pattern regresses (matching nothing reads exactly like a clean repo — the
+  # glyph-pin-scan failure shape), so the table pins violation and look-alike
+  # for each: README.ja.md vs the policy doc's own prose mention; a dead
+  # below-floor gate vs a legitimate above-floor adoption gate vs a script
+  # outside the package tree.
+  repo-policy-check-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # Builds throwaway git fixtures under mktemp; never pushes. t-2nh8
+          persist-credentials: false
+      - name: Table-test repo-policy-check
+        run: bash tests/repo-policy-check.test.sh
 
   # The same extractor/audit split, for the furrow pin: furrow-pin-audit.yml sees
   # the whole fleet through scripts/furrow-pin-scan.sh, including the
