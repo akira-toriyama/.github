@@ -20,3 +20,7 @@ paths:
     ignore:
       - 'property "workflow_repository" is not defined'
       - 'property "workflow_sha" is not defined'
+  .github/workflows/repo-policy.yml:
+    ignore:
+      - 'property "workflow_repository" is not defined'
+      - 'property "workflow_sha" is not defined'

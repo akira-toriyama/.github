@@ -59,6 +59,13 @@ line to `MANIFEST` in [`.github/workflows/fleet-sync.yml`](../.github/workflows/
 - `commit-convention.md` → each repo's `docs/commit-convention.md` (a universal
   pointer to the canonical [`CONTRIBUTING.md`](../CONTRIBUTING.md); carries no
   local-hook assumptions, so it fits hook-less repos too).
+- `repo-policy.yml` → each repo's `.github/workflows/repo-policy.yml` (caller
+  stub for the shared [`repo-policy`](../.github/workflows/repo-policy.yml)
+  reusable — the tool-free house-policy PR gate: no translation files
+  (`*.ja.*` paths; [doc-consistency-policy](../docs/doc-consistency-policy.md)),
+  and no `available(macOS …)` gate at or below the repo's own `Package.swift`
+  floor. Repos without a `Package.swift` skip the floor check automatically,
+  so the stub is safe on non-Swift repos).
 
 **Edit these canonical copies, never the per-repo copies** — fleet-sync overwrites
 them on the next run.
