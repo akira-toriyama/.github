@@ -1,10 +1,75 @@
 {
   "change": "repo-policy.yml: NEW canonical (t-5sas) — the tool-free house-policy PR gate: (1) tracked *.ja.* paths are banned (doc-consistency-policy; measured 0 hits across 17 fleet repos' origin/main — the perch README.ja.md exists only in a stale local checkout), and (2) an available(macOS …) gate at or below the repo's own Package.swift floor is dead code (measured exactly 1 hit fleet-wide: wand Sources/WandAdapterMacOS/LauncherPanel.swift:1971, #available(macOS 14) under floor 26.0; wand's packaging/icon script is out of scope by design). Logic is scripts/repo-policy-check.sh, table-tested by tests/repo-policy-check.test.sh (14 cases, both directions per check). Canary is wand, per the task: the one repo with a real hit, so the canary shows the gate firing, not just passing.",
   "covers": "sha256:ea44dfd24baa627e8d41de4684bcb980236931fb129bd2f9c262818ea85f9b22",
-  "stage": "canary",
+  "stage": "fleet",
   "canary": [
     "wand"
   ],
-  "soak_until": null,
-  "evidence": {}
+  "soak_until": "2026-08-22T04:35:34Z",
+  "evidence": {
+    "canary": {
+      "wand": {
+        "run_id": 32332420889,
+        "recorded_at": "2026-08-20T04:35:34Z",
+        "covers": "sha256:ea44dfd24baa627e8d41de4684bcb980236931fb129bd2f9c262818ea85f9b22",
+        "reads": [
+          {
+            "repo": "akira-toriyama/wand",
+            "dest": ".github/workflows/task-status.yml",
+            "state": "ok"
+          },
+          {
+            "repo": "akira-toriyama/wand",
+            "dest": ".github/workflows/commit-lint.yml",
+            "state": "ok"
+          },
+          {
+            "repo": "akira-toriyama/wand",
+            "dest": ".github/workflows/taplo.yml",
+            "state": "ok"
+          },
+          {
+            "repo": "akira-toriyama/wand",
+            "dest": ".github/workflows/zizmor.yml",
+            "state": "ok"
+          },
+          {
+            "repo": "akira-toriyama/wand",
+            "dest": ".github/zizmor.yml",
+            "state": "ok"
+          },
+          {
+            "repo": "akira-toriyama/wand",
+            "dest": ".github/workflows/actionlint.yml",
+            "state": "ok"
+          },
+          {
+            "repo": "akira-toriyama/wand",
+            "dest": ".github/workflows/version-preview.yml",
+            "state": "ok"
+          },
+          {
+            "repo": "akira-toriyama/wand",
+            "dest": "docs/commit-convention.md",
+            "state": "ok"
+          },
+          {
+            "repo": "akira-toriyama/wand",
+            "dest": ".github/workflows/repo-policy.yml",
+            "state": "ok"
+          },
+          {
+            "repo": "akira-toriyama/wand",
+            "dest": ".github/dependabot.yml",
+            "state": "ok"
+          },
+          {
+            "repo": "akira-toriyama/wand",
+            "dest": ".github/workflows/pr-verdict.yml",
+            "state": "prune-clean"
+          }
+        ]
+      }
+    }
+  }
 }
