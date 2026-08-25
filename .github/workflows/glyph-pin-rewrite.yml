@@ -243,9 +243,6 @@ jobs:
             from_refs=""
             while IFS= read -r path; do
               [ -n "$path" ] || continue
-              # fleet-sync's territory.
-              case " $MANAGED " in *" $path "*) continue ;; esac
-
               orig="$RUNNER_TEMP/orig.yml"; new="$RUNNER_TEMP/new.yml"
               if ! gh api "repos/$full/contents/$path" --jq '.content' 2>/dev/null | base64 -d > "$orig" 2>/dev/null || [ ! -s "$orig" ]; then
                 echo "::warning::glyph-pin-rewrite: could not read $full $path — it was NOT examined this run"
@@ -258,12 +255,23 @@ jobs:
               # body's from->to line — the rollout rule (t-9wp2) is that a pin
               # move names BOTH numbers, because "upgrade to v2" already sent
               # one repo to the OLD grammar (v2.0.0 is a v1-grammar tag).
+              # This scan runs BEFORE the fleet-managed skip on purpose: for
+              # most of the fleet the ONLY glyph reference is the distributed
+              # commit-lint.yml caller, and skipping it first made those repos
+              # read as non-consumers — 18 of ~34 got a config in the first dry
+              # run, and the rest would have met the v3 lint gate config-less,
+              # which is the exact red this arm exists to prevent (measured,
+              # run 32861139344).
               refs="$(bash scripts/glyph-pin-scan.sh < "$orig" 2>/dev/null || true)"
               if [ -n "$refs" ]; then
                 has_glyph_ref=1
                 from_refs="$(printf '%s\n%s' "$from_refs" \
                   "$(printf '%s\n' "$refs" | awk -F'\t' -v w="$want" '($1=="uses"||$1=="version") && $2!=w {print $2}')")"
               fi
+
+              # fleet-sync's territory: consumption counted above, bytes never
+              # touched here.
+              case " $MANAGED " in *" $path "*) continue ;; esac
 
               # NEVER rewrite a reusable DEFINITION. glyph's own reusables live at
               # the same kind of path a caller occupies everywhere else, and they
