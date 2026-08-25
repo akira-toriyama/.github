@@ -91,10 +91,20 @@ config first, pins second, and it changes the sequence above in four ways:
    subject lints clean and folds as none, and every gate annotates a
    `::warning::` naming the fix — green and loud is the expected migration
    state, not a defect. (v1's breaking `!` already sits where the v2 major
-   sigil does, so nothing breaking is lost to the window.) The natural vehicle
-   is glyph-pin-rewrite growing a config arm — run the generator in the same
-   per-repo PR that moves the pins — or one fleet-wide config pass before the
-   pin pass; either way, a repo must never receive the pin without the file.
+   sigil does, so nothing breaking is lost to the window.) The vehicle is
+   glyph-pin-rewrite's **config arm**: it fetches glyph's own `glyph.toml` at
+   the tag (generator output, by the byte-equality test) and adds it to any
+   consumer that has none, in the same per-repo PR as the pins. **Run the
+   config pass BEFORE the canonical bump** —
+   `gh workflow run glyph-pin-rewrite.yml -f dry-run=false -f config-ref=vX.Y.Z`
+   — and merge those config-only PRs first: the file is inert under the v1
+   pins the fleet still runs, whereas the other order has a real red window
+   (fleet-sync moves `commit-lint.yml` by direct commit, so between that
+   commit and the config merge every push and PR in the repo answers usage).
+   The arm never overwrites an existing `glyph.toml` (that file is the repo's
+   own grammar to evolve), and `glyph-pin-audit` enforces the invariant from
+   the other side: a consumer of a v3+ canonical with no committed
+   `glyph.toml` is red, by name.
 2. **Step 0 reads differently**: fleet-preflight's probes run the candidate
    binary inside each consumer clone, so before configs land fleet-wide every
    probe answers usage (2) and the differential is meaningless — and after

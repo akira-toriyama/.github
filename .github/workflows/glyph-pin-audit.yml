@@ -191,6 +191,7 @@ jobs:
             fi
             [ -n "$tree" ] || continue # no .github/**.yml — nothing to audit
 
+            repo_has_ref=0
             while IFS= read -r path; do
               [ -n "$path" ] || continue
               body_err="$RUNNER_TEMP/audit-body.err"
@@ -207,6 +208,7 @@ jobs:
               [ -n "$body" ] || continue # an empty file carries no pin
               while IFS="$(printf '\t')" read -r kind ref line; do
                 [ -n "$kind" ] || continue
+                repo_has_ref=1
                 case "$kind" in
                   uses)
                     if [ "$ref" != "$want" ]; then
@@ -240,6 +242,26 @@ jobs:
                 esac
               done < <(printf '%s\n' "$body" | bash scripts/glyph-pin-scan.sh)
             done <<< "$tree"
+
+            # The config-first invariant, as a machine check (it lived only in
+            # runbook prose before): from v3.0.0 the engine reads the repo's own
+            # glyph.toml, so a consumer without one is not "slightly behind" —
+            # every gate there answers usage (exit 2) on every push. Only a 404
+            # proves absence; any other failure means the repo's config state
+            # was NOT audited, and counts as such.
+            major="${want#v}"; major="${major%%.*}"
+            if [ "$repo_has_ref" -eq 1 ] && [ "$major" -ge 3 ]; then
+              cfg_err="$RUNNER_TEMP/audit-cfg.err"
+              if ! gh api "repos/$full/contents/glyph.toml" >/dev/null 2>"$cfg_err"; then
+                if grep -qE 'HTTP 404' "$cfg_err"; then
+                  echo "::error::$full consumes glyph $want (config-first engine) but has no committed glyph.toml — every gate there answers usage (exit 2). glyph-pin-rewrite's config arm adds the file."
+                  drift=$((drift + 1))
+                else
+                  echo "::error::cannot tell whether $full has a glyph.toml — its config state was NOT audited: $(head -c 200 "$cfg_err")"
+                  apifail=$((apifail + 1))
+                fi
+              fi
+            fi
           done
 
           if [ "$drift" -gt 0 ] || [ "$apifail" -gt 0 ]; then

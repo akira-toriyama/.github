@@ -71,6 +71,15 @@ on:
         description: Limit to a single repo name (optional).
         type: string
         default: ''
+      config-ref:
+        description: >-
+          Arm the glyph.toml config arm from this glyph tag even while the
+          canonical pin predates v3 — the fleet-wide config pass that runs
+          BEFORE the v3 canonical bump (glyph.toml is inert under v1, so the
+          configs can land with zero red anywhere; see the runbook's v2
+          section). Ignored once the canonical itself is v3+.
+        type: string
+        default: ''
   schedule:
     - cron: '20 6 * * *' # between fleet-sync (06:00) and glyph-pin-audit (06:30)
 
@@ -120,6 +129,7 @@ jobs:
           EVENT: ${{ github.event_name }}
           DRY_RUN: ${{ inputs.dry-run }}
           ONLY_REPO: ${{ inputs.only-repo }}
+          CONFIG_REF: ${{ inputs.config-ref }}
         run: |
           set -euo pipefail
 
@@ -138,6 +148,47 @@ jobs:
                   | awk -F'\t' '$1 == "uses" { print $2; exit }')"
           [ -n "$want" ] || { echo "::error::could not read the canonical glyph pin from fleet/commit-lint.yml"; exit 1; }
           echo "canonical glyph pin: $want"
+
+          # THE CONFIG ARM. From v3.0.0 the engine reads the repository's own
+          # glyph.toml instead of any embedded grammar, so the per-repo order is
+          # config first, pins second: a v3 binary in a config-less repo answers
+          # usage (2) on every gate — red-as-misconfigured on every push
+          # (measured 2026-08-17: 33 of 34 consumers had no config; the
+          # preflight showed all 33 losing their answer). Riding the SAME
+          # per-repo pull request as the pin move is what makes the invariant
+          # structural: no repo can merge the pin without the file.
+          #
+          # The distributed bytes are glyph's own committed glyph.toml AT THE
+          # CANONICAL TAG — not a hand-written copy, and not a second generator:
+          # glyph holds that file byte-identical to `glyph init --gemoji
+          # --v1-window` output by test (TestGlyphOwnConfigIsTheComposedV1WindowPreset),
+          # so fetching it IS fetching generator output, without running a
+          # binary here. The arm only ever ADDS the file where none exists —
+          # a repo's committed glyph.toml is that repo's own grammar to evolve
+          # (windows are removed per repo as histories become all-sigil), and
+          # overwriting it would be fleet-sync semantics this file must not have.
+          config_src=""; config_ref=""
+          major="${want#v}"; major="${major%%.*}"
+          if [ "$major" -ge 3 ]; then
+            config_ref="$want"
+          elif [ -n "${CONFIG_REF:-}" ]; then
+            # The pre-bump config pass: the file is inert under the v1 pins the
+            # fleet still runs, so it can land everywhere BEFORE the canonical
+            # moves — which is what makes the later pin move red-window-free.
+            config_ref="$CONFIG_REF"
+          fi
+          if [ -n "$config_ref" ]; then
+            config_src="$RUNNER_TEMP/glyph.toml"
+            gh api "repos/$OWNER/glyph/contents/glyph.toml?ref=$config_ref" --jq '.content' \
+              | base64 -d > "$config_src" || true
+            # Hard failure, not a skip: distributing pins without the config is
+            # exactly the failure mode this arm exists to prevent.
+            grep -q 'schema = 1' "$config_src" \
+              || { echo "::error::could not fetch glyph.toml at $config_ref from $OWNER/glyph — refusing to run with a config arm that has nothing to ship"; exit 1; }
+            echo "config arm armed: glyph.toml @$config_ref ($(wc -c < "$config_src") bytes)"
+          else
+            echo "config arm dormant: canonical $want predates the config-first engine (v3) and no config-ref was passed"
+          fi
 
           # Files fleet-sync OWNS are off limits here — DERIVED from its MANIFEST,
           # never restated. Two writers racing for one path is how a repo ends up
@@ -158,7 +209,20 @@ jobs:
           [ "${#REPOS[@]}" -ge 1 ] || { echo "::error::empty repo list from gh repo list — aborting (transient API failure?)."; exit 1; }
           echo "considering ${#REPOS[@]} repos"
 
-          rewritten=0; prs=0; unfixable=0; skipped=0; hard=0
+          # Create-or-adopt the per-repo branch and resolve the default branch.
+          # Reads the loop's $full/$branch, sets $db. One home because two
+          # callers need it now: the first rewritten FILE, and a repo whose
+          # pins are level but whose glyph.toml is missing (config-only PR).
+          ensure_branch() {
+            db="$(gh api "repos/$full" --jq .default_branch)" || return 1
+            if ! gh api "repos/$full/git/ref/heads/$branch" >/dev/null 2>/dev/null; then
+              local bsha
+              bsha="$(gh api "repos/$full/git/ref/heads/$db" --jq .object.sha)" || return 1
+              gh api -X POST "repos/$full/git/refs" -f "ref=refs/heads/$branch" -f "sha=$bsha" >/dev/null || return 1
+            fi
+          }
+
+          rewritten=0; prs=0; unfixable=0; skipped=0; hard=0; configs=0
           for repo in "${REPOS[@]}"; do
             if [ -n "$ONLY_REPO" ] && [ "$repo" != "$ONLY_REPO" ]; then continue; fi
             full="$OWNER/$repo"
@@ -175,6 +239,8 @@ jobs:
 
             branch="glyph-pin/$want"
             changed_paths=""
+            has_glyph_ref=0
+            from_refs=""
             while IFS= read -r path; do
               [ -n "$path" ] || continue
               # fleet-sync's territory.
@@ -185,6 +251,18 @@ jobs:
                 echo "::warning::glyph-pin-rewrite: could not read $full $path — it was NOT examined this run"
                 skipped=$((skipped + 1))
                 continue
+              fi
+
+              # Does this repo consume glyph at all, and from which tags? Feeds
+              # the config arm ("a consumer with no glyph.toml") and the PR
+              # body's from->to line — the rollout rule (t-9wp2) is that a pin
+              # move names BOTH numbers, because "upgrade to v2" already sent
+              # one repo to the OLD grammar (v2.0.0 is a v1-grammar tag).
+              refs="$(bash scripts/glyph-pin-scan.sh < "$orig" 2>/dev/null || true)"
+              if [ -n "$refs" ]; then
+                has_glyph_ref=1
+                from_refs="$(printf '%s\n%s' "$from_refs" \
+                  "$(printf '%s\n' "$refs" | awk -F'\t' -v w="$want" '($1=="uses"||$1=="version") && $2!=w {print $2}')")"
               fi
 
               # NEVER rewrite a reusable DEFINITION. glyph's own reusables live at
@@ -230,14 +308,8 @@ jobs:
               # branch the first time it is needed, so a repo with nothing to fix
               # never grows one.
               if [ -z "$changed_paths" ]; then
-                db="$(gh api "repos/$full" --jq .default_branch)" \
-                  || { echo "::warning::glyph-pin-rewrite: cannot read default branch for $full; skipping"; skipped=$((skipped + 1)); continue; }
-                if ! gh api "repos/$full/git/ref/heads/$branch" >/dev/null 2>/dev/null; then
-                  bsha="$(gh api "repos/$full/git/ref/heads/$db" --jq .object.sha)" \
-                    || { echo "::warning::glyph-pin-rewrite: cannot read $db tip for $full; skipping"; skipped=$((skipped + 1)); continue; }
-                  gh api -X POST "repos/$full/git/refs" -f "ref=refs/heads/$branch" -f "sha=$bsha" >/dev/null \
-                    || { echo "::warning::glyph-pin-rewrite: cannot create $branch on $full; skipping"; skipped=$((skipped + 1)); continue; }
-                fi
+                ensure_branch \
+                  || { echo "::warning::glyph-pin-rewrite: cannot prepare $branch on $full; skipping"; skipped=$((skipped + 1)); continue; }
               fi
 
               # Re-read the path ON THE BRANCH for its blob sha: a re-run after a
@@ -262,16 +334,66 @@ jobs:
               changed_paths="$changed_paths $path"
             done <<< "$tree"
 
+            # The config arm, per repo: a glyph consumer with no committed
+            # glyph.toml gets the file in the same pull request that moves its
+            # pins. Only a 404 proves absence — any other failure means this
+            # repo's config state is UNKNOWN, and shipping a pin move anyway
+            # would be exactly the config-less red this arm prevents, so the
+            # repo is skipped whole (no PR, counted, loud).
+            if [ -n "$config_src" ] && [ "$has_glyph_ref" -eq 1 ]; then
+              cfg_err="$RUNNER_TEMP/cfg.err"
+              if gh api "repos/$full/contents/glyph.toml" >/dev/null 2>"$cfg_err"; then
+                : # config present — the repo's own grammar, never touched here
+              elif grep -qE 'HTTP 404' "$cfg_err"; then
+                echo "needs-config: $full"
+                configs=$((configs + 1))
+                if [ "$DRY" != "true" ]; then
+                  if [ -z "$changed_paths" ] && ! ensure_branch; then
+                    echo "::warning::glyph-pin-rewrite: cannot prepare $branch on $full for its glyph.toml; skipping"
+                    skipped=$((skipped + 1)); continue
+                  fi
+                  csha=""
+                  if cjson="$(gh api "repos/$full/contents/glyph.toml?ref=$branch" 2>/dev/null)"; then
+                    csha="$(printf '%s' "$cjson" | jq -r '.sha')"
+                  fi
+                  cargs=(-X PUT "repos/$full/contents/glyph.toml"
+                    -f "message=:wrench:(ci) add glyph.toml — the v3 engine reads the repo's own grammar"
+                    -f "author[name]=glyph-pin-rewrite[bot]"
+                    -f "author[email]=glyph-pin-rewrite[bot]@users.noreply.github.com"
+                    -f "content=$(base64 -w0 < "$config_src")" -f "branch=$branch")
+                  [ -n "$csha" ] && cargs+=(-f "sha=$csha")
+                  gh api "${cargs[@]}" >/dev/null \
+                    || { echo "::warning::glyph-pin-rewrite: cannot write glyph.toml on $full@$branch; skipping"; skipped=$((skipped + 1)); continue; }
+                  changed_paths="$changed_paths glyph.toml"
+                fi
+              else
+                echo "::warning::glyph-pin-rewrite: cannot tell whether $full has a glyph.toml ($(head -c 120 "$cfg_err" | tr '\n' ' ')) — NOT opening a pin move it might not be ready for"
+                skipped=$((skipped + 1)); continue
+              fi
+            fi
+
             [ -n "$changed_paths" ] || continue
 
             # One pull request per repo, carrying every pin site in it — the pair
             # that must never move separately (`actions/install@` and the
             # `version:` under it) is therefore never split across two reviews.
+            # The title and body name BOTH numbers of the move (t-9wp2): the
+            # existing v2.0.0/v2.1.0 tags are v1-GRAMMAR releases, so "to v2"
+            # reads two opposite ways and the wrong one has already happened.
+            moves="$(printf '%s\n' "$from_refs" | grep -v '^$' | sort -u | sed "s|\$| -> $want|" | paste -sd ', ' -)"
+            [ -n "$moves" ] || moves="(no pin moved — config only)"
+            config_note=""
             # shellcheck disable=SC2016  # the backticks are markdown code spans in the PR body, not command substitution
-            body="$(printf 'Moves every glyph pin in this repo to **%s**, the version `fleet/commit-lint.yml` distributes.\n\nThese sites are NOT fleet-managed: they live in files this repo owns, so `fleet-sync` cannot byte-copy them and until now they moved only by hand — one pull request per repo, per glyph release.\n\nFiles:\n%s\n\nOnly lines carrying a glyph pin were changed; the rewriter refuses and writes nothing if any other line moves. See `akira-toriyama/.github`: `scripts/glyph-pin-rewrite.sh`, `docs/glyph-rollout-runbook.md`.\n' \
-              "$want" "$(for p in $changed_paths; do printf -- '- %s\n' "$p"; done)")"
+            case " $changed_paths " in *" glyph.toml "*)
+              config_note="$(printf '\n**This PR also adds `glyph.toml`** (generator output at %s). From v3.0.0 glyph reads the repository'"'"'s own pattern file instead of an embedded grammar, and a v3-pinned workflow in a config-less repo answers usage (exit 2) on every gate — so the config must never merge later than the pin (it is inert under the v1 pins, so merging it early costs nothing). The file is `glyph init --gemoji --v1-window` output, fetched from the tag and held byte-identical by glyph'"'"'s own test: under its v1-acceptance window the existing sigil-less gitmoji history keeps linting clean, with a warning naming the sigil to start writing.\n' "$config_ref")"
+            ;; esac
+            # shellcheck disable=SC2016  # the backticks are markdown code spans in the PR body, not command substitution
+            body="$(printf 'Moves every glyph pin in this repo to **%s** (%s), the version `fleet/commit-lint.yml` distributes.\n\nThese sites are NOT fleet-managed: they live in files this repo owns, so `fleet-sync` cannot byte-copy them and until now they moved only by hand — one pull request per repo, per glyph release.\n%s\nFiles:\n%s\n\nOnly lines carrying a glyph pin were changed; the rewriter refuses and writes nothing if any other line moves. See `akira-toriyama/.github`: `scripts/glyph-pin-rewrite.sh`, `docs/glyph-rollout-runbook.md`.\n' \
+              "$want" "$moves" "$config_note" "$(for p in $changed_paths; do printf -- '- %s\n' "$p"; done)")"
+            title=":arrow_up:(ci) pin glyph $want ($moves)"
+            case "$moves" in "(no pin moved"*) title=":wrench:(ci) add glyph.toml — the config-first invariant, ahead of the $config_ref pins" ;; esac
             if pr_err="$(gh pr create --repo "$full" --base "$db" --head "$branch" \
-                 --title ":arrow_up:(ci) pin glyph $want" --body "$body" 2>&1)"; then
+                 --title "$title" --body "$body" 2>&1)"; then
               echo "pr-opened: $full ($changed_paths )"
               prs=$((prs + 1))
             else
@@ -282,7 +404,7 @@ jobs:
             fi
           done
 
-          echo "done: canonical=$want rewrites=$rewritten prs=$prs unfixable=$unfixable skipped=$skipped dry-run=$DRY across ${#REPOS[@]} repo(s)"
+          echo "done: canonical=$want rewrites=$rewritten configs=$configs prs=$prs unfixable=$unfixable skipped=$skipped dry-run=$DRY across ${#REPOS[@]} repo(s)"
           # `skipped` is reported, not swallowed. It is the count of places this run
           # is silent about — the difference between "the fleet is level" and "the
           # fleet is level as far as I could see".
