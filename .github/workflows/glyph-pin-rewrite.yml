@@ -266,7 +266,7 @@ jobs:
               if [ -n "$refs" ]; then
                 has_glyph_ref=1
                 from_refs="$(printf '%s\n%s' "$from_refs" \
-                  "$(printf '%s\n' "$refs" | awk -F'\t' -v w="$want" '($1=="uses"||$1=="version") && $2!=w {print $2}')")"
+                  "$(printf '%s\n' "$refs" | awk -F'\t' -v w="$want" '($1=="uses"||$1=="uses-unpinned"||$1=="version") && $2!=w && $2!="" {print $2}')")"
               fi
 
               # fleet-sync's territory: consumption counted above, bytes never
@@ -392,7 +392,13 @@ jobs:
             # The title and body name BOTH numbers of the move (t-9wp2): the
             # existing v2.0.0/v2.1.0 tags are v1-GRAMMAR releases, so "to v2"
             # reads two opposite ways and the wrong one has already happened.
-            moves="$(printf '%s\n' "$from_refs" | grep -v '^$' | sort -u | sed "s|\$| -> $want|" | paste -sd ', ' -)"
+            # `|| true` carries the whole pipeline: grep -v over an EMPTY
+            # from_refs (a config-only repo, or one whose refs the scanner
+            # classifies uses-unpinned) exits 1, and under pipefail that
+            # made this assignment the silent killer of two apply runs
+            # (32863341701 died on the hub, 32864563936 on glyph-test —
+            # whose v3.0.0-rc.2 prerelease refs are exactly uses-unpinned).
+            moves="$(printf '%s\n' "$from_refs" | grep -v '^$' | sort -u | sed "s|\$| -> $want|" | paste -sd ', ' - || true)"
             [ -n "$moves" ] || moves="(no pin moved — config only)"
             config_note=""
             # shellcheck disable=SC2016  # the backticks are markdown code spans in the PR body, not command substitution
