@@ -7,5 +7,70 @@
     "wand"
   ],
   "soak_until": null,
-  "evidence": {}
+  "evidence": {
+    "canary": {
+      "glyph-test": {
+        "run_id": 32867644410,
+        "recorded_at": "2026-08-25T15:44:37Z",
+        "covers": "sha256:4c6ec80ac93409a5b112f99192362949dfd7fe30190a295ee01e4a7105a31e28",
+        "reads": [
+          {
+            "repo": "akira-toriyama/glyph-test",
+            "dest": ".github/workflows/task-status.yml",
+            "state": "ok"
+          },
+          {
+            "repo": "akira-toriyama/glyph-test",
+            "dest": ".github/workflows/commit-lint.yml",
+            "state": "ok"
+          },
+          {
+            "repo": "akira-toriyama/glyph-test",
+            "dest": ".github/workflows/taplo.yml",
+            "state": "ok"
+          },
+          {
+            "repo": "akira-toriyama/glyph-test",
+            "dest": ".github/workflows/zizmor.yml",
+            "state": "ok"
+          },
+          {
+            "repo": "akira-toriyama/glyph-test",
+            "dest": ".github/zizmor.yml",
+            "state": "ok"
+          },
+          {
+            "repo": "akira-toriyama/glyph-test",
+            "dest": ".github/workflows/actionlint.yml",
+            "state": "ok"
+          },
+          {
+            "repo": "akira-toriyama/glyph-test",
+            "dest": ".github/workflows/version-preview.yml",
+            "state": "ok"
+          },
+          {
+            "repo": "akira-toriyama/glyph-test",
+            "dest": "docs/commit-convention.md",
+            "state": "ok"
+          },
+          {
+            "repo": "akira-toriyama/glyph-test",
+            "dest": ".github/workflows/repo-policy.yml",
+            "state": "ok"
+          },
+          {
+            "repo": "akira-toriyama/glyph-test",
+            "dest": ".github/dependabot.yml",
+            "state": "ok"
+          },
+          {
+            "repo": "akira-toriyama/glyph-test",
+            "dest": ".github/workflows/pr-verdict.yml",
+            "state": "prune-clean"
+          }
+        ]
+      }
+    }
+  }
 }
