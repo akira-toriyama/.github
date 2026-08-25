@@ -1,8 +1,9 @@
 {
-  "change": "repo-policy.yml: NEW canonical (t-5sas) — the tool-free house-policy PR gate: (1) tracked *.ja.* paths are banned (doc-consistency-policy; measured 0 hits across 17 fleet repos' origin/main — the perch README.ja.md exists only in a stale local checkout), and (2) an available(macOS …) gate at or below the repo's own Package.swift floor is dead code (measured exactly 1 hit fleet-wide: wand Sources/WandAdapterMacOS/LauncherPanel.swift:1971, #available(macOS 14) under floor 26.0; wand's packaging/icon script is out of scope by design). Logic is scripts/repo-policy-check.sh, table-tested by tests/repo-policy-check.test.sh (14 cases, both directions per check). Canary is wand, per the task: the one repo with a real hit, so the canary shows the gate firing, not just passing. || commit-convention.md: stub rewritten link-driven for glyph v2 (ships as tag v3.0.0; sigil is the version signal, the repo's own glyph.toml is the local truth) — rides the same canary; inert prose, no gate reads it (t-m1x1/t-wk8z).",
-  "covers": "sha256:5704c7c36bc31379c63874b27f1b1585bd66e8f74e9d610c0dfaeefd28158e95",
+  "change": "glyph canonicals v2.0.0 -> v3.0.0 (the sigil engine; 'v2' is the generation name, v2.0.0/v2.1.0 are v1-grammar tags): commit-lint.yml gains the push arm + edited type (t-m1dk) and moves to lint.yml@v3.0.0, version-preview.yml moves to pr-verdict.yml@v3.0.0. Config-first invariant holds: glyph.toml distributed fleet-wide by glyph-pin-rewrite's config arm BEFORE this ships (inert under the v1 pins). Canary glyph-test (rejoins fleet-sync in this same change — its callers ran ahead at v3.0.0-rc.2 and the canary apply is what restores them to canonical bytes). || still in flight from the previous entry: repo-policy.yml NEW canonical (t-5sas, canary wand — the one repo with a real hit, so the canary shows the gate firing) and the commit-convention.md link-driven stub rewrite (t-m1x1/t-wk8z, inert prose). Evidence rule unchanged: BOTH canaries need machine-recorded evidence before stage fleet.",
+  "covers": "sha256:4c6ec80ac93409a5b112f99192362949dfd7fe30190a295ee01e4a7105a31e28",
   "stage": "canary",
   "canary": [
+    "glyph-test",
     "wand"
   ],
   "soak_until": null,

@@ -336,7 +336,11 @@ jobs:
                 -f "author[name]=glyph-pin-rewrite[bot]"
                 -f "author[email]=glyph-pin-rewrite[bot]@users.noreply.github.com"
                 -f "content=$(base64 -w0 < "$new")" -f "branch=$branch")
-              [ -n "$bsha2" ] && pargs+=(-f "sha=$bsha2")
+              # `if`, not `[ … ] && …`: a run: block is bash -e, and the empty-sha
+              # case (a file NEW on the branch) turns the guard itself into the
+              # failing last command — measured killing run 32863341701 on the
+              # config arm's first live write.
+              if [ -n "$bsha2" ]; then pargs+=(-f "sha=$bsha2"); fi
               gh api "${pargs[@]}" >/dev/null \
                 || { echo "::warning::glyph-pin-rewrite: cannot write $path on $full@$branch; skipping"; skipped=$((skipped + 1)); continue; }
               changed_paths="$changed_paths $path"
@@ -369,7 +373,7 @@ jobs:
                     -f "author[name]=glyph-pin-rewrite[bot]"
                     -f "author[email]=glyph-pin-rewrite[bot]@users.noreply.github.com"
                     -f "content=$(base64 -w0 < "$config_src")" -f "branch=$branch")
-                  [ -n "$csha" ] && cargs+=(-f "sha=$csha")
+                  if [ -n "$csha" ]; then cargs+=(-f "sha=$csha"); fi
                   gh api "${cargs[@]}" >/dev/null \
                     || { echo "::warning::glyph-pin-rewrite: cannot write glyph.toml on $full@$branch; skipping"; skipped=$((skipped + 1)); continue; }
                   changed_paths="$changed_paths glyph.toml"

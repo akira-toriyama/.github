@@ -120,7 +120,7 @@ jobs:
           # canonical callers carry the v3 pin, glyph-test must be exactly as
           # synced as everything else, or the range stops representing the
           # fleet it is supposed to rehearse. Tracked by glyph t-6gt5.
-          EXCLUDE: '.github glyph-test2 glyph-test'
+          EXCLUDE: '.github glyph-test2'
         run: |
           set -euo pipefail
 
