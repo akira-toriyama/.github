@@ -408,12 +408,13 @@ jobs:
               queued=$((queued + 1))
               [ "$DRY" = "true" ] && continue
               dead_sha="$(printf '%s' "$dead_json" | jq -r '.sha')"
-              # :fire: demands a breaking declaration (glyph rules); deleting a
-              # distributed COPY of a retired canonical is not an API removal, so
-              # the NON-BREAKING footer says why instead of `!`. Multiline -f
+              # `=` is the sigil-grammar declaration (glyph v3: footers are not
+              # parsed, the sigil is the whole signal): deleting a distributed
+              # COPY of a retired canonical is not an API removal, so it folds
+              # none. The body sentence stays for the reader. Multiline -f
               # values reach the Contents API byte-for-byte (measured on
               # glyph-test, t-271n).
-              dmsg="$(printf ':fire:(fleet) drop retired %s\n\nNON-BREAKING: removing a distributed copy of a retired canonical file, not an API removal' "$dead")"
+              dmsg="$(printf ':fire:(fleet)= drop retired %s\n\nRemoving a distributed copy of a retired canonical file, not an API removal.' "$dead")"
               dargs=(-X DELETE "repos/$full/contents/$dead"
                 -f "message=$dmsg"
                 -f "author[name]=fleet-sync[bot]"
