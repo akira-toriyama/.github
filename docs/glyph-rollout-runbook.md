@@ -63,7 +63,17 @@ from one glyph release; there is no combination of the two that is deliberate.
 
 ## v2 (the sigil engine): what must be true before the sequence applies
 
-The v2 engine (glyph e-qzpz, shipping as the next major) reads each
+The v2 engine (glyph e-qzpz) ships as tag **v3.0.0** — "v2" is the engine
+generation's name, not a tag. The existing `v2.0.0` / `v2.1.0` tags are
+**v1-grammar releases**, and they are exactly where the fleet's pins sit
+today, so "upgrade to glyph v2" reads two opposite ways and the wrong one has
+already happened (`pin glyph v2.0.0` in glyph-test pinned the OLD grammar).
+Every artifact this rollout writes therefore names both numbers: pin-move PR
+titles and bodies, and the rollout ledger's `change` line, spell the move as
+`v2.1.0 -> v3.0.0` (or `v2.0.0 -> v3.0.0` for the repos still there), never
+"to v2".
+
+The engine reads each
 repository's own `glyph.toml` instead of any embedded grammar, so a v2 pin
 move has a prerequisite no earlier rollout had: **the repository must carry a
 committed `glyph.toml` before any v2-pinned workflow runs there.** A v2 binary
@@ -72,14 +82,19 @@ red-as-misconfigured, on every push. The per-repo order is therefore
 config first, pins second, and it changes the sequence above in four ways:
 
 1. **Before step 0**: land the sigil grammar in CONTRIBUTING (this repo — the
-   convention's canonical copy) and commit a `glyph.toml` to every consumer:
-   the gemoji preset plus the v1-acceptance window pattern (a sigil-less
-   gitmoji subject folds as none; v1's breaking `!` already sits where the v2
-   major sigil does). glyph and glyph-test carry the reference copy of that
-   window. The natural vehicle is glyph-pin-rewrite growing a config arm —
-   include the preset in the same per-repo PR that moves the pins — or one
-   fleet-wide config pass before the pin pass; either way, a repo must never
-   receive the pin without the file.
+   convention's canonical copy) and commit a `glyph.toml` to every consumer.
+   The file is GENERATED, not hand-copied: `glyph init --gemoji --v1-window`
+   writes the whole thing — the v1-acceptance window block is embedded in the
+   binary as its single source, and glyph's own committed `glyph.toml` is held
+   byte-identical to that output by test, so there is no reference copy to
+   transcribe and nothing to drift. Under the window a sigil-less gitmoji
+   subject lints clean and folds as none, and every gate annotates a
+   `::warning::` naming the fix — green and loud is the expected migration
+   state, not a defect. (v1's breaking `!` already sits where the v2 major
+   sigil does, so nothing breaking is lost to the window.) The natural vehicle
+   is glyph-pin-rewrite growing a config arm — run the generator in the same
+   per-repo PR that moves the pins — or one fleet-wide config pass before the
+   pin pass; either way, a repo must never receive the pin without the file.
 2. **Step 0 reads differently**: fleet-preflight's probes run the candidate
    binary inside each consumer clone, so before configs land fleet-wide every
    probe answers usage (2) and the differential is meaningless — and after
