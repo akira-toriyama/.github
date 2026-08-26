@@ -223,6 +223,21 @@ jobs:
 EOF
 )" "$(printf 'uses-unpinned\tv0.11.0-rc.1\t3')"
 
+# The residue the v3.0.0 rollout actually left (glyph-test's pin-probe.yml):
+# a prerelease BINARY version under a release-pinned action. Prefix-matching
+# the value read v3.0.0 out of v3.0.0-rc.3 and reported the site as already
+# at its release, hiding the drift from the audit and the rewriter alike.
+case_ "a prerelease version: is reported whole, not as its release" "$(cat <<'EOF'
+jobs:
+  probe:
+    steps:
+      - uses: akira-toriyama/glyph/.github/actions/install@v3.0.0
+        with:
+          version: v3.0.0-rc.3
+          token: ${{ github.token }}
+EOF
+)" "$(printf 'uses\tv3.0.0\t4\nversion\tv3.0.0-rc.3\t6')"
+
 # A moving major would silently re-point the whole fleet on glyph's next release.
 case_ "a moving major ref is reported" "$(cat <<'EOF'
 jobs:

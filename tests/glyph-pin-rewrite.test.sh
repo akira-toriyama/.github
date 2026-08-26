@@ -342,6 +342,30 @@ jobs:
 EOF
 )"
 
+# The pin-probe residue (glyph-test, v3.0.0 rollout): replacing only the value's
+# release-shaped prefix glues want onto the leftover `-rc.3`, writes the drift
+# right back, and still reports a clean rewrite — the completeness check reads
+# the result through the same truncating scanner, so nothing downstream notices.
+case_ "a prerelease version: moves whole — no suffix residue" "$(cat <<'EOF'
+jobs:
+  probe:
+    steps:
+      - uses: akira-toriyama/glyph/.github/actions/install@v0.12.0
+        with:
+          version: v0.12.0-rc.3
+          token: ${{ github.token }}
+EOF
+)" "$(cat <<'EOF'
+jobs:
+  probe:
+    steps:
+      - uses: akira-toriyama/glyph/.github/actions/install@v0.12.0
+        with:
+          version: v0.12.0
+          token: ${{ github.token }}
+EOF
+)"
+
 # ---------------------------------------------------------------------------
 # Files that must come back untouched. `same_` asserts byte equality, so a
 # rewriter that "helpfully" reformatted anything fails here.
