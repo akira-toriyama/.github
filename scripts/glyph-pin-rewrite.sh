@@ -131,11 +131,15 @@ function retag(line,   head, rest, n2) {
 
 # Same idea for the binary pin. The optional quote goes in the HEAD so that
 # `version: "v0.8.0"` keeps its quotes instead of growing a stray one.
+# The value regex must swallow a prerelease suffix WHOLE, same as the scanner:
+# replacing only the `v[0-9][0-9.]*` prefix of `v3.0.0-rc.3` glues want onto
+# the leftover `-rc.3` and writes the drift right back (the v3.0.0 rollout did
+# exactly that to glyph-test pin-probe.yml).
 function reversion(line,   head, rest) {
   if (!match(line, "[ \t{,]version:[ \t]*[" q "]?")) return line
   head = substr(line, 1, RSTART + RLENGTH - 1)
   rest = substr(line, RSTART + RLENGTH)
-  if (!match(rest, /^v[0-9][0-9.]*/)) return line
+  if (!match(rest, /^v[0-9][0-9.]*(-[0-9A-Za-z.-]+)?/)) return line
   return head want substr(rest, RSTART + RLENGTH)
 }
 

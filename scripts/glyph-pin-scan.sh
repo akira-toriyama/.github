@@ -115,10 +115,15 @@ function emit(   ) {
   # Leading [ \t{,] rather than an anchored alternation: mawk is the awk on the
   # runner, and it also keeps `glyph-version:` from reading as `version:`. The
   # `{`/`,` cases are the flow form, `with: { version: vX.Y.Z, token: … }`.
+  # The value regex must swallow a prerelease suffix WHOLE: matching only the
+  # `v[0-9][0-9.]*` prefix of `v3.0.0-rc.3` reported the site as already at
+  # v3.0.0, so neither the audit nor the rewriter could see the drift — the
+  # v3.0.0 rollout left exactly that residue in glyph-test pin-probe.yml
+  # (e2e-v2 run 32916999943, the probe file doing its job).
   if (inblock && match(line, /[ \t{,]version:[ \t]*/)) {
     blockverseen = 1
     rest = substr(line, RSTART + RLENGTH)
-    if (match(rest, /^v[0-9][0-9.]*/)) {
+    if (match(rest, /^v[0-9][0-9.]*(-[0-9A-Za-z.-]+)?/)) {
       blockver = substr(rest, RSTART, RLENGTH); blockverline = NR
     }
   }
