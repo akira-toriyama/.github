@@ -1,7 +1,7 @@
 {
   "change": "glyph canonicals v2.0.0 -> v3.0.0 (the sigil engine; 'v2' is the generation name, v2.0.0/v2.1.0 are v1-grammar tags): commit-lint.yml gains the push arm + edited type (t-m1dk) and moves to lint.yml@v3.0.0, version-preview.yml moves to pr-verdict.yml@v3.0.0. Config-first invariant holds: glyph.toml distributed fleet-wide by glyph-pin-rewrite's config arm BEFORE this ships (inert under the v1 pins). Canary glyph-test (rejoins fleet-sync in this same change — its callers ran ahead at v3.0.0-rc.2 and the canary apply is what restores them to canonical bytes). || still in flight from the previous entry: repo-policy.yml NEW canonical (t-5sas, canary wand — the one repo with a real hit, so the canary shows the gate firing) and the commit-convention.md link-driven stub rewrite (t-m1x1/t-wk8z, inert prose). Evidence rule unchanged: BOTH canaries need machine-recorded evidence before stage fleet.",
   "covers": "sha256:4c6ec80ac93409a5b112f99192362949dfd7fe30190a295ee01e4a7105a31e28",
-  "stage": "held-human-go",
+  "stage": "fleet",
   "canary": [
     "glyph-test",
     "wand"
