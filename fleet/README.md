@@ -112,7 +112,6 @@ until its secrets exist:
 | `FLEET_SYNC_PAT` | classic PAT with `repo` + `workflow` scopes. `workflow` is **required** to write `.github/workflows/*` in other repos; the default `GITHUB_TOKEN` cannot. It is the widest-privilege secret here, so give it a bounded **expiry** (e.g. 1 year); the `fleet-sync-pat-expiry-reminder` workflow files a rotation task ~30 days before it lapses. |
 | `PROJECTS_WRITE_PAT` | fine-grained PAT scoped to the tracker repo (`projects`) with **Contents: Read & write only**, auto-expiring — fanned out to each repo as `PROJECTS_WRITE_PAT`. Replaces the retired furrow-status-bot App master key (t-ke0v): a leak now reaches only the tracker and expires on its own. |
 | `HOMEBREW_TAP_DEPLOY_KEY` | private half of `homebrew-tap`'s **write deploy key** — the cask-push credential every releasing repo uses (t-6bhz). Fanned out to each repo whose release-channel workflow (`release.yml`, `update-tap.yml`, or `goreleaser.yml`) references it. No expiry by design: a deploy key has no rotation calendar to miss, and a leak grants git push to the one tap repo, not an account-scoped API surface. |
-| `HOMEBREW_TAP_TOKEN` | **DEPRECATED** (t-6bhz): the fine-grained cask-push PAT the deploy key above replaces. Still fanned out to repos whose release channel references it while they migrate; when the last consumer moves, delete this hub secret, its fan-out pair in `fleet-sync.yml`, and revoke the PAT. |
 
 Manual runs **default to dry-run** (log only). Use `only-repo` to target one repo.
 
@@ -120,18 +119,18 @@ Manual runs **default to dry-run** (log only). Use `only-repo` to target one rep
 
 - **Idempotent**: a file is rewritten only when it differs; the fanned-out secrets
   are overwritten every run, but each only on repos that already carry its consumer
-  workflow on their default branch (least privilege — a repo holds a PAT only once
-  it runs the workflow that needs it).
-- **Security trade-off**: each fanned-out PAT is least-privilege and fine-grained
-  (`PROJECTS_WRITE_PAT` = tracker `Contents: Read & write` only; `HOMEBREW_TAP_TOKEN`
-  = tap `Contents: Read & write` only), so a leak reaches exactly one repo. Fan-out
-  is **gated on the consumer workflow** on the target's default branch — the
-  `task-status` stub existing for the tracker PAT; a release-channel workflow
-  (`release.yml`, `update-tap.yml`, or `goreleaser.yml`) actually **referencing**
-  `HOMEBREW_TAP_TOKEN` for the tap token (existence alone was too broad: some repos
-  release without pushing a cask) — so each PAT lands only in repos that actually
-  use it (a stub still in an open fleet-sync PR waits for merge). Narrow it further
-  via `EXCLUDE` if needed.
+  workflow on their default branch (least privilege — a repo holds a credential only
+  once it runs the workflow that needs it).
+- **Security trade-off**: each fanned-out credential reaches exactly one repo —
+  `PROJECTS_WRITE_PAT` is fine-grained to the tracker (`Contents: Read & write`
+  only), and `HOMEBREW_TAP_DEPLOY_KEY` grants git push to `homebrew-tap` and no
+  API surface at all. Fan-out is **gated on the consumer workflow** on the
+  target's default branch — the `task-status` stub existing for the tracker PAT;
+  a release-channel workflow (`release.yml`, `update-tap.yml`, or `goreleaser.yml`)
+  actually **referencing** `HOMEBREW_TAP_DEPLOY_KEY` for the tap credential
+  (existence alone was too broad: some repos release without pushing a cask) — so
+  each credential lands only in repos that actually use it (a stub still in an open
+  fleet-sync PR waits for merge). Narrow it further via `EXCLUDE` if needed.
 - No GitHub App is involved any more (the furrow-status-bot App master key was
   retired in t-ke0v). Auth is the credential-only PAT above — no App install, no
   server, no token minting.
@@ -178,10 +177,11 @@ remove-old.
    `gh api -X DELETE repos/akira-toriyama/homebrew-tap/keys/<id>`) once step 4 has
    run, and shred the local private-key files.
 
-The retired PAT's `homebrew-tap-token-expiry-reminder` workflow probed for token
-death by HTTP 401 — SSH has no equivalent signal worth a weekly probe, and a dead
-key fails the next release loudly at `git push`, so the reminder retires with the
-PAT rather than being rebuilt for SSH.
+There is no liveness probe either. The retired PAT's
+`homebrew-tap-token-expiry-reminder` workflow watched for token death by HTTP 401;
+SSH has no equivalent signal worth a weekly probe, and a dead key fails the next
+release loudly at `git push`, so that reminder was deleted with the PAT rather
+than rebuilt for SSH (t-6bhz).
 
 ## Rotating `FLEET_SYNC_PAT`
 
