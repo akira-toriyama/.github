@@ -67,10 +67,14 @@ docs and its commit messages are shared, so they are English.
 
 Immediately actionable: the repos that still carry a `README.ja.md` delete it and
 thin the `README.md` toward the shape above (principles 1–2). The ban is
-machine-held by the fleet-distributed `repo-policy` gate, which judges **by path
-only** — a tracked basename containing `.ja.` fails the PR. Should a file whose
+machine-held by the fleet-distributed `repo-policy` gate, which judges **by
+path first** — a tracked basename containing `.ja.` fails the PR unless the
+file's first ten lines carry the declared-review-copy header (principle 3's
+exception): the gate greps that head for the declaration's load-bearing words
+— 和訳, 正本, 基準 — and reads nothing else of the content. Should a file whose
 *canonical* language is Japanese ever be wanted, name it outside that pattern
-(e.g. `docs/design-jp/…`) — the gate reads names, not content, on purpose. Deeper code-first
+(e.g. `docs/design-jp/…`) — the gate reads names and a declared head, never the
+body, on purpose. Deeper code-first
 cleanup is **opportunistic** — done as each repo is touched, not as a separate
 campaign — so a repo is never blocked on a full rewrite to drop a stale
 translation. Each repo's `CLAUDE.md` gains a one-line pointer to this policy as

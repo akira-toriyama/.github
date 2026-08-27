@@ -83,6 +83,51 @@ canonical Japanese, escape-hatch naming
 EOF
 run_case "ja look-alikes and the -jp escape hatch are clean" 0 "repo-policy: clean"
 
+# The declared-review-copy exception (doc-consistency-policy, ruled
+# 2026-08-25): a .ja. file whose first ten lines carry all three header words
+# (和訳 / 正本 / 基準) is a declared non-canonical copy, not a violation. The
+# fixture is the verbatim header shape from akira-toriyama/projects.
+repo ja-declared
+add_file "docs/guide.ja.md" <<'EOF'
+<!--
+この文書は docs/guide.md（英語・正本）の和訳です。人間向け。
+最新とは限りません — 基準: 英語版 @ 6ec65d76。
+同時更新はしない — 人間の指示があった時に、基準 commit からの差分を訳して基準を進める。
+-->
+
+# ガイド
+EOF
+run_case "a declared review copy is clean" 0 "repo-policy: clean"
+
+# A partial declaration is not one: without the base-commit word the copy has
+# no pin to lag against, so it still reads as a parallel translation.
+repo ja-partial-header
+add_file "docs/guide.ja.md" <<'EOF'
+<!-- この文書は docs/guide.md（正本）の和訳です。 -->
+# ガイド
+EOF
+run_case "a header without the base-commit pin is still a violation" 1 \
+  'docs/guide\.ja\.md: translation file'
+
+# The ten-line window is the contract — a declaration buried below it does
+# not count (a header is a header because it opens the file).
+repo ja-buried-header
+add_file "docs/guide.ja.md" <<'EOF'
+# ガイド
+1
+2
+3
+4
+5
+6
+7
+8
+9
+<!-- 和訳・正本は英語版・基準: 英語版 @ 6ec65d76 -->
+EOF
+run_case "a declaration below the first ten lines does not count" 1 \
+  'docs/guide\.ja\.md: translation file'
+
 # An UNTRACKED translation file is invisible: the check reads git ls-files,
 # never the working tree (scratch files must not fail CI).
 repo ja-untracked

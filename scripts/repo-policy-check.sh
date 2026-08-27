@@ -11,13 +11,22 @@
 #           (an unparsable floor must not read as compliant — fail loud)
 #
 # Check 1 — translation files are banned (docs/doc-consistency-policy.md: the
-# fleet stores no translations; English is the single source). The judgment is
-# BY PATH ONLY — a tracked file whose basename contains `.ja.` (README.ja.md,
-# docs/guide.ja.txt). Deliberately not a content grep: the policy document
-# itself names `README.ja.md` as its example, so any content match would flag
-# the rule's own text forever. A future file whose CANONICAL language is
-# Japanese takes a non-`.ja.` name (e.g. docs/design-jp/) — the policy doc
-# records that escape hatch.
+# fleet stores no translations; English is the single source). The judgment
+# starts BY PATH — a tracked file whose basename contains `.ja.` (README.ja.md,
+# docs/guide.ja.txt). Deliberately not a content grep over the tree: the policy
+# document itself names `README.ja.md` as its example, so any content match
+# would flag the rule's own text forever. A future file whose CANONICAL
+# language is Japanese takes a non-`.ja.` name (e.g. docs/design-jp/) — the
+# policy doc records that escape hatch.
+#
+# One carve-out (the policy's declared-review-copy exception, ruled
+# 2026-08-25): a `.ja.` file whose FIRST TEN LINES carry the non-canonical
+# declaration header passes. The header's load-bearing words — 和訳 (this is a
+# translation), 正本 (the original is canonical), 基準 (pinned to a base
+# commit of the original) — must all appear; an equal-looking parallel
+# translation carries none of them. Reference shape: the header on the
+# *.ja.md files in akira-toriyama/projects. Only the flagged file's own head
+# is read, so the no-content-grep rationale above still holds.
 #
 # Check 2 — a #available/@available(macOS …) gate at or below the repo's own
 # declared floor is dead code: the floor already guarantees the API, so the
@@ -45,7 +54,16 @@ broken=0
 
 # --- check 1: translation files, by tracked path -----------------------------
 while IFS= read -r f; do
-  echo "$f: translation file — the fleet stores no translations; fold the content into the English original (docs/doc-consistency-policy.md)"
+  # Declared review copy: all three header words within the first ten lines.
+  # A missing file (tracked but absent from this tree) reads as undeclared —
+  # fail closed, never silently pass.
+  head10="$(head -n 10 -- "$dir/$f" 2>/dev/null || true)"
+  if printf '%s' "$head10" | grep -q '和訳' \
+    && printf '%s' "$head10" | grep -q '正本' \
+    && printf '%s' "$head10" | grep -q '基準'; then
+    continue
+  fi
+  echo "$f: translation file — the fleet stores no translations; fold the content into the English original, or open it with the declared-review-copy header (docs/doc-consistency-policy.md)"
   violations=$((violations + 1))
 done < <(git -C "$dir" ls-files | grep -E '(^|/)[^/]+\.ja\.[^/]+$' || true)
 

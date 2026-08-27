@@ -4,9 +4,12 @@ name: repo-policy
 # checks, both tool-free (t-5sas):
 #
 #   1. Translation files are banned — a tracked path whose basename contains
-#      `.ja.` (README.ja.md). Path-only on purpose: the policy document itself
-#      names README.ja.md in prose, so a content grep would flag the rule's own
-#      text forever. Policy: docs/doc-consistency-policy.md.
+#      `.ja.` (README.ja.md), unless its first ten lines carry the
+#      declared-review-copy header (和訳 / 正本 / 基準 — the policy's ruled
+#      exception). Path-first on purpose: the policy document itself names
+#      README.ja.md in prose, so a content grep over the tree would flag the
+#      rule's own text forever; only a flagged file's own head is read.
+#      Policy: docs/doc-consistency-policy.md.
 #   2. An available(macOS …) gate at or below the repo's OWN declared floor
 #      (root Package.swift, read via platform-floor-scan.sh) is dead code —
 #      the floor already guarantees the API, so the gate is always-true and its
