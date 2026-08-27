@@ -28,6 +28,19 @@ point to it.
    translation (a `README.ja.md`, a checked-in parallel file) is just another
    copy that rots against the original. Existing stored translations are
    **deleted**, not maintained.
+
+   **Exception — declared review copies** (ruled 2026-08-25). A repo may, by
+   explicit per-repo decision, keep a **non-canonical translation for a human
+   reader**, provided its opening lines are a header declaring the terms: the
+   original is canonical, the copy is updated **only on the user's
+   instruction** (never in the same change as the original), and it may
+   therefore **lag** — staleness is tolerated, declared, and pinned to the
+   base commit of the original it renders. Invention is not tolerated: a copy
+   that states a rule its original does not is a defect, however fresh it is.
+   A declared copy is not a canonical surface, so the language matrix below
+   does not judge it. The reference shape is the header on the `*.ja.md`
+   files in `projects` (an HTML comment naming the original, the base commit,
+   and the no-co-update rule).
 4. **Stale docs are a cost, not a gap.** Anything that *can* drift is either
    bound by a machine guard (a drift check, a generated block) or removed. A
    check that keeps a claim honest is worth more than the claim written twice.
