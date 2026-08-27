@@ -16,14 +16,9 @@ name: fleet-sync
 #                       reaches only the tracker, and expires on its own. (t-ke0v)
 #   HOMEBREW_TAP_DEPLOY_KEY  private half of homebrew-tap's WRITE deploy key — the
 #                       cask-push credential, fanned out to every repo whose
-#                       release-channel workflow references it (same content gate
-#                       as the PAT it replaces, t-21yv/t-6bhz). No expiry, and a
-#                       leak grants git push to ONE repo, not an API surface.
-#   HOMEBREW_TAP_TOKEN  DEPRECATED (t-6bhz): the fine-grained cask-push PAT the
-#                       deploy key above replaces. Still fanned out to repos whose
-#                       release channel references it; delete this secret, its
-#                       fan-out pair, and the PAT itself when the last consumer
-#                       migrates.
+#                       release-channel workflow references it (gate: the workflow
+#                       must reference the secret NAME, t-21yv/t-6bhz). No expiry,
+#                       and a leak grants git push to ONE repo, not an API surface.
 #
 # Safety: workflow_dispatch defaults to DRY-RUN (log only). Scheduled runs apply
 # — but EVERY apply run first passes the rollout ledger gate (fleet/rollout.json
@@ -35,9 +30,10 @@ name: fleet-sync
 # fails the job (green = the fleet HOLDS the canonical, not "the loop finished").
 # A dry run's summary says DRY-RUN — NOTHING WAS DISTRIBUTED, because its green
 # once read as "distributed" (t-dk1e: 34 of 35 repos stale behind a success).
-# Blast radius: each fanned-out secret is a least-privilege fine-grained PAT scoped
-# to ONE repo (tracker Contents:RW / tap Contents:RW) — far narrower than the
-# retired App private key the first of them replaced.
+# Blast radius: one repo each. PROJECTS_WRITE_PAT is a fine-grained PAT scoped to
+# the tracker (Contents:RW); HOMEBREW_TAP_DEPLOY_KEY grants git push to the tap and
+# no API surface at all — both far narrower than the retired App private key the
+# first of them replaced.
 
 on:
   workflow_dispatch:
@@ -101,7 +97,6 @@ jobs:
           ONLY_REPO: ${{ inputs.only-repo }}
           ROLLOUT_HUB: ${{ github.repository }}
           WRITE_PAT: ${{ secrets.PROJECTS_WRITE_PAT }}
-          TAP_PAT: ${{ secrets.HOMEBREW_TAP_TOKEN }}
           TAP_KEY: ${{ secrets.HOMEBREW_TAP_DEPLOY_KEY }}
           # Repos to skip (space-separated). Only the hub is left: it holds the
           # canonicals, so syncing them onto it would overwrite each source with
@@ -491,57 +486,43 @@ jobs:
             #    "does this one need it?" judgment that let hand-placed copies
             #    rot (t-21yv: rundiff's tap cask silently stuck at v0.2.0, prq
             #    released into a 401). Idempotent overwrite; this only gates NEW
-            #    fan-out and never prunes an already-set secret.
-            #
-            #    TWO tap secrets exist while the deploy-key migration (t-6bhz)
-            #    is in flight: HOMEBREW_TAP_DEPLOY_KEY (the tap's write deploy
-            #    key — no expiry, git-push-to-one-repo blast radius) and the
-            #    deprecated PAT HOMEBREW_TAP_TOKEN. Each repo receives exactly
-            #    the one(s) its own release channel references, so migrating a
-            #    repo's workflow automatically migrates its secret on the next
-            #    run. When the last consumer moves, delete the PAT pair here,
-            #    the hub secret, and the PAT itself.
-            for tap_secret in HOMEBREW_TAP_DEPLOY_KEY HOMEBREW_TAP_TOKEN; do
-              if [ "$tap_secret" = "HOMEBREW_TAP_DEPLOY_KEY" ]; then
-                tap_value="${TAP_KEY:-}"
-              else
-                tap_value="${TAP_PAT:-}"
-              fi
-              tap_consumer=false
-              if [ -n "$tap_value" ]; then
-                for wf in release.yml update-tap.yml goreleaser.yml; do
-                  # Fetch and match SEPARATELY: a transient API failure must not
-                  # be misread as "not a consumer" — the second dry-run silently
-                  # skipped furrow exactly that way. 404 = file absent (normal);
-                  # anything else is warned so a skipped repo is findable in the
-                  # log (the daily idempotent rerun heals it).
-                  gate_err="$RUNNER_TEMP/tap-gate.err"
-                  if content="$(gh api "repos/$full/contents/.github/workflows/$wf" --jq '.content' 2>"$gate_err")"; then
-                    if printf '%s' "$content" | base64 -d 2>/dev/null | grep -q "$tap_secret"; then
-                      tap_consumer=true
-                      break
-                    fi
-                  elif ! grep -q 'HTTP 404' "$gate_err"; then
-                    echo "::warning::fleet: tap-gate read failed for $full $wf (treated as non-consumer this run): $(head -c 200 "$gate_err")"
+            #    fan-out and never prunes an already-set secret — the stale
+            #    HOMEBREW_TAP_TOKEN copies the retired PAT arm left behind
+            #    (t-6bhz) can only be removed by hand.
+            tap_consumer=false
+            if [ -n "${TAP_KEY:-}" ]; then
+              for wf in release.yml update-tap.yml goreleaser.yml; do
+                # Fetch and match SEPARATELY: a transient API failure must not
+                # be misread as "not a consumer" — the second dry-run silently
+                # skipped furrow exactly that way. 404 = file absent (normal);
+                # anything else is warned so a skipped repo is findable in the
+                # log (the daily idempotent rerun heals it).
+                gate_err="$RUNNER_TEMP/tap-gate.err"
+                if content="$(gh api "repos/$full/contents/.github/workflows/$wf" --jq '.content' 2>"$gate_err")"; then
+                  if printf '%s' "$content" | base64 -d 2>/dev/null | grep -q HOMEBREW_TAP_DEPLOY_KEY; then
+                    tap_consumer=true
+                    break
                   fi
-                done
-              fi
-              if [ -z "$tap_value" ]; then
-                echo "::warning::$tap_secret not set on .github; skipping its fan-out for $full"
-              elif [ "$tap_consumer" != "true" ]; then
-                echo "skip-tap-secret(no $tap_secret consumer in release-channel workflows): $full"
-              elif [ "$DRY" = "true" ]; then
-                echo "would-set-secrets: $full ($tap_secret)"
-              else
-                if printf '%s' "$tap_value" | gh secret set "$tap_secret" --repo "$full"; then
-                  echo "tap-secret-set: $full ($tap_secret)"
-                  secrets_set=$((secrets_set + 1))
-                else
-                  echo "::warning::fleet: tap-secret fan-out failed for $full ($tap_secret)"
-                  failed=$((failed + 1))
+                elif ! grep -q 'HTTP 404' "$gate_err"; then
+                  echo "::warning::fleet: tap-gate read failed for $full $wf (treated as non-consumer this run): $(head -c 200 "$gate_err")"
                 fi
+              done
+            fi
+            if [ -z "${TAP_KEY:-}" ]; then
+              echo "::warning::HOMEBREW_TAP_DEPLOY_KEY not set on .github; skipping its fan-out for $full"
+            elif [ "$tap_consumer" != "true" ]; then
+              echo "skip-tap-secret(no HOMEBREW_TAP_DEPLOY_KEY consumer in release-channel workflows): $full"
+            elif [ "$DRY" = "true" ]; then
+              echo "would-set-secrets: $full (HOMEBREW_TAP_DEPLOY_KEY)"
+            else
+              if printf '%s' "$TAP_KEY" | gh secret set HOMEBREW_TAP_DEPLOY_KEY --repo "$full"; then
+                echo "tap-secret-set: $full (HOMEBREW_TAP_DEPLOY_KEY)"
+                secrets_set=$((secrets_set + 1))
+              else
+                echo "::warning::fleet: tap-secret fan-out failed for $full (HOMEBREW_TAP_DEPLOY_KEY)"
+                failed=$((failed + 1))
               fi
-            done
+            fi
           done
 
           echo "done: queued=$queued applied=$applied pending(pr)=$pending failed=$failed secrets-set=$secrets_set; dry-run=$DRY across ${#REPOS[@]} repo(s)"

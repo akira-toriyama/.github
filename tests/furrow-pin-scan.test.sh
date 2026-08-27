@@ -5,9 +5,9 @@
 # (drift-free); self-test.yml invokes this. Needs bash + awk only.
 #
 # The shapes below are the fleet's real ones, not invented: the fleet-synced
-# task-status caller, the hub's two `go install …/cmd/furrow@vX` expiry-reminder
-# steps (the shape no uses:-shaped scan can see — ef243fc is that drift shipped),
-# and the commented example pin README-style docs carry.
+# task-status caller, the hub's expiry-reminder step that names the release inside
+# a run: block (the shape no uses:-shaped scan can see — ef243fc is that drift
+# shipped), and the commented example pin README-style docs carry.
 set -uo pipefail
 
 here="$(cd "$(dirname "$0")" && pwd)"
@@ -46,7 +46,7 @@ jobs:
 EOF
 )" "$(printf 'uses\tv1.0.0\t6')"
 
-# The hub's expiry reminders install the binary inside a run: block — the shape
+# The hub's expiry reminder installs the binary inside a run: block — the shape
 # that drifted to v0.2.1/v0.12.0 against a v0.13.0 fleet (ef243fc) because no
 # uses:-shaped scan could see it.
 case_ "go install inside a run block" "$(cat <<'EOF'

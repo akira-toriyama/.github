@@ -241,8 +241,8 @@ fi
 # ---------------------------------------------------------------------------
 # 8. Every furrow reference in the repo names the same release.
 #
-# The furrow pin has no canonical and four call sites, two of which no `uses:`-
-# shaped scanner can see (`go install …/cmd/furrow@vX` inside a run: block). This
+# The furrow pin has no canonical and three call sites, one of which no `uses:`-
+# shaped scanner can see (a `FURROW_RELEASE:` env on a run: step). This
 # is not a theoretical drift: ef243fc is ":bug:(ci) fix the expiry reminders'
 # stale furrow pin (v0.2.1/v0.12.0 → v0.13.0)", and the tracker has carried
 # several separate one-off bump tasks for the same mechanical invariant. Bumping
@@ -260,7 +260,7 @@ elif [ "$(printf '%s\n' "$furrow_refs" | wc -l | tr -d ' ')" -eq 1 ]; then
 else
   bad "every furrow reference names the same release" \
     "versions in play: $(printf '%s' "$furrow_refs" | tr '\n' ' ')" \
-    "two of the call sites are \`go install …/cmd/furrow@vX\` inside run: blocks, invisible to any uses:-shaped scan"
+    "one call site is a \`FURROW_RELEASE:\` env on a run: step, invisible to any uses:-shaped scan"
 fi
 
 # ---------------------------------------------------------------------------

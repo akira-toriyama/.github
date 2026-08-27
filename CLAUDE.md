@@ -36,7 +36,7 @@ consumer index.
   `on` / `permissions` / `secrets` — identical to `fleet/task-status.yml`; only the
   top provenance comment differs. Bump the furrow pin in **both**.
   `.github/workflows/self-commit-lint.yml` is the second such twin: its glyph pin
-  must move with `fleet/commit-lint.yml`. Both pairs, and the furrow pin's four
+  must move with `fleet/commit-lint.yml`. Both pairs, and the furrow pin's three
   scattered call sites, are now checked by
   [`tests/fleet-manifest.test.sh`](tests/fleet-manifest.test.sh) — the rule used to
   live only in the files' own comments, and drifted anyway.
