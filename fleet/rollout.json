@@ -1,10 +1,75 @@
 {
   "change": "furrow pin v4.0.0 -> v5.0.0 in fleet/task-status.yml (t-satm). The caller contract is byte-identical across the bump (measured: git diff v4.0.0..v5.0.0 -- .github/workflows/sync-task-status.yml is empty); what moves is the installed binary (breaking changes are CLI-side: plain sync publishes furrow-written bodies #265, ls --tree guards #272, init placement #274 — none on the reusable's set+sync path) and there is NO board-layout flag day this time (measured: the v5.0.0 release binary reads the board clean, while today's v4.0.0 automation and a main-built wrapper both still write it). Canary glyph-test; the hub's own hand-maintained caller bumps in the same PR (fleet-sync EXCLUDEs the hub), so hub PR/merge runs are the first live v5 executions.",
   "covers": "sha256:b43594931873616b57b05f8706fa0c56f599536cd7d966398d6de2df194bb5f7",
-  "stage": "canary",
+  "stage": "fleet",
   "canary": [
     "glyph-test"
   ],
-  "soak_until": null,
-  "evidence": {}
+  "soak_until": "2026-09-02T13:48:33Z",
+  "evidence": {
+    "canary": {
+      "glyph-test": {
+        "run_id": 33398944811,
+        "recorded_at": "2026-08-31T13:48:33Z",
+        "covers": "sha256:b43594931873616b57b05f8706fa0c56f599536cd7d966398d6de2df194bb5f7",
+        "reads": [
+          {
+            "repo": "akira-toriyama/glyph-test",
+            "dest": ".github/workflows/task-status.yml",
+            "state": "ok"
+          },
+          {
+            "repo": "akira-toriyama/glyph-test",
+            "dest": ".github/workflows/commit-lint.yml",
+            "state": "ok"
+          },
+          {
+            "repo": "akira-toriyama/glyph-test",
+            "dest": ".github/workflows/taplo.yml",
+            "state": "ok"
+          },
+          {
+            "repo": "akira-toriyama/glyph-test",
+            "dest": ".github/workflows/zizmor.yml",
+            "state": "ok"
+          },
+          {
+            "repo": "akira-toriyama/glyph-test",
+            "dest": ".github/zizmor.yml",
+            "state": "ok"
+          },
+          {
+            "repo": "akira-toriyama/glyph-test",
+            "dest": ".github/workflows/actionlint.yml",
+            "state": "ok"
+          },
+          {
+            "repo": "akira-toriyama/glyph-test",
+            "dest": ".github/workflows/version-preview.yml",
+            "state": "ok"
+          },
+          {
+            "repo": "akira-toriyama/glyph-test",
+            "dest": "docs/commit-convention.md",
+            "state": "ok"
+          },
+          {
+            "repo": "akira-toriyama/glyph-test",
+            "dest": ".github/workflows/repo-policy.yml",
+            "state": "ok"
+          },
+          {
+            "repo": "akira-toriyama/glyph-test",
+            "dest": ".github/dependabot.yml",
+            "state": "ok"
+          },
+          {
+            "repo": "akira-toriyama/glyph-test",
+            "dest": ".github/workflows/pr-verdict.yml",
+            "state": "prune-clean"
+          }
+        ]
+      }
+    }
+  }
 }
