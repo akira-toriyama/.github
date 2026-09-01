@@ -3,8 +3,11 @@ name: self commit-lint
 # The hub lints its OWN commits too — with glyph, the same engine the fleet
 # runs. This caller is MAINTAINED BY HAND: fleet-sync EXCLUDEs this repo (it is
 # the hub), so the canonical caller `fleet/commit-lint.yml` never syncs onto it.
-# Keep the glyph pin below in LOCKSTEP with fleet/commit-lint.yml — when you
-# bump the fleet pin, bump this one in the same PR.
+# Keep the glyph pin below AND the `on:` block in LOCKSTEP with
+# fleet/commit-lint.yml — when you change the canonical, change this one in the
+# same PR. The pin held; the `on:` block did not: t-m1dk gave the canonical its
+# push arm and `edited` type and named only fleet/commit-lint.yml, so for a
+# month the hub was the one repo whose direct pushes to main went unlinted.
 #
 # The job id stays `commit-lint` (not the fleet stub's `lint`) on purpose: main's
 # required status check is the context "commit-lint / lint", and renaming the
@@ -12,6 +15,15 @@ name: self commit-lint
 
 on:
   pull_request:
+    # `edited` is not in the default types, and without it a retitle never
+    # re-fires the squash-title lint — the title IS the landed subject.
+    types: [opened, synchronize, reopened, edited]
+  # The push arm, in lockstep with fleet/commit-lint.yml: the same
+  # merge-candidate rules over a direct push to main, annotate-only (main's
+  # history is immutable, so a red nobody can fix is noise). The reusable
+  # self-guards the edges.
+  push:
+    branches: [main]
 
 # Cap the token the caller hands the reusable, but grant everything it needs:
 # a reusable can only downgrade the caller's token, never raise it. Without this
