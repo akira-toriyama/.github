@@ -346,6 +346,26 @@ jobs:
       - name: Table-test furrow-pin-scan
         run: bash tests/furrow-pin-scan.test.sh
 
+  # The expiry reminder's decision half. Every branch here — 401 = dead token,
+  # 000/5xx = learned nothing, 200 with no expiry header = non-expiring so the
+  # calendar path cannot arm — is reachable in production only when a real
+  # credential is really dying: the retired homebrew-tap reminder's 401 branch
+  # shipped 2026-07-20 and never once executed (t-j72g), and
+  # fleet-sync-pat-expiry-reminder.yml read every `gh api` failure as
+  # "transient?" (t-v2zf). The table pins "we learned nothing" apart from "the
+  # token is fine": conflating them is how a rot detector goes quiet while
+  # rotting.
+  token-expiry-probe-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # Runs a script against fixture header files; never pushes. t-2nh8
+          persist-credentials: false
+      - name: Table-test token-expiry-probe
+        run: bash tests/token-expiry-probe.test.sh
+
   # The same extractor/audit split, for the sill platform floor:
   # platform-floor-audit.yml reads every consumer's macOS floor and sill
   # dependency through scripts/platform-floor-scan.sh. A parser regression does
@@ -510,6 +530,7 @@ jobs:
           bash tests/fleet-rollout-gate.test.sh
           bash tests/apply-repo-settings.test.sh
           bash tests/platform-floor-scan.test.sh
+          bash tests/token-expiry-probe.test.sh
 
   # RUN the go-bite gate over a case table (the real .sh) so a break fails HERE, not
   # in a fleet caller after @v2 moves. Each case builds a throwaway Go repo under

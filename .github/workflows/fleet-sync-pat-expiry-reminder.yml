@@ -11,11 +11,14 @@ name: fleet-sync-pat-expiry-reminder
 #
 # Expiry is read from the `GitHub-Authentication-Token-Expiration` response header
 # returned for PAT-authenticated REST calls. A classic PAT with NO expiry returns no
-# header, so this stays QUIET until FLEET_SYNC_PAT is reissued WITH an expiry — which
-# is the point of the security task (a non-expiring master token is the risk). Runs
-# weekly; files a task ONLY when expiring soon AND no open rotation task exists (no
-# duplicates; a delayed/skipped tick is recovered next week, inside the warning
-# window).
+# header, so the calendar path stays QUIET until FLEET_SYNC_PAT is reissued WITH an
+# expiry — which is the point of the security task (a non-expiring master token is
+# the risk). The liveness path is always armed: a 401 files immediately, because a
+# revoked/expired PAT means fleet-sync is frozen NOW (t-v2zf: the inline probe used
+# to read 401 as "transient?" and would have stayed silent forever). Runs weekly;
+# files a task ONLY when the PAT is dead or expiring soon AND no open rotation task
+# exists (no duplicates; a delayed/skipped tick is recovered next week, inside the
+# warning window).
 #
 # It reads its own expiry with FLEET_SYNC_PAT but writes the reminder task to the
 # furrow tracker (akira-toriyama/projects) with PROJECTS_WRITE_PAT — both secrets
@@ -58,43 +61,42 @@ jobs:
             echo "proceed=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Read PAT expiry from API response header
+      - name: Checkout the hub (for scripts/token-expiry-probe.sh)
+        if: steps.gate.outputs.proceed == 'true'
+        uses: actions/checkout@v7
+        with:
+          # Read-only: this job writes to the TRACKER, never back to the hub.
+          persist-credentials: false
+
+      - name: Probe the API with the PAT (liveness + expiry header)
         id: expiry
         if: steps.gate.outputs.proceed == 'true'
         env:
-          GH_TOKEN: ${{ secrets.FLEET_SYNC_PAT }}
+          FLEET_PAT: ${{ secrets.FLEET_SYNC_PAT }}
         run: |
           set -euo pipefail
-          # Probe the API with the PAT; treat a transient fetch failure differently
-          # from a genuinely absent header so we never misread "API hiccup" as
-          # "non-expiring" and silently stay quiet on a real upcoming expiry.
-          if ! raw="$(gh api -i /rate_limit 2>/dev/null)"; then
-            echo "::notice::API probe failed (transient?) — skipping this run; retries next week."
-            echo "due=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          hdr="$(printf '%s' "$raw" | tr -d '\r' \
-            | awk -F': ' 'tolower($1)=="github-authentication-token-expiration"{print $2; exit}')"
-          if [ -z "$hdr" ]; then
-            echo "::notice::No expiration header — FLEET_SYNC_PAT is non-expiring. Reissue it WITH an expiry to arm this reminder."
-            echo "due=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          exp_s="$(date -u -d "$hdr" +%s 2>/dev/null || true)"
-          if [ -z "$exp_s" ]; then
-            echo "::notice::could not parse expiry '$hdr' — skipping this run."
-            echo "due=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          now_s="$(date -u +%s)"
-          days=$(( (exp_s - now_s) / 86400 ))
-          echo "PAT expires: $hdr (${days} days from now)"
-          echo "days=$days" >> "$GITHUB_OUTPUT"
-          if [ "$days" -le "${EXPIRY_WARN_DAYS}" ]; then
-            echo "due=true" >> "$GITHUB_OUTPUT"
+          # curl (not `gh api`) so the HTTP status is separable from transport
+          # failure: `gh api` exits non-zero for a network hiccup AND for a 401,
+          # and this step used to read any non-zero as "transient?" — so a
+          # revoked FLEET_SYNC_PAT would have stayed silent every week while
+          # fleet-sync sat frozen (t-v2zf).
+          code="$(curl -sS -o /dev/null -D "$RUNNER_TEMP/hdrs" -w '%{http_code}' \
+            -H "Authorization: Bearer $FLEET_PAT" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            https://api.github.com/rate_limit || echo 000)"
+          # The DECISION lives in a script so it is reachable from a test: the
+          # 401 liveness branch only ever fires in production when a real token
+          # is really dead, so inline it ships unexecuted (t-j72g). The curl
+          # stays here — only what the probe SAW is portable to a table test.
+          bash scripts/token-expiry-probe.sh "$code" "$RUNNER_TEMP/hdrs" > "$RUNNER_TEMP/probe.out"
+          grep -vE '^reason=' "$RUNNER_TEMP/probe.out" >> "$GITHUB_OUTPUT"
+          reason="$(sed -n 's/^reason=//p' "$RUNNER_TEMP/probe.out")"
+          # Annotate from the step itself so the workflow command is definitely
+          # on the runner's stdout, and so the script stays a pure decision.
+          if grep -qx 'kind=dead' "$RUNNER_TEMP/probe.out"; then
+            echo "::warning::FLEET_SYNC_PAT $reason"
           else
-            echo "due=false (>${EXPIRY_WARN_DAYS}d) — nothing to do"
-            echo "due=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::FLEET_SYNC_PAT $reason"
           fi
 
       - name: Checkout the furrow tracker
@@ -142,6 +144,7 @@ jobs:
         if: steps.expiry.outputs.due == 'true'
         working-directory: tracker
         env:
+          KIND: ${{ steps.expiry.outputs.kind }}
           DAYS: ${{ steps.expiry.outputs.days }}
         run: |
           set -euo pipefail
@@ -154,10 +157,17 @@ jobs:
             echo "open FLEET_SYNC_PAT-rotation task exists — skip"; exit 0
           fi
 
+          if [ "$KIND" = "dead" ]; then
+            title="${MARKER} を更新（401 検知 — fleet-sync が今止まっている）"
+            headline='fleet-sync が全 repo の標準ファイル配布 + secret fan-out に使う classic PAT (scopes repo + workflow) が 401 を返している（失効/取り消し済み）。**standard-file 同期も PAT fan-out も今止まっている**ため即ローテーションする。'
+          else
+            title="${MARKER} を更新（失効 ${DAYS} 日前）"
+            headline="fleet-sync が全 repo の標準ファイル配布 + secret fan-out に使う classic PAT (scopes repo + workflow) があと約 ${DAYS} 日で失効する。失効すると fleet-sync が全 repo で静かに止まる（standard-file 同期も PAT fan-out も）ため、期限内にローテーションする。"
+          fi
+
           body="$(printf '%s\n' \
-            '# FLEET_SYNC_PAT を更新（失効が近い）' '' \
-            "fleet-sync が全 repo の標準ファイル配布 + secret fan-out に使う classic PAT (scopes repo + workflow) があと約 ${DAYS} 日で失効する。" \
-            '失効すると fleet-sync が全 repo で静かに止まる（standard-file 同期も PAT fan-out も）ため、期限内にローテーションする。' '' \
+            "# ${title}" '' \
+            "$headline" '' \
             '1. 新しい classic PAT を作成（scope: **repo + workflow**・期限1年）' \
             '2. akira-toriyama/.github の secret **FLEET_SYNC_PAT** を更新' \
             '3. fleet-sync を workflow_dispatch (dry-run) で実行して疎通確認' \
@@ -165,7 +175,7 @@ jobs:
             '監査: Tokens (classic) 一覧の有効期限。' '' \
             '(このタスクは .github の fleet-sync-pat-expiry-reminder workflow が自動起票。)')"
 
-          furrow add "${MARKER} を更新（失効 ${DAYS} 日前）" -s ready -l shared -l security --body "$body"
+          furrow add "$title" -s ready -l shared -l security --body "$body"
 
           git config user.name  'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
