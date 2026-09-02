@@ -25,8 +25,9 @@
 #
 # A 200 with no GitHub-Authentication-Token-Expiration header means the token
 # was issued non-expiring: the calendar path CANNOT arm, and saying so is the
-# point (t-8jpv reissues FLEET_SYNC_PAT with an expiry at the next rotation to
-# close that hole).
+# point. (FLEET_SYNC_PAT carries an expiry today — 2027-06-30, measured run
+# 33603210056 — so this case firing again means a rotation dropped it; t-8jpv
+# fine-grains the PAT at that next rotation.)
 set -uo pipefail
 
 warn_days="${EXPIRY_WARN_DAYS:-30}"
