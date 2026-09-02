@@ -60,9 +60,10 @@ reason=probe returned 503 (transient?) — skipped this run, retries next week'
 case_ "403 -> transient bucket, not dead" 403 '' 'due=false
 reason=probe returned 403 (transient?) — skipped this run, retries next week'
 
-# The live state of FLEET_SYNC_PAT: issued non-expiring, so the calendar path
-# cannot arm at all. The reason line has to SAY that — this is the observation
-# t-8jpv acts on at the next rotation.
+# A token issued non-expiring: the calendar path cannot arm at all. The reason
+# line has to SAY that. (Not FLEET_SYNC_PAT's live state any more — it carries
+# a 2027-06-30 expiry, measured run 33603210056 — but a rotation can regress
+# to this, and t-8jpv acts on the observation at the next one.)
 case_ "200 without the expiration header -> non-expiring" 200 'HTTP/2 200
 content-type: application/json
 x-ratelimit-limit: 5000
