@@ -24,6 +24,11 @@ this file's history:
 - **[glyph's README, "Commit format"](https://github.com/akira-toriyama/glyph#commit-format)**
   — the sigil vocabulary, the 0.x fold, promotion, and everything the pattern
   file can express.
+- **`glyph emoji`** — which shortcode to write for a kind of change: an
+  ordered dictionary (first fit wins), one code per kind, the gitmoji codes it
+  absorbed listed beside each. Advice for the writer, read by nothing: a code
+  it does not list is legal wherever the pattern accepts it, and it carries no
+  semver field because the sigil is the version signal.
 
 What stays convention here, above any pattern file:
 
