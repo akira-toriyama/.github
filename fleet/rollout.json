@@ -1,75 +1,12 @@
 {
-  "change": "glyph canonicals v3.0.0 -> v3.1.0 (t-veg5): commit-lint.yml moves to lint.yml@v3.1.0, version-preview.yml to pr-verdict.yml@v3.1.0. The reusables' caller contract is unchanged across the bump (measured: git diff v3.0.0..v3.1.0 -- .github/workflows/lint.yml .github/workflows/pr-verdict.yml is empty); what moves is the installed binary, whose one behaviour change is in `glyph init`: both presets' subject group now spans the whole first line (glyph #206), so a release-body line reads `:sparkles:(scope)^ subject` instead of the bare text. Every fleet repo already carries that grammar in its own glyph.toml (32/32 read back 2026-09-07, PRs merged per repo), so a v3.1.0 binary reading those files answers exactly as v3.0.0 did — fleet-preflight: 0 verdict moves, 0 body re-renders over the probes it answered (lint 31/34, bump 18/34, body 17/34 — a FLOOR; the rest were exit-4 API failures during the run). Live: glyph-test e2e-v2 run 34081237521 green on the tagged tree (6/6 jobs), sill #211 canary draft read back. Canary glyph-test; the hub's own hand-maintained caller bumps in the same PR (fleet-sync EXCLUDEs the hub).",
-  "covers": "sha256:c1e32367152ac9cca7e20e8b9280b27e2cdd57a433c693d8753375c120b07b57",
-  "stage": "fleet",
+  "change": "glyph canonicals v3.1.0 -> v3.2.0 (t-0c0m): commit-lint.yml moves to lint.yml@v3.2.0, version-preview.yml to pr-verdict.yml@v3.2.0. The reusables' caller contract is unchanged across the bump (measured: git diff v3.1.0..v3.2.0 -- .github/workflows/lint.yml .github/workflows/pr-verdict.yml .github/workflows/release.yml is empty); what moves is the installed binary, whose one change is additive: a new subcommand `glyph emoji` prints the ordered gemoji dictionary (glyph #207) — no lint, bump or notes path is touched, and the dictionary carries no semver field. fleet-preflight on the candidate (bd6abe5): 34/34 probed, 0 verdict moves, 0 body re-renders over the probes it answered (lint 32/34, bump 28/34, body 28/34 — a FLOOR; the unanswered ones are repos with no version tag, exit 4 on both sides). Live: glyph-test e2e-v2 run 34244348386 green on the tagged tree (6/6 jobs). Canary glyph-test; the hub's own hand-maintained caller bumps in the same PR (fleet-sync EXCLUDEs the hub). Supersedes the v3.1.0 entry mid-soak (soak_until was 2026-09-09T05:15:35Z, never applied fleet-wide): v3.1.0's only binary change is in `glyph init` and every consumer already carries that grammar in its own glyph.toml, so a v3.2.0 binary reaching the fleet two days later than v3.1.0 would have changes nothing observable — this release carries it.",
+  "covers": "sha256:96df6b87812bd22fcdca69f13b1380d2090a66d3debb4f46be34cb19756b04c6",
+  "stage": "canary",
   "canary": [
     "glyph-test"
   ],
-  "soak_until": "2026-09-09T05:15:35Z",
+  "soak_until": null,
   "evidence": {
-    "canary": {
-      "glyph-test": {
-        "run_id": 34086087131,
-        "recorded_at": "2026-09-07T05:15:35Z",
-        "covers": "sha256:c1e32367152ac9cca7e20e8b9280b27e2cdd57a433c693d8753375c120b07b57",
-        "reads": [
-          {
-            "repo": "akira-toriyama/glyph-test",
-            "dest": ".github/workflows/task-status.yml",
-            "state": "ok"
-          },
-          {
-            "repo": "akira-toriyama/glyph-test",
-            "dest": ".github/workflows/commit-lint.yml",
-            "state": "ok"
-          },
-          {
-            "repo": "akira-toriyama/glyph-test",
-            "dest": ".github/workflows/taplo.yml",
-            "state": "ok"
-          },
-          {
-            "repo": "akira-toriyama/glyph-test",
-            "dest": ".github/workflows/zizmor.yml",
-            "state": "ok"
-          },
-          {
-            "repo": "akira-toriyama/glyph-test",
-            "dest": ".github/zizmor.yml",
-            "state": "ok"
-          },
-          {
-            "repo": "akira-toriyama/glyph-test",
-            "dest": ".github/workflows/actionlint.yml",
-            "state": "ok"
-          },
-          {
-            "repo": "akira-toriyama/glyph-test",
-            "dest": ".github/workflows/version-preview.yml",
-            "state": "ok"
-          },
-          {
-            "repo": "akira-toriyama/glyph-test",
-            "dest": "docs/commit-convention.md",
-            "state": "ok"
-          },
-          {
-            "repo": "akira-toriyama/glyph-test",
-            "dest": ".github/workflows/repo-policy.yml",
-            "state": "ok"
-          },
-          {
-            "repo": "akira-toriyama/glyph-test",
-            "dest": ".github/dependabot.yml",
-            "state": "ok"
-          },
-          {
-            "repo": "akira-toriyama/glyph-test",
-            "dest": ".github/workflows/pr-verdict.yml",
-            "state": "prune-clean"
-          }
-        ]
-      }
-    }
+    "canary": {}
   }
 }
