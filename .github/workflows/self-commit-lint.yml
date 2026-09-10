@@ -38,4 +38,4 @@ permissions:
 
 jobs:
   commit-lint:
-    uses: akira-toriyama/glyph/.github/workflows/lint.yml@v3.2.0
+    uses: akira-toriyama/glyph/.github/workflows/lint.yml@v3.3.0
