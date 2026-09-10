@@ -1,12 +1,75 @@
 {
   "change": "glyph canonicals v3.2.0 -> v3.3.0 (t-dc9e): commit-lint.yml moves to lint.yml@v3.3.0, version-preview.yml to pr-verdict.yml@v3.3.0. lint.yml and pr-verdict.yml are byte-identical across the bump (measured: git diff v3.2.0..v3.3.0 on the two files is empty); release.yml changes (+96/-5): a packages repository answers per line through a new `packages` output, the four scalars are \"\" there, and `app`/`binary` are refused once the verdict says packages — a single-line caller sees no change (glyph #218, #219). The binary adds [[packages]] (glyph DESIGN §4.1: independently versioned subtrees, tags <path>/vX.Y.Z, one rolling draft per line; glyph #213-#217), `--repo` defaulting to the clone's origin remote (#210) and a reworded no-pattern-matches message (#209). fleet-preflight on the candidate: 35/35 probed, 1 verdict move — glyph-monorepo-test, the one repository that declares [[packages]] (v3.2.0's strict decoder refuses its glyph.toml, v3.3.0 reads it: lint 3 -> clean, bump refused -> haiku/v0.1.1), which is the intended change — and 0 moves, 0 body re-renders on every repository without [[packages]] (FLOOR: lint 33/35, bump 21/35, body 21/35 answered; 32 repos pinned below the v3.2.0 baseline; ridge's body row read baseline exit 4 / candidate exit 0 and was re-measured by hand: both binaries answer v0.1.0 create with the same deciding commit; the candidate binary was rebuilt from a6d0071 mid-run by check.sh, the same Go sources as the tag). Live: glyph-monorepo-test release + read-back green at v3.3.0-rc.2 (run 34483973929: scalars empty, one draft per line, haiku/v0.1.1 standing) after rc.1 caught next=null (#219); its artifact-probe fails at the refusal step as designed (run 34483757536). glyph-test e2e-v2 run 34484230113 on the rc.2 tree: build, grammar, walk, refusals, drafts green; distribution red on glyph-test's own split pins (3x v3.1.0 vs 2x v3.2.0 — the v3.2.0 rollout's step 5 not yet run), not the candidate. The v3.3.0 tag was re-cut once: its first push (on the rc.2 commit) released nothing because GoReleaser inferred the rc tag by git describe and hit 422 uploading onto the rc.2 release; glyph #220 states the tag (GORELEASER_CURRENT_TAG) and the tag moved to that commit — YAML and a guard test only, the same Go sources. Canary glyph-test; the hub's own hand-maintained caller bumps in the same PR (fleet-sync EXCLUDEs the hub). Supersedes the v3.2.0 entry mid-soak (soak_until 2026-09-11T03:34:13Z, never applied fleet-wide): v3.2.0's only binary change is `glyph emoji`, and v3.3.0 carries it.",
   "covers": "sha256:f5466b243caa4cbf3c0a1c97d3a6fb0409ba634d04975ece502441909071a4d3",
-  "stage": "canary",
+  "stage": "fleet",
   "canary": [
     "glyph-test"
   ],
-  "soak_until": null,
+  "soak_until": "2026-09-12T14:41:03Z",
   "evidence": {
-    "canary": {}
+    "canary": {
+      "glyph-test": {
+        "run_id": 34490614873,
+        "recorded_at": "2026-09-10T14:41:03Z",
+        "covers": "sha256:f5466b243caa4cbf3c0a1c97d3a6fb0409ba634d04975ece502441909071a4d3",
+        "reads": [
+          {
+            "repo": "akira-toriyama/glyph-test",
+            "dest": ".github/workflows/task-status.yml",
+            "state": "ok"
+          },
+          {
+            "repo": "akira-toriyama/glyph-test",
+            "dest": ".github/workflows/commit-lint.yml",
+            "state": "ok"
+          },
+          {
+            "repo": "akira-toriyama/glyph-test",
+            "dest": ".github/workflows/taplo.yml",
+            "state": "ok"
+          },
+          {
+            "repo": "akira-toriyama/glyph-test",
+            "dest": ".github/workflows/zizmor.yml",
+            "state": "ok"
+          },
+          {
+            "repo": "akira-toriyama/glyph-test",
+            "dest": ".github/zizmor.yml",
+            "state": "ok"
+          },
+          {
+            "repo": "akira-toriyama/glyph-test",
+            "dest": ".github/workflows/actionlint.yml",
+            "state": "ok"
+          },
+          {
+            "repo": "akira-toriyama/glyph-test",
+            "dest": ".github/workflows/version-preview.yml",
+            "state": "ok"
+          },
+          {
+            "repo": "akira-toriyama/glyph-test",
+            "dest": "docs/commit-convention.md",
+            "state": "ok"
+          },
+          {
+            "repo": "akira-toriyama/glyph-test",
+            "dest": ".github/workflows/repo-policy.yml",
+            "state": "ok"
+          },
+          {
+            "repo": "akira-toriyama/glyph-test",
+            "dest": ".github/dependabot.yml",
+            "state": "ok"
+          },
+          {
+            "repo": "akira-toriyama/glyph-test",
+            "dest": ".github/workflows/pr-verdict.yml",
+            "state": "prune-clean"
+          }
+        ]
+      }
+    }
   }
 }
