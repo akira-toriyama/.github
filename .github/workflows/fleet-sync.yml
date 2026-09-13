@@ -354,10 +354,12 @@ jobs:
                 [ "$bb64" = "$local_b64" ] && need_put=0
               fi
               if [ "$need_put" = 1 ]; then
-                # Same [bot] author as the direct-commit path — the PR fallback's
-                # commits must also stay out of glyph's lint and release folds.
+                # Same [bot] author as the direct-commit path. It exempts
+                # nothing: exclude_authors is a literal list and no fleet
+                # glyph.toml carries this name (see scripts/fleet-commit-bundle.sh).
+                # The `=` is what makes the subject lint-clean and fold none.
                 pargs=(-X PUT "repos/$full/contents/$dest"
-                  -f "message=:wrench:(fleet) sync $dest"
+                  -f "message=:wrench:(fleet)= sync $dest"
                   -f "author[name]=fleet-sync[bot]"
                   -f "author[email]=fleet-sync[bot]@users.noreply.github.com"
                   -f "content=$local_b64" -f "branch=$branch")
@@ -369,7 +371,7 @@ jobs:
               # real failure; capture stderr so a genuine error isn't logged as the
               # reassuring "pr-exists".
               if pr_err="$(gh pr create --repo "$full" --base "$db" --head "$branch" \
-                   --title ":wrench:(fleet) sync $dest" \
+                   --title ":wrench:(fleet)= sync $dest" \
                    --body "Automated standard-file sync from akira-toriyama/.github (fleet-sync). The default branch is protected, so this lands as a PR." 2>&1)"; then
                 echo "pr-opened: $full $dest"
                 pending=$((pending + 1))
@@ -439,7 +441,7 @@ jobs:
                   || { echo "::warning::fleet: cannot delete $dead on $full@$branch; skipping"; failed=$((failed + 1)); continue; }
               fi
               if pr_err="$(gh pr create --repo "$full" --base "$db" --head "$branch" \
-                   --title ":fire:(fleet) drop retired $dead" \
+                   --title ":fire:(fleet)= drop retired $dead" \
                    --body "Automated retirement of a standard file from akira-toriyama/.github (fleet-sync). The default branch is protected, so this lands as a PR." 2>&1)"; then
                 echo "prune-pr-opened: $full $dead"
                 pending=$((pending + 1))
@@ -761,7 +763,7 @@ jobs:
             gh api -X POST "repos/$HUB/git/refs" -f "ref=refs/heads/$branch" -f "sha=$bsha" >/dev/null
           fi
           fargs=(-X PUT "repos/$HUB/contents/$LEDGER"
-            -f "message=:wrench:(fleet) record canary evidence ($ONLY_REPO, run $RUN_ID)"
+            -f "message=:wrench:(fleet)= record canary evidence ($ONLY_REPO, run $RUN_ID)"
             -f "author[name]=fleet-sync[bot]"
             -f "author[email]=fleet-sync[bot]@users.noreply.github.com"
             -f "content=$b64" -f "branch=$branch")
@@ -771,7 +773,7 @@ jobs:
 
           new_stage="$(jq -r '.stage' "$RUNNER_TEMP/rollout-new.json")"
           if pr_err="$(gh pr create --repo "$HUB" --base "$db" --head "$branch" \
-               --title ":wrench:(fleet) record canary evidence ($ONLY_REPO)" \
+               --title ":wrench:(fleet)= record canary evidence ($ONLY_REPO)" \
                --body "$(printf 'fleet-sync run %s applied the current rollout to canary %s and read every managed file back. This PR records that read-back as evidence in fleet/rollout.json (stage after merge: %s).\n\nMerging this is what lets the rollout proceed: the gate refuses fleet-wide writes until the ledger carries verified canary evidence and the soak has elapsed.' "$RUN_ID" "$ONLY_REPO" "$new_stage")" 2>&1)"; then
             echo "evidence-pr-opened: $HUB ($ONLY_REPO, stage after merge: $new_stage)"
           else
