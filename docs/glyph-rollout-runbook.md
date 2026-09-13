@@ -214,17 +214,20 @@ glyph reference kept anywhere else is still invisible to it.
 it. Push a branch whose commit deliberately violates the new rule, open a PR, and
 watch the real `commit-lint` job reach the verdict; then fix the commit and watch
 it pass. Both halves matter: a rule that rejects everything is as broken as one
-that rejects nothing. For the removal-declaration rule that was:
+that rejects nothing. For the removal-declaration rule (CONTRIBUTING: a `:fire:`
+that takes away something another repo or a user can reference carries `!`):
 
 ```
-:fire: prune a preset that nobody should be able to remove silently
-  -> lint / lint  FAIL   rule=undeclared-removal
+:fire:(presets) prune a preset that nobody should be able to remove silently
+  -> lint / lint  FAIL   matches none of the configured patterns
 
-:fire: prune a preset that nobody should be able to remove silently
-
-NON-BREAKING: the preset was internal to this sandbox and never exported
+:fire:(presets)! prune a preset that nobody should be able to remove silently
   -> lint / lint  PASS
 ```
+
+`glyph-test` still carries the v1-acceptance window (measured 2026-09-13), so
+the sigil-less half warns there rather than failing — fire it in a windowless
+repo (`glyph-monorepo-test`, `zmk-hid-host`) when the FAIL half is the point.
 
 Close the PR without merging.
 

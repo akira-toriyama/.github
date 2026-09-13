@@ -54,7 +54,7 @@ wider value reduces wrap churn but is a style choice, not a correctness one.
    easy to review and revert:
    ```sh
    swift format --in-place --recursive Sources Tests
-   git add -A && git commit -m ":art: style: reformat sources to satisfy swift-format"
+   git add -A && git commit -m ":art:(format)= reformat sources to satisfy swift-format"
    ```
 3. **Verify** before pushing:
    ```sh

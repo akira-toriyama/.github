@@ -1,6 +1,8 @@
 <!--
-Title = gitmoji + Conventional Commits (see CONTRIBUTING.md):
-  :sparkles: feat(scope): add the thing
+Title = <:gemoji:>[(scope)]<sigil> <subject> — your repo's glyph.toml decides
+(see CONTRIBUTING.md). The sigil is the version signal and is never optional:
+= none / ~ patch / ^ minor / ! major / % promote to 1.0.0.
+  :sparkles:(scope)^ add the thing
 A single-commit PR squash-merges with the commit message as the title — keep them in sync.
 -->
 
