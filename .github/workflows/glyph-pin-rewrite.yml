@@ -326,13 +326,14 @@ jobs:
               if bjson="$(gh api "repos/$full/contents/$path?ref=$branch" 2>/dev/null)"; then
                 bsha2="$(printf '%s' "$bjson" | jq -r '.sha')"
               fi
-              # The `[bot]` author is load-bearing, not cosmetic: glyph skips
-              # `*[bot]` commits in the version fold, so a pin move never bumps
-              # the consumer repo's release. The message rides glyph's own
-              # grammar (t-271n) — the lint no longer needs the bot skip to
-              # tolerate it.
+              # The `[bot]` author is attribution only: glyph v1's `*[bot]`
+              # skip was removed in v2 (glyph f5a7f2a, #187) and no fleet
+              # glyph.toml excludes this name, so it buys nothing in lint OR
+              # in the fold. The `=` is what keeps a pin move from bumping the
+              # consumer repo's release — a glyph pin is that repo's CI input,
+              # not its API.
               pargs=(-X PUT "repos/$full/contents/$path"
-                -f "message=:arrow_up:(ci) pin glyph $want in $path"
+                -f "message=:arrow_up:(ci)= pin glyph $want in $path"
                 -f "author[name]=glyph-pin-rewrite[bot]"
                 -f "author[email]=glyph-pin-rewrite[bot]@users.noreply.github.com"
                 -f "content=$(base64 -w0 < "$new")" -f "branch=$branch")
@@ -369,7 +370,7 @@ jobs:
                     csha="$(printf '%s' "$cjson" | jq -r '.sha')"
                   fi
                   cargs=(-X PUT "repos/$full/contents/glyph.toml"
-                    -f "message=:wrench:(ci) add glyph.toml — the v3 engine reads the repo's own grammar"
+                    -f "message=:wrench:(ci)= add glyph.toml — the v3 engine reads the repo's own grammar"
                     -f "author[name]=glyph-pin-rewrite[bot]"
                     -f "author[email]=glyph-pin-rewrite[bot]@users.noreply.github.com"
                     -f "content=$(base64 -w0 < "$config_src")" -f "branch=$branch")
@@ -408,8 +409,8 @@ jobs:
             # shellcheck disable=SC2016  # the backticks are markdown code spans in the PR body, not command substitution
             body="$(printf 'Moves every glyph pin in this repo to **%s** (%s), the version `fleet/commit-lint.yml` distributes.\n\nThese sites are NOT fleet-managed: they live in files this repo owns, so `fleet-sync` cannot byte-copy them and until now they moved only by hand — one pull request per repo, per glyph release.\n%s\nFiles:\n%s\n\nOnly lines carrying a glyph pin were changed; the rewriter refuses and writes nothing if any other line moves. See `akira-toriyama/.github`: `scripts/glyph-pin-rewrite.sh`, `docs/glyph-rollout-runbook.md`.\n' \
               "$want" "$moves" "$config_note" "$(for p in $changed_paths; do printf -- '- %s\n' "$p"; done)")"
-            title=":arrow_up:(ci) pin glyph $want ($moves)"
-            case "$moves" in "(no pin moved"*) title=":wrench:(ci) add glyph.toml — the config-first invariant, ahead of the $config_ref pins" ;; esac
+            title=":arrow_up:(ci)= pin glyph $want ($moves)"
+            case "$moves" in "(no pin moved"*) title=":wrench:(ci)= add glyph.toml — the config-first invariant, ahead of the $config_ref pins" ;; esac
             if pr_err="$(gh pr create --repo "$full" --base "$db" --head "$branch" \
                  --title "$title" --body "$body" 2>&1)"; then
               echo "pr-opened: $full ($changed_paths )"

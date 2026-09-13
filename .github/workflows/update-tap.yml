@@ -203,7 +203,7 @@ jobs:
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add "Formula/${FORMULA}.rb"
-          git commit -m "homebrew: bump ${FORMULA} to ${TAG}"
+          git commit -m ":package:(tap)= bump ${FORMULA} to ${TAG}"
           # Pull-rebase + push with retry: a concurrent tap writer (two app repos
           # releasing at once — the concurrency group above is repo-scoped, so it
           # only serializes runs within one repo) or a manual tap edit makes a

@@ -23,14 +23,23 @@
 # apply-repo-settings.sh pattern).
 #
 # WHAT IT PRESERVES, deliberately:
-#   - the fleet-sync[bot] AUTHOR — glyph's lint and release folds skip *[bot]
-#     authors, and these commits must stay out of both (t-kbqx). The Git Data
+#   - the fleet-sync[bot] AUTHOR — attribution, and nothing more. glyph v1
+#     skipped `*[bot]` / `github-actions*` / `web-flow` authors outright;
+#     that rule went out with the v2 rewrite (glyph f5a7f2a, #187), and since
+#     v2 the only exclusion is a literal `exclude_authors` entry matched
+#     against %an. No fleet glyph.toml lists this author (measured 2026-09-13:
+#     35 configs, all `['dependabot[bot]', 'renovate[bot]']`), so the sigil
+#     below — not the author — is what keeps these commits clean. The Git Data
 #     API takes the author explicitly; the committer stays the PAT user, same
 #     as the Contents API path this replaces.
 #   - the single-file commit message SHAPE — subject only, naming the one dest;
 #     the multi-file case gets a (subject + body) shape. The grammar is glyph's
-#     one sanctioned form (`:wrench:(fleet) sync …`, t-271n) — the legacy
-#     `:robot: chore(fleet):` token retired with the producers that wrote it.
+#     one sanctioned form (`:wrench:(fleet)= sync …`) — and the `=` is not
+#     optional. It was dropped alongside the legacy `:robot: chore(fleet):`
+#     token (t-271n), leaving every subject here matching no pattern: a repo
+#     past its v1-acceptance window answers exit 3 on lint and refuses to
+#     version the range on release (measured 2026-09-13 — glyph-monorepo-test
+#     run 34745527599, zmk-hid-host run 34745642568).
 #   - no force. The ref update names the base it built on; if the branch moved
 #     meanwhile the update fails, the script re-reads the tip and rebuilds ON
 #     the new base (twice at most). A REFUSED update with an unmoved tip is not
@@ -55,9 +64,9 @@ trap 'rm -rf "$tmp"' EXIT
 # how many and lists them in the body, one per line.
 message() {
   if [ "$#" -eq 1 ]; then
-    printf ':wrench:(fleet) sync %s' "$1"
+    printf ':wrench:(fleet)= sync %s' "$1"
   else
-    printf ':wrench:(fleet) sync %d standard files in one push\n\n' "$#"
+    printf ':wrench:(fleet)= sync %d standard files in one push\n\n' "$#"
     printf '%s\n' "$@"
   fi
 }
