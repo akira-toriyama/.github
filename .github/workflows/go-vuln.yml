@@ -81,7 +81,16 @@ jobs:
         env:
           BINARY_PATH: ${{ inputs.binary-path }}
         run: |
-          go install golang.org/x/vuln/cmd/govulncheck@latest
+          # GOTOOLCHAIN scoped to the tool install: the scans below must keep the
+          # caller's toolchain, or a finding would name a Go the caller does not
+          # ship. setup-go exports GOTOOLCHAIN=local itself and has no input to
+          # stop it, so every caller whose floor is below x/vuln's own `go`
+          # directive (v1.8.0, published 2026-09-08, moved it to 1.26.0) failed the
+          # install and went red having scanned nothing — measured 2026-09-13:
+          # pare and prq red, the other 8 callers green only because their
+          # effective Go already passes 1.26. Not a @vX.Y.Z pin instead: a frozen
+          # scanner reports less and stays green.
+          GOTOOLCHAIN=auto go install golang.org/x/vuln/cmd/govulncheck@latest
           govulncheck ./...
           # Also scan the actual compiled binary — catches stdlib vulns reachable in
           # the shipped artifact (the GO-2025-3595 class), which source mode can miss.
