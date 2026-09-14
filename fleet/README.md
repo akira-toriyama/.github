@@ -104,8 +104,14 @@ evidence PR.
 
 ## How it runs
 
-`fleet-sync.yml` runs daily (and on demand via **Run workflow**). It is **dormant**
-until its secrets exist:
+`fleet-sync.yml` runs daily (cron `06:00Z`, and on demand via **Run workflow**).
+The scheduled run starts 4–6 h after its cron, every day — measured over
+2026-09-01..14 (starts 10:17Z–12:18Z); the pin workflows queued behind it
+(`glyph-pin-rewrite` 06:20Z, `glyph-pin-audit` 06:30Z, `furrow-pin-audit` 06:45Z)
+are delayed by the same amount and kept their relative order on all 14 days, so
+the cron minute is not the cause and "the first daily apply after a soak" means
+"some time that afternoon UTC", not 06:00Z. It is **dormant** until its secrets
+exist:
 
 | Secret (on this `.github` repo) | What it is |
 |---|---|
