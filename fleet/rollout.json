@@ -1,10 +1,75 @@
 {
   "change": "glyph canonicals v3.3.0 -> v3.3.1 (t-e5te): commit-lint.yml moves to lint.yml@v3.3.1, version-preview.yml to pr-verdict.yml@v3.3.1; the hub's own self-commit-lint.yml bumps in the same PR (fleet-sync EXCLUDEs the hub). lint.yml, pr-verdict.yml, release.yml and actions/install are byte-identical across the bump (measured: git diff v3.3.0..v3.3.1 on the reusables and the action is empty; only .goreleaser.yaml's ldflags follow the /v3 module path, glyph #222). The binary carries seven patches: the module path gains /v3 so `go install @latest` ships v3 and not v1.0.0 (#222); a glyph.toml a verdict command cannot load answers usage (2), not violation (3) (#223); prose is escaped against the assembled line (#224); a refusal computed over a file listing GitHub truncated is not the gate code, and the preview carries the INCOMPLETE caveat (#225); the author credit goes live only for a login — API author.login or the noreply address — so a display name is prose and pages nobody, and dependabot[bot] renders as `dependabot\\[bot]` instead of the fenced `@dependabot`\\[bot] (#226); a /v2 subdirectory of a [[packages]] line folds into that line's major, pubsub/v2 tags as pubsub/v2.x.y (#227). fleet-preflight on the candidate (baseline v3.3.0, run twice — plain and --fetch — plus a hand batch for the repos the runs left unanswered because the walk exhausts the authed core rate limit of 5000/h at repo 14, t-gjxq): 35/35 probed, lint 33/35 answered, bump 31/35 answered, 0 verdict moves; the 4 unanswered answer the same non-answer on both binaries (chord and dotfiles-private usage 2 — config unreadable at the walked ref; homebrew-tap exit 4 published floor; projects exit 4 refusing an unbounded 6764-commit walk). Body re-renders: 15 repos (canon, cifail, dotfiles, glance, glossary-site, halo, mergeprobe, pare, perch, prmap, prq, revpost, ridge, rundiff, wand, zmk-hid-host), and every differing line is a dependabot credit — `@dependabot`\\[bot] -> dependabot\\[bot] — the #226 rendering, no other byte moves; glyph-monorepo-test's per-line verdicts are identical on both binaries (haiku major/v3.0.0, curry minor/v1.2.0, travel minor/v1.1.0, travel/onsen major/v2.0.0, camp minor/v0.4.0). Live fire at the candidate commit: glyph-test e2e-v2 run 34921549731 and glyph-monorepo-test e2e run 34921569908 green on every tier from main, after the harnesses learned the login-gated credit (glyph-test#89, glyph-monorepo-test#25: fixture identity moved to the noreply address, and a new arm holds a personal-address commit rendering as prose with no @). Release v3.3.1 published 2026-09-15T05:14:45Z (goreleaser run 34931866834, 5 assets, isDraft false). Canary glyph-test. Sequencing: this entry supersedes nothing that is still owed — it must merge only AFTER the furrow v6.0.0 entry (t-2gmm, soak_until 2026-09-16T06:25:18Z) has applied fleet-wide, because a canonical edit changes covers and would invalidate that entry's evidence (gate exit 13) before its fleet apply.",
   "covers": "sha256:f272bb81af104d9d8b1e8b58ac0baed96cbb1416c2897ee0e7d8a1f7747b5397",
-  "stage": "canary",
+  "stage": "fleet",
   "canary": [
     "glyph-test"
   ],
-  "soak_until": null,
-  "evidence": {}
+  "soak_until": "2026-09-17T15:48:48Z",
+  "evidence": {
+    "canary": {
+      "glyph-test": {
+        "run_id": 34990893959,
+        "recorded_at": "2026-09-15T15:48:48Z",
+        "covers": "sha256:f272bb81af104d9d8b1e8b58ac0baed96cbb1416c2897ee0e7d8a1f7747b5397",
+        "reads": [
+          {
+            "repo": "akira-toriyama/glyph-test",
+            "dest": ".github/workflows/task-status.yml",
+            "state": "ok"
+          },
+          {
+            "repo": "akira-toriyama/glyph-test",
+            "dest": ".github/workflows/commit-lint.yml",
+            "state": "ok"
+          },
+          {
+            "repo": "akira-toriyama/glyph-test",
+            "dest": ".github/workflows/taplo.yml",
+            "state": "ok"
+          },
+          {
+            "repo": "akira-toriyama/glyph-test",
+            "dest": ".github/workflows/zizmor.yml",
+            "state": "ok"
+          },
+          {
+            "repo": "akira-toriyama/glyph-test",
+            "dest": ".github/zizmor.yml",
+            "state": "ok"
+          },
+          {
+            "repo": "akira-toriyama/glyph-test",
+            "dest": ".github/workflows/actionlint.yml",
+            "state": "ok"
+          },
+          {
+            "repo": "akira-toriyama/glyph-test",
+            "dest": ".github/workflows/version-preview.yml",
+            "state": "ok"
+          },
+          {
+            "repo": "akira-toriyama/glyph-test",
+            "dest": "docs/commit-convention.md",
+            "state": "ok"
+          },
+          {
+            "repo": "akira-toriyama/glyph-test",
+            "dest": ".github/workflows/repo-policy.yml",
+            "state": "ok"
+          },
+          {
+            "repo": "akira-toriyama/glyph-test",
+            "dest": ".github/dependabot.yml",
+            "state": "ok"
+          },
+          {
+            "repo": "akira-toriyama/glyph-test",
+            "dest": ".github/workflows/pr-verdict.yml",
+            "state": "prune-clean"
+          }
+        ]
+      }
+    }
+  }
 }
