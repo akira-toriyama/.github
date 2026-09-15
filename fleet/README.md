@@ -97,6 +97,14 @@ apply run may write, via `scripts/fleet-rollout-gate.sh` (t-yyfv). Its effect:
   advance the rollout (run the canary, merge the evidence PR, wait out the soak),
   never to edit the ledger's evidence by hand — the gate's run-id check refuses
   records that no real run stands behind.
+- **A flag-day rollout may shorten its soak by hand.** When the change makes the
+  canary structurally red for the whole soak (a furrow schema bump: the
+  reusable's pre-flight refuses the pinned binary until the shared board is
+  upgraded, which can only happen after the fleet apply), the 48 hours observe
+  nothing the apply-time read-back did not already prove. Move `soak_until`
+  earlier in the evidence PR and say why in the entry's `change`; the gate checks
+  the evidence run id, not where `soak_until` came from. Default stays 48 h, and
+  the reason has to be in the entry.
 
 There is no approval flow in this — a solo fleet needs none. The only human acts
 are the ones branch protection already requires: merging the change PR and the

@@ -98,8 +98,10 @@ is worse than no rule.
   canonical without updating the ledger), a canary-scoped apply has run, its
   read-back was machine-recorded as evidence — the gate verifies the recorded
   run id names a real, successful fleet-sync run, so a typed-in evidence block
-  does not pass — and a 48-hour soak has elapsed. Merging to the hub's main is
-  no longer the deploy. Mechanics: `fleet/README.md`, "Rollout ledger".
+  does not pass — and a 48-hour soak has elapsed (a flag-day rollout whose
+  canary is structurally red may shorten it by hand, reason in the entry —
+  `fleet/README.md`, "Rollout ledger"). Merging to the hub's main is no longer
+  the deploy. Mechanics: `fleet/README.md`, "Rollout ledger".
 - **Read-back after an apply** (t-dk1e): an apply run re-fetches every managed
   file from every repo and fails on any mismatch — "counting the artefact" is
   no longer a discipline for fleet-sync-managed files; it is the last step of
