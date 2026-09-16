@@ -135,9 +135,9 @@ jobs:
           # its expected value from the canonical itself, so a fleet uniformly
           # one release behind is all green unless upstream is asked (t-2268 —
           # the furrow pin sat reverted for ~46h with nothing red anywhere).
-          # Red here means "a release exists that no rollout has started";
-          # during a rollout the canonical has already moved, so a ledger soak
-          # does not trip this.
+          # Red here means "a release exists that no rollout has started". Once
+          # the canonical moves the rollout has started, so this stops tripping
+          # while the pin PRs are still going out.
           latest="$(gh release view -R "$OWNER/glyph" --json tagName --jq .tagName)" \
             || { echo "::error::cannot read the latest glyph release — the canonical's currency has not been audited."; exit 1; }
           if [ "$want" != "$latest" ]; then

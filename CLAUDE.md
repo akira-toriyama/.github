@@ -22,12 +22,12 @@ consumer index.
 
 - **A change here lands in every repo at once — stage it, don't ship it.** Build
   a POC when a step has never been done before, fire live ammunition in
-  `glyph-test`, canary one repo, *then* the fleet. For the `fleet/` canonicals
-  the canary → fleet half is machine-held by the rollout ledger
-  (`fleet/rollout.json` — a canonical edit needs a ledger entry in the same PR,
-  and no apply run distributes past the stage the rollout has earned); the POC
-  and `glyph-test` stages are still yours to carry, so say which ones you
-  actually performed and which you skipped. The rule, and the honest list of
+  `glyph-test`, canary one repo, *then* the fleet. **No machine holds any of
+  those stages** — the rollout ledger that used to hold canary → fleet was
+  removed in t-7t07 after it rescued nothing in 17 rollouts. Merging a `fleet/`
+  canonical to `main` IS the deploy: the push applies fleet-wide by itself. So
+  canary by hand before you merge (`-f only-repo=<repo>`), and say which stages
+  you actually performed and which you skipped. The rule, and the honest list of
   what is and is not machine-enforced, is
   [`docs/fleet-change-policy.md`](docs/fleet-change-policy.md).
 - **`.github/workflows/task-status.yml` is maintained BY HAND.** fleet-sync
