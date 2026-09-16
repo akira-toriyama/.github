@@ -70,56 +70,20 @@ line to `MANIFEST` in [`.github/workflows/fleet-sync.yml`](../.github/workflows/
 **Edit these canonical copies, never the per-repo copies** — fleet-sync overwrites
 them on the next run.
 
-## Rollout ledger — `rollout.json`
-
-The one file here that is **not** distributed (fleet-manifest's check 3 excludes
-it): it is the hub-only state the staged-rollout policy
-([`docs/fleet-change-policy.md`](../docs/fleet-change-policy.md)) reads before any
-apply run may write, via `scripts/fleet-rollout-gate.sh` (t-yyfv). Its effect:
-
-- **Editing a canonical requires a ledger entry in the same PR.** The `covers`
-  field is a hash over this directory's distributable bytes
-  (`bash scripts/fleet-rollout-gate.sh --print-covers fleet/rollout.json`), and
-  `tests/fleet-rollout-gate.test.sh` holds the real tree to it at PR time — so a
-  canonical edit that forgets the ledger fails its own PR, and even if it merged,
-  every apply run would refuse to distribute it (exit 11).
-- **A rollout earns the fleet; it is not granted it.** `stage: "canary"` lets
-  exactly the listed `canary` repos be written
-  (`gh workflow run fleet-sync.yml -f dry-run=false -f only-repo=<canary>`).
-  The recorder step then writes the read-back's verdicts into
-  `evidence.canary.<repo>` as a PR on the hub, sets `soak_until` (48h) and
-  advances `stage` to `"fleet"`. Fleet-wide writes resume only when the gate can
-  verify that evidence — real `run_id` of a successful fleet-sync run, same
-  `covers` — and the soak has elapsed. Any other `stage` value ("local", "poc",
-  "glyph-test", …) holds all writes.
-- **A held apply run is red on purpose** — including the daily scheduled one.
-  That red says "the fleet is intentionally behind the hub's main"; the fix is to
-  advance the rollout (run the canary, merge the evidence PR, wait out the soak),
-  never to edit the ledger's evidence by hand — the gate's run-id check refuses
-  records that no real run stands behind.
-- **A flag-day rollout may shorten its soak by hand.** When the change makes the
-  canary structurally red for the whole soak (a furrow schema bump: the
-  reusable's pre-flight refuses the pinned binary until the shared board is
-  upgraded, which can only happen after the fleet apply), the 48 hours observe
-  nothing the apply-time read-back did not already prove. Move `soak_until`
-  earlier in the evidence PR and say why in the entry's `change`; the gate checks
-  the evidence run id, not where `soak_until` came from. Default stays 48 h, and
-  the reason has to be in the entry.
-
-There is no approval flow in this — a solo fleet needs none. The only human acts
-are the ones branch protection already requires: merging the change PR and the
-evidence PR.
-
 ## How it runs
 
-`fleet-sync.yml` runs daily (cron `06:00Z`, and on demand via **Run workflow**).
+`fleet-sync.yml` applies **on the push that lands a `fleet/**` change on main** —
+merging a canonical is the deploy. It also runs daily (cron `06:00Z`, onboarding
+new repos and repairing drift) and on demand via **Run workflow**.
+
 The scheduled run starts 4–6 h after its cron, every day — measured over
 2026-09-01..14 (starts 10:17Z–12:18Z); the pin workflows queued behind it
 (`glyph-pin-rewrite` 06:20Z, `glyph-pin-audit` 06:30Z, `furrow-pin-audit` 06:45Z)
 are delayed by the same amount and kept their relative order on all 14 days, so
-the cron minute is not the cause and "the first daily apply after a soak" means
-"some time that afternoon UTC", not 06:00Z. It is **dormant** until its secrets
-exist:
+the cron minute is not the cause and a "daily" apply means "some time that
+afternoon UTC", not 06:00Z. This delay is why the push trigger exists: a merged
+canonical used to wait most of a day for a timer. It is **dormant** until its
+secrets exist:
 
 | Secret (on this `.github` repo) | What it is |
 |---|---|

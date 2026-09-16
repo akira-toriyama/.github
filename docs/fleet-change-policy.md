@@ -90,35 +90,35 @@ is worse than no rule.
   proves nothing about the case it exists for.
 - Branch protection on the repos that have it: fleet-sync opens a PR instead of
   pushing, so a bad canonical cannot land silently there.
-- **Stage 3 → 4, for the `fleet/` canonicals: the rollout ledger** (t-yyfv).
-  Every fleet-sync apply run — scheduled ones included — first passes
-  `scripts/fleet-rollout-gate.sh` against `fleet/rollout.json`. A canonical
-  change cannot distribute until its ledger entry covers exactly the bytes on
-  disk (and `tests/fleet-rollout-gate.test.sh` fails the PR that edits a
-  canonical without updating the ledger), a canary-scoped apply has run, its
-  read-back was machine-recorded as evidence — the gate verifies the recorded
-  run id names a real, successful fleet-sync run, so a typed-in evidence block
-  does not pass — and a 48-hour soak has elapsed (a flag-day rollout whose
-  canary is structurally red may shorten it by hand, reason in the entry —
-  `fleet/README.md`, "Rollout ledger"). Merging to the hub's main is no longer
-  the deploy. Mechanics: `fleet/README.md`, "Rollout ledger".
 - **Read-back after an apply** (t-dk1e): an apply run re-fetches every managed
   file from every repo and fails on any mismatch — "counting the artefact" is
   no longer a discipline for fleet-sync-managed files; it is the last step of
-  the run. The canary evidence above is this read-back, recorded.
+  the run. It runs on every apply — it used to be skipped whenever the rollout
+  gate held the run, which was 58% of days.
 
 **Not enforced — carried by whoever is doing the work**
 
 - Stages 1 and 2. Nothing checks that a POC was built or that `glyph-test` was
-  fired at — the ledger's stage field can say `"glyph-test"`, and while it does
-  nothing distributes, but nothing verifies the rehearsal actually happened
-  before the stage advanced to `"canary"`.
+  fired at.
+- **Stages 3 and 4 for the `fleet/` canonicals — as of t-7t07, nothing holds
+  them.** A rollout ledger used to: an apply run could write only bytes a
+  `fleet/rollout.json` entry covered, at the stage the rollout had earned, after
+  a canary apply, a machine-recorded read-back and a 48-hour soak. It was
+  removed after every run since it was introduced (2026-07-28) was classified:
+  31 failures, all of them the gate holding; **0 real rescues in 17 rollouts**;
+  exit 13 (forged evidence) and exit 2 (broken ledger) never fired outside the
+  test fixtures. Against that it reddened 59% of daily schedules and skipped the
+  apply-time read-back on every held day, leaving that check running 42% of the
+  time. Merging a canonical to main is the deploy again. **The canary is now a
+  procedure, not a gate**: apply to one repo first with
+  `gh workflow run fleet-sync.yml -f dry-run=false -f only-repo=<repo>`, read its
+  result, then merge. Nothing makes you.
 - "Both halves" in stage 2. A one-directional test looks identical to a
   two-directional one from outside.
 - The same sequence for the **other** rollout path: the three glyph pins that
-  `glyph-pin-rewrite.yml` moves via PRs live outside `fleet/`, so the ledger
-  does not see them. Their safety net is the daily `glyph-pin-audit` (with the
-  blind spots named above), not a staged gate.
+  `glyph-pin-rewrite.yml` moves via PRs live outside `fleet/`. Their safety net
+  is the daily `glyph-pin-audit` (with the blind spots named above), not a
+  staged gate.
 
 Closing the stage-2 gap is tracked work, not a footnote: the rehearsal that
 fires the release path at real GitHub is an open task. Until it exists, stages

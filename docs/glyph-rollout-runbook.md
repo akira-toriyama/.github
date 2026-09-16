@@ -69,9 +69,8 @@ generation's name, not a tag. The existing `v2.0.0` / `v2.1.0` tags are
 today, so "upgrade to glyph v2" reads two opposite ways and the wrong one has
 already happened (`pin glyph v2.0.0` in glyph-test pinned the OLD grammar).
 Every artifact this rollout writes therefore names both numbers: pin-move PR
-titles and bodies, and the rollout ledger's `change` line, spell the move as
-`v2.1.0 -> v3.0.0` (or `v2.0.0 -> v3.0.0` for the repos still there), never
-"to v2".
+titles and bodies spell the move as `v2.1.0 -> v3.0.0` (or `v2.0.0 -> v3.0.0`
+for the repos still there), never "to v2".
 
 The engine reads each
 repository's own `glyph.toml` instead of any embedded grammar, so a v2 pin
@@ -145,9 +144,14 @@ config first, pins second, and it changes the sequence above in four ways:
    `gh release view vX.Y.Z --json isDraft,assets` — assets must be non-zero and
    `isDraft` false. Pins resolve to a tag, but `actions/install` downloads
    **release assets**; a draft or asset-less release fails every consumer at once.
-2. Bump `fleet/commit-lint.yml` and `fleet/version-preview.yml` in one PR. Merge.
-3. Run fleet-sync **with apply**: `gh workflow run fleet-sync.yml -f dry-run=false`.
-4. Merge any `fleet-sync/*` PRs it opened (see branch protection below).
+2. Bump `fleet/commit-lint.yml` and `fleet/version-preview.yml` in one PR.
+   Before merging, apply to one repo and read the result:
+   `gh workflow run fleet-sync.yml -f dry-run=false -f only-repo=glyph-test`.
+   Nothing enforces this step — see `fleet-change-policy.md`, "Not enforced".
+3. Merge. The push onto `main` applies fleet-wide by itself (`paths: fleet/**`);
+   `gh workflow run fleet-sync.yml -f dry-run=false` is only needed to re-run it.
+4. Merge any `fleet-sync/*` PRs it opened (see branch protection below) — `canon`
+   is the one target whose protection forces the PR path.
 5. Run the rewriter **with apply**:
    `gh workflow run glyph-pin-rewrite.yml -f dry-run=false`. It opens one
    `glyph-pin/vX.Y.Z` PR per repo still carrying an unmanaged pin, moving the
