@@ -42,8 +42,8 @@ cmp_case() {
   fi
 }
 
-# --- the current family shape: string floor + url dependency, with the real
-# --- comment hazards on the same lines
+# the current family shape: string floor + url dependency, with the real
+# comment hazards on the same lines
 run_case "string floor and url dep, trailing comments stripped" \
 "$(printf 'macos-floor\t26.0\t2\nsill-dep\turl\t4')" <<'SWIFT'
 let package = Package(
@@ -55,14 +55,14 @@ let package = Package(
 )
 SWIFT
 
-# --- the drifted legacy form this audit exists to catch (t-tbar leftovers)
+# the drifted legacy form this audit exists to catch (t-tbar leftovers)
 run_case "legacy .vN floor is read too" \
 "$(printf 'macos-floor\t13\t1')" <<'SWIFT'
     platforms: [.macOS(.v13)],
 SWIFT
 
-# --- sill's own file shape: the floor inside a whole-line comment must NOT
-# --- be a record; only the real declaration is
+# sill's own file shape: the floor inside a whole-line comment must NOT
+# be a record; only the real declaration is
 run_case "a floor inside a // comment is documentation, not a floor" \
 "$(printf 'macos-floor\t26.0\t3')" <<'SWIFT'
 // sill pin). Spelled ".macOS("26.0")" — the string form is the only one both
@@ -70,7 +70,7 @@ run_case "a floor inside a // comment is documentation, not a floor" \
     platforms: [.macOS("26.0")],
 SWIFT
 
-# --- a /* */ block hiding a dependency must not resurrect it
+# a /* */ block hiding a dependency must not resurrect it
 run_case "a block-commented dependency is not a dependency" \
 "$(printf 'sill-dep\turl\t4')" <<'SWIFT'
     /*
@@ -79,20 +79,20 @@ run_case "a block-commented dependency is not a dependency" \
     .package(url: "https://github.com/akira-toriyama/sill.git", from: "5.0.0"),
 SWIFT
 
-# --- the // strip must not eat :// — else the url line truncates at `https:`
-# --- and the dependency silently vanishes from the audit
+# the // strip must not eat :// — else the url line truncates at `https:`
+# and the dependency silently vanishes from the audit
 run_case "the URL scheme survives the comment strip" \
 "$(printf 'sill-dep\turl\t1')" <<'SWIFT'
         .package(url: "https://github.com/akira-toriyama/sill", from: "5.0.0"),
 SWIFT
 
-# --- the local-dev path form counts as a dependency too
+# the local-dev path form counts as a dependency too
 run_case "the path form is a dependency" \
 "$(printf 'sill-dep\tpath\t1')" <<'SWIFT'
         .package(path: "../sill"),
 SWIFT
 
-# --- boundary: sill-themes / swift-toml-edit must never read as sill
+# boundary: sill-themes / swift-toml-edit must never read as sill
 run_case "a similarly-named package is not sill" \
 "" <<'SWIFT'
         .package(url: "https://github.com/akira-toriyama/sill-themes.git", from: "1.0.0"),
@@ -100,15 +100,15 @@ run_case "a similarly-named package is not sill" \
         .package(path: "../sill-fork"),
 SWIFT
 
-# --- a file with no platforms: yields no floor record at all (the audit turns
-# --- that absence into a loud red for sill consumers — but only if the scanner
-# --- is honest about it, not inventing one)
+# a file with no platforms: yields no floor record at all (the audit turns
+# that absence into a loud red for sill consumers — but only if the scanner
+# is honest about it, not inventing one)
 run_case "no platforms means no floor record" \
 "$(printf 'sill-dep\turl\t1')" <<'SWIFT'
         .package(url: "https://github.com/akira-toriyama/sill.git", from: "5.0.0"),
 SWIFT
 
-# --- cmp: the comparison the audit makes, both directions plus the numeric trap
+# cmp: the comparison the audit makes, both directions plus the numeric trap
 cmp_case "cmp: equal floors comply"            26.0 26.0 0
 cmp_case "cmp: a higher consumer floor complies" 26.1 26.0 0
 cmp_case "cmp: a lower consumer floor is drift"  13   26.0 1

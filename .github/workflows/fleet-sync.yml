@@ -125,7 +125,6 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Scheduled runs always apply; manual runs honor the dry-run input.
           DRY="${DRY_RUN:-false}"
           [ "$EVENT" = "schedule" ] && DRY=false
           echo "event=$EVENT dry-run=$DRY"
@@ -191,7 +190,6 @@ jobs:
             esac
           done
 
-          # Target repos: owned, non-fork, non-archived (new repos auto-included).
           mapfile -t REPOS < <(gh repo list "$OWNER" --no-archived --source --limit 200 \
             --json name,isFork -q '.[] | select(.isFork==false) | .name' | sort)
           echo "candidate repos: ${#REPOS[@]}"
@@ -314,7 +312,6 @@ jobs:
             for pair in ${fallback_pairs[@]+"${fallback_pairs[@]}"}; do
               src="${pair%%:*}"; dest="${pair##*:}"
               local_b64="$(base64 < "$src" | tr -d '\n')"
-              # Strip whatever extension the dest has (.yml, .md, …) for a clean branch name.
               destbase="$(basename "$dest")"
               branch="fleet-sync/${destbase%.*}"
               if ! gh api "repos/$full/git/ref/heads/$branch" >/dev/null 2>/dev/null; then
@@ -323,7 +320,9 @@ jobs:
                 gh api -X POST "repos/$full/git/refs" -f "ref=refs/heads/$branch" -f "sha=$bsha" >/dev/null \
                   || { echo "::warning::fleet: cannot create branch $branch on $full; skipping $dest"; failed=$((failed + 1)); continue; }
               fi
-              # Update the branch file only if it differs (no empty commits on re-runs).
+              # The Contents API commits on every PUT, identical bytes included, so a
+              # re-run must skip a branch that already holds the canonical or stack
+              # an empty commit on the PR each night.
               bsha2=""; need_put=1
               if bjson="$(gh api "repos/$full/contents/$dest?ref=$branch" 2>/dev/null)"; then
                 bb64="$(printf '%s' "$bjson" | jq -r '.content' | tr -d '\n')"

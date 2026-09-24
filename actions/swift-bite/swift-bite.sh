@@ -124,7 +124,6 @@ stand_down() {
   exit 0
 }
 
-# ---------------------------------------------------------------- change survey
 # --no-renames turns a rename into delete+add, which is exactly what the overlay
 # wants (drop the old path, treat the new one as wholly new).
 git -c core.quotePath=false diff --name-status --no-renames "$before" "$HEAD_SHA" \
@@ -213,7 +212,6 @@ if [ ! -s "$work/added" ] && [ ! -s "$work/modified" ]; then
   stand_down "no Swift test file was added or changed"
 fi
 
-# --------------------------------------------------- test functions at HEAD
 # bitescan parses with the toolchain's own parser (sourcekitdInProc): names,
 # line spans, @Test attributes, XCTestCase inheritance and the bite-exempt
 # comment block — the facts a regex over Swift source cannot get right.
@@ -257,11 +255,9 @@ scan_target() {
 cat "$work/added" "$work/modified" >"$work/changed"
 extract "$work/changed"
 
-# ------------------------------------------------------------------ selection
-# funcs.tsv: FILE KIND ID STARTLINE ENDLINE EXEMPT CONFIDENCE
+# funcs.tsv: FILE KIND ID STARTLINE ENDLINE EXEMPT CONFIDENCE DISPLAY
 : >"$work/selected.tsv"
 
-# Every test function in an added file is new.
 while IFS= read -r path; do
   awk -F'\t' -v f="$path" '$1 == f' "$work/funcs.tsv" >>"$work/selected.tsv"
 done <"$work/added"
@@ -354,7 +350,6 @@ if [ ! -s "$work/run.tsv" ]; then
   stand_down "no test function was added, and none changed beyond comments or blank lines"
 fi
 
-# ------------------------------------------------------- the pre-change tree
 git worktree add --detach --quiet "$tree" "$before" \
   || die "cannot materialise the pre-change tree at $before"
 
@@ -367,7 +362,6 @@ while IFS= read -r path; do
   rm -f "$tree/$path"
 done <"$work/remove"
 
-# ------------------------------------------------------------------- verdict
 record() { printf '%s\t%s\t%s\n' "$1" "$2" "$3" >>"$work/rows.tsv"; }
 : >"$work/rows.tsv"
 
@@ -505,7 +499,6 @@ timedout=0
 cat "$work/out.txt"
 printf '::endgroup::\n'
 
-# ----------------------------------------------------------- judge by name
 # esc <s> — escape for a grep -E pattern.
 # shellcheck disable=SC2016  # single-quoted on purpose: nothing should expand
 esc() { printf '%s' "$1" | sed 's/[][\\.^$()|*+?{}]/\\&/g'; }

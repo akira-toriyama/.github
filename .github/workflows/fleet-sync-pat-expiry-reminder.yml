@@ -52,8 +52,6 @@ jobs:
           WRITE_PAT: ${{ secrets.PROJECTS_WRITE_PAT }}
         run: |
           set -euo pipefail
-          # FLEET_SYNC_PAT: the token whose expiry we watch. PROJECTS_WRITE_PAT: how
-          # we write the reminder to the tracker. Missing either -> dormant.
           if [ -z "${FLEET_PAT:-}" ] || [ -z "${WRITE_PAT:-}" ]; then
             echo "::notice::FLEET_SYNC_PAT or PROJECTS_WRITE_PAT not set — reminder dormant until both configured."
             echo "proceed=false" >> "$GITHUB_OUTPUT"
@@ -150,7 +148,6 @@ jobs:
           set -euo pipefail
           tasks="$(furrow ls -l security --json || echo '[]')"
 
-          # Already an open (not-done) FLEET_SYNC_PAT-rotation task? -> nothing to do.
           open="$(printf '%s' "$tasks" | jq --arg m "$MARKER" \
             '[.[] | select(.status != "done" and (.title | contains($m)))] | length')"
           if [ "$open" -gt 0 ]; then

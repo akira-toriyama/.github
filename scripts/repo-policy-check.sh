@@ -52,7 +52,7 @@ broken=0
 [ -d "$dir" ] || { echo "repo-policy: no such directory: $dir" >&2; exit 2; }
 [ -f "$floorscan" ] || { echo "repo-policy: missing $floorscan" >&2; exit 2; }
 
-# --- check 1: translation files, by tracked path -----------------------------
+# Check 1: translation files, by tracked path
 while IFS= read -r f; do
   # Declared review copy: all three header words within the first ten lines.
   # A missing file (tracked but absent from this tree) reads as undeclared —
@@ -67,7 +67,7 @@ while IFS= read -r f; do
   violations=$((violations + 1))
 done < <(git -C "$dir" ls-files | grep -E '(^|/)[^/]+\.ja\.[^/]+$' || true)
 
-# --- check 2: availability gates at or below the declared macOS floor --------
+# Check 2: availability gates at or below the declared macOS floor
 floor=""
 if [ -f "$dir/Package.swift" ]; then
   floor="$(bash "$floorscan" < "$dir/Package.swift" \
@@ -131,7 +131,6 @@ if [ -n "$floor" ]; then
   done < <(git -C "$dir" ls-files -- Sources Tests | grep '\.swift$' || true)
 fi
 
-# --- verdict -----------------------------------------------------------------
 if [ "$broken" -gt 0 ]; then
   echo "repo-policy: $broken unreadable record(s) — failing loud" >&2
   exit 2

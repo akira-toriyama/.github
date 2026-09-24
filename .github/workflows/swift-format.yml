@@ -67,8 +67,6 @@ jobs:
           PATHS: ${{ inputs.paths }}
         run: |
           set -euo pipefail
-          # Lint only the paths that exist, so a repo without a Tests dir (or with a
-          # custom layout) doesn't fail on a missing path.
           paths=""
           for p in $PATHS; do
             if [ -e "$p" ]; then

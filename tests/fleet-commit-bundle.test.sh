@@ -101,7 +101,7 @@ check() { # check <name> <condition...>
   fi
 }
 
-# ---- two files, one push — the property this file exists for ---------------
+# two files, one push — the property this file exists for
 fresh base-1
 out="$(run_script o/r main "$stub_dir/one.yml:.github/workflows/one.yml" "$stub_dir/two.md:docs/two.md")"; rc=$?
 check "two files exit 0 and report the bundle" \
@@ -125,7 +125,7 @@ check "the multi-file message says how many and lists them" \
   jqe '.message == ":wrench:(fleet)= sync 2 standard files in one push\n\n.github/workflows/one.yml\ndocs/two.md"' \
   "$STUB_HOME/commit-payload.json"
 
-# ---- one file keeps the subject-only shape, in glyph's grammar -------------
+# one file keeps the subject-only shape, in glyph's grammar
 fresh base-1
 out="$(run_script o/r main "$stub_dir/one.yml:.github/workflows/one.yml")"; rc=$?
 check "single file exits 0" [ "$rc" -eq 0 ]
@@ -133,7 +133,7 @@ check "single-file message is the subject-only glyph form exactly" \
   jqe '.message == ":wrench:(fleet)= sync .github/workflows/one.yml"' \
   "$STUB_HOME/commit-payload.json"
 
-# ---- a refused update with an unmoved tip is the PR-fallback verdict -------
+# a refused update with an unmoved tip is the PR-fallback verdict
 fresh base-1
 touch "$STUB_HOME/refuse-patch"
 out="$(run_script o/r main "$stub_dir/one.yml:.github/workflows/one.yml")"; rc=$?
@@ -141,7 +141,7 @@ check "protected branch exits 3, not 1" [ "$rc" -eq 3 ]
 check "protection is not retried as if it were a race" \
   [ "$(grep -c '^PATCH .*git/refs' "$STUB_HOME/calls.log")" -eq 1 ]
 
-# ---- a refused update with a MOVED tip is a race: rebuild once and land ----
+# a refused update with a MOVED tip is a race: rebuild once and land
 fresh base-1 base-2
 touch "$STUB_HOME/refuse-patch-once"
 out="$(run_script o/r main "$stub_dir/one.yml:.github/workflows/one.yml")"; rc=$?
@@ -149,7 +149,7 @@ check "race rebuilds on the new tip and exits 0" [ "$rc" -eq 0 ]
 check "the second commit's parent is the moved tip" \
   jqe '.parents == ["base-2"]' "$STUB_HOME/commit-payload.json"
 
-# ---- API failures are exit 1 (counted failed), never a silent pass ---------
+# API failures are exit 1 (counted failed), never a silent pass
 fresh base-1
 touch "$STUB_HOME/fail-blobs"
 out="$(run_script o/r main "$stub_dir/one.yml:.github/workflows/one.yml")"; rc=$?
@@ -157,13 +157,13 @@ check "a blob failure exits 1" [ "$rc" -eq 1 ]
 check "nothing was committed after a blob failure" \
   [ "$(grep -c '^POST .*git/commits$' "$STUB_HOME/calls.log")" -eq 0 ]
 
-# ---- a missing source file must not commit a partial bundle ----------------
+# a missing source file must not commit a partial bundle
 fresh base-1
 out="$(run_script o/r main "$stub_dir/one.yml:.github/workflows/one.yml" "$stub_dir/absent.yml:docs/two.md")"; rc=$?
 check "a missing src exits 1 before any commit" \
   [ "$rc" -eq 1 -a "$(grep -c '^POST .*git/commits$' "$STUB_HOME/calls.log")" -eq 0 ]
 
-# ---- usage guard -----------------------------------------------------------
+# usage guard
 if run_script o/r main >/dev/null; then
   echo "FAIL - no pairs must refuse with usage"; fails=$((fails + 1))
 else

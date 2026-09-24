@@ -36,7 +36,7 @@ case_() {
 
 tab="$(printf '\t')"
 
-# ---- merges: commits that arm the trap ------------------------------------
+# merges: commits that arm the trap
 
 # The exact shape `gh pr merge --merge` leaves on main: a two-parent commit
 # authored by the merging integration. This is the record the audit reds on.
@@ -92,7 +92,7 @@ case_ merges "non-numeric parent count is malformed, not skipped" \
 "iiii000${tab}two${tab}renovate[bot]" \
 "malformed-input${tab}-${tab}1"
 
-# ---- workflows: the word before the commit exists -------------------------
+# workflows: the word before the commit exists
 
 # The arming line this audit exists to catch: one word in a workflow, and the
 # next release walk silently drops a pull from notes and version.
@@ -188,7 +188,7 @@ EOF
 )" \
 ""
 
-# ---- the audit must not flag itself ---------------------------------------
+# the audit must not flag itself
 
 # The audit workflow sits inside its own scan scope, and its error messages
 # are executable echo lines with their quotes erased before matching — the
@@ -211,7 +211,7 @@ else
   fails=$((fails + 1))
 fi
 
-# ---- mode dispatch --------------------------------------------------------
+# mode dispatch
 
 if usage_out="$(printf '' | bash "$script" 2>&1)"; then
   echo "FAIL - missing mode must refuse, got rc=0: $usage_out"

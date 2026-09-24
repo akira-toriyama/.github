@@ -32,10 +32,8 @@ jobs:
           # artipacked); nothing downstream needs it. t-2nh8
           persist-credentials: false
       - name: taplo lint
-        # Syntax + semantic checks; validates against per-repo `#:schema` when present.
         run: npx --yes @taplo/cli@0.7.0 lint
       - name: taplo fmt --check
-        # Style enforcement (the central edit the lint comment anticipated). All
-        # caller repos' *.toml are normalized to taplo's default style; a drifting
-        # file fails here. Regenerate with `npx @taplo/cli@0.7.0 fmt`.
+        # Every caller repo's *.toml is normalized to taplo's default style; a
+        # drifting file fails here. Regenerate with `npx @taplo/cli@0.7.0 fmt`.
         run: npx --yes @taplo/cli@0.7.0 fmt --check

@@ -488,17 +488,15 @@ jobs:
       - name: Table-test apply-repo-settings
         run: bash tests/apply-repo-settings.test.sh
 
-  # The same pure-shell tables again, on macOS. (This comment used to say "three"
-  # while the step below ran four — a hand-kept count in prose next to the list it
-  # counts.) Not redundancy: the author's
+  # The same pure-shell tables again, on macOS. Not redundancy: the author's
   # machine is macOS with a BSD userland, so a GNU-only construct here means the
   # only local way to see this logic run is unavailable exactly when it is needed.
   # That was not hypothetical — bump-formula.sh used GNU `sed -i` with the
   # `0,/re/` address and its table failed 5 of 8 cases locally while passing in
   # CI, so the one check that could catch a formula-mutation bug before it reached
-  # a tap could not be run by the person writing the change. Cheap: all three are
-  # sub-second, and go-bite (which needs Go and builds throwaway repos) stays
-  # linux-only.
+  # a tap could not be run by the person writing the change. Cheap: every table
+  # here is sub-second; go-bite and swift-bite need a toolchain and keep their
+  # own jobs.
   posix-portability:
     runs-on: macos-latest
     timeout-minutes: 10

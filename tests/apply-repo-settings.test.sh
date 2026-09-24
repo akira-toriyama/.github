@@ -109,9 +109,7 @@ fail() {
   fails=$((fails + 1))
 }
 
-# ---------------------------------------------------------------------------
 # A fleet in which `hasit` carries the CANONICAL caller and `lacks` carries none.
-# ---------------------------------------------------------------------------
 STUB_HOME="$stub_dir/fleet-a"; mkdir -p "$STUB_HOME"
 printf 'hasit\tPUBLIC\nlacks\tPUBLIC\n' >"$STUB_HOME/repos"
 cp "$canonical" "$STUB_HOME/commit-lint.hasit"
@@ -134,10 +132,8 @@ else
   fail "a detected caller reaches the protection decision"
 fi
 
-# ---------------------------------------------------------------------------
 # The regression itself: a fleet still on the RETIRED hub reusable matches
 # nothing. That must be a loud, non-zero failure, not a clean sweep.
-# ---------------------------------------------------------------------------
 STUB_HOME="$stub_dir/fleet-retired"; mkdir -p "$STUB_HOME"
 printf 'hasit\tPUBLIC\n' >"$STUB_HOME/repos"
 cat >"$STUB_HOME/commit-lint.hasit" <<'OLD'
@@ -156,9 +152,7 @@ else
   fail "zero detector matches is a loud non-zero failure"
 fi
 
-# ---------------------------------------------------------------------------
 # WITH_PROTECTION off: the zero-match check must stay quiet (it examined nothing).
-# ---------------------------------------------------------------------------
 run_script
 if [ "$RC" -eq 0 ] && ! printf '%s' "$OUT" | grep -q "matched NONE"; then
   pass "the zero-match check is silent when protection is not requested"
@@ -166,11 +160,9 @@ else
   fail "the zero-match check is silent when protection is not requested"
 fi
 
-# ---------------------------------------------------------------------------
 # APPLY mode in which every mutation fails (an expired token) must not report
 # success. This is the second half of the same defect class: run() printed
 # ::FAILED:: per call, counted nothing, and the script exited 0 regardless.
-# ---------------------------------------------------------------------------
 STUB_HOME="$stub_dir/fleet-403"; mkdir -p "$STUB_HOME"
 printf 'hasit\tPUBLIC\n' >"$STUB_HOME/repos"
 cp "$canonical" "$STUB_HOME/commit-lint.hasit"
@@ -185,10 +177,8 @@ else
   fail "APPLY with failing mutations exits non-zero"
 fi
 
-# ---------------------------------------------------------------------------
 # ONLY= must still work — it is how the operator canaries one repo, and the
 # fleet-change policy's canary stage depends on it.
-# ---------------------------------------------------------------------------
 STUB_HOME="$stub_dir/fleet-a"
 run_script ONLY=lacks
 if [ "$RC" -eq 0 ] \
@@ -199,12 +189,10 @@ else
   fail "ONLY= limits the run to one repo"
 fi
 
-# ---------------------------------------------------------------------------
 # The `build` context (t-jvdr): required ONLY where a check-run named `build`
 # exists on the default branch HEAD — ground truth, because a required context
 # that no run produces wedges every PR invisibly (the t-c51t shape). The swift
 # family's `build` was hand-added per repo; every new repo opened the hole again.
-# ---------------------------------------------------------------------------
 STUB_HOME="$stub_dir/fleet-build"; mkdir -p "$STUB_HOME"
 printf 'appish\tPUBLIC\nlibish\tPUBLIC\n' >"$STUB_HOME/repos"
 cp "$canonical" "$STUB_HOME/commit-lint.appish"
@@ -235,13 +223,11 @@ else
 fi
 rm -f "$STUB_HOME/check-runs-fail"
 
-# ---------------------------------------------------------------------------
 # FAIL_ON_DIFF — the audit mode repo-settings-audit.yml runs on a schedule.
 # Both directions: a compliant fleet must stay green (an audit that cries wolf
 # gets ignored), and a drifted one must be a loud non-zero, not a wall of
 # `would:` lines under exit 0 — which is exactly how 10 repos sat with
 # Dependabot alerts OFF for weeks (t-qsea).
-# ---------------------------------------------------------------------------
 STUB_HOME="$stub_dir/fleet-clean"; mkdir -p "$STUB_HOME"
 printf 'hasit\tPUBLIC\n' >"$STUB_HOME/repos"
 cp "$canonical" "$STUB_HOME/commit-lint.hasit"

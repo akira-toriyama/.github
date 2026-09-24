@@ -189,11 +189,9 @@ jobs:
 EOF
 )" "$(printf 'uses\tv0.11.1\t4\nversion\tv0.11.1\t6')"
 
-# ---------------------------------------------------------------------------
 # Refs that are NOT a concrete release tag. Each of these produced ZERO output
 # before the `uses:` match was widened — indistinguishable, to the audit, from a
 # file with no glyph reference at all.
-# ---------------------------------------------------------------------------
 case_ "a branch ref is reported, not skipped" "$(cat <<'EOF'
 jobs:
   lint:

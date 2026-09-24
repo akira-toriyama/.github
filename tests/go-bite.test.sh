@@ -19,7 +19,7 @@ fails=0
 # toolchain that this table has no reason to require.
 export TEST_ARGS="-count=1"
 
-# --------------------------------------------------------------------- harness
+# harness
 
 # repo_new creates a git repo whose "before" commit holds a package with one
 # always-passing test, and leaves $REPO/$BEFORE set.
@@ -90,7 +90,7 @@ expect() {
   rm -rf "$REPO"
 }
 
-# ----------------------------------------------------------------------- cases
+# cases
 
 # A new test that passes against the old source pins nothing. This is the whole
 # point of the gate: the fix is real, but the test would have been green without it.
@@ -692,7 +692,7 @@ RC=$?
 expect 2 "an unreachable base commit is an environment error" \
   'fetch-depth'
 
-# ---------------------------------------------------------------------- result
+# result
 if [ "$fails" -ne 0 ]; then
   echo "$fails case(s) failed"
   exit 1

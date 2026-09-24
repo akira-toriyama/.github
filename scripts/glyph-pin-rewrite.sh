@@ -159,14 +159,12 @@ if [ -s "$tmp" ] && [ "$(tail -c 1 "$tmp" | wc -l | tr -d ' ')" -eq 0 ]; then
   head -c "$(( $(wc -c < "$out") - 1 ))" "$out" > "$out.trim" && mv "$out.trim" "$out"
 fi
 
-# ---------------------------------------------------------------------------
 # (a) Nothing outside the reported lines moved, and the file is the same length.
 #
 # This is the check that turns "the regexes above are careful" into something a
 # reviewer does not have to take on faith. The hand rollout that motivated this
 # script ran the same check by eye across 14 repos before applying; doing it in
 # code is the only version that survives the next release.
-# ---------------------------------------------------------------------------
 stray="$(awk -v usesl="$uses_lines" -v verl="$ver_lines" '
 BEGIN {
   n = split(usesl, a, " "); for (i = 1; i <= n; i++) if (a[i] != "") K[a[i] + 0] = 1
@@ -186,11 +184,9 @@ if [ -n "$stray" ]; then
   exit 3
 fi
 
-# ---------------------------------------------------------------------------
 # (b) The audit's own eyes, run over the result. A substitution that quietly
 # matched nothing leaves the file unchanged and would otherwise be reported as a
 # clean rewrite — this is what catches that.
-# ---------------------------------------------------------------------------
 left="$(bash "$scan" < "$out" | awk -F'\t' -v want="$want" '$2 != want { print $1 " " $2 " at line " $3 }')"
 if [ -n "$left" ]; then
   echo "$0: refusing — after rewriting, these pins are still not $want:" >&2

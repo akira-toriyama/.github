@@ -145,9 +145,9 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Scheduled runs apply; manual runs honour the dry-run input. Same
-          # convention as fleet-sync, deliberately — a fleet operator should not
-          # have to remember which of two fleet writers defaults which way.
+          # The same dry-run convention as fleet-sync, deliberately — a fleet
+          # operator should not have to remember which of two fleet writers
+          # defaults which way.
           DRY="${DRY_RUN:-false}"
           [ "$EVENT" = "schedule" ] && DRY=false
           echo "event=$EVENT dry-run=$DRY"

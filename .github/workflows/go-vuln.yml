@@ -92,8 +92,6 @@ jobs:
           # scanner reports less and stays green.
           GOTOOLCHAIN=auto go install golang.org/x/vuln/cmd/govulncheck@latest
           govulncheck ./...
-          # Also scan the actual compiled binary — catches stdlib vulns reachable in
-          # the shipped artifact (the GO-2025-3595 class), which source mode can miss.
           if [ -n "$BINARY_PATH" ]; then
             bin="$(mktemp)"
             go build -o "$bin" "$BINARY_PATH"
