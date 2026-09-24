@@ -54,6 +54,18 @@
 # that was mechanical; merging them is a judgment about a repo's own release
 # workflow.
 #
+# THE BRANCH IS REBUILT, NEVER ADOPTED. Each apply run re-derives the
+# `glyph-pin/vX.Y.Z` branch as ONE commit on the repo's current default-branch
+# tip and force-moves the ref onto it — or writes nothing when the branch
+# already is that (scripts/glyph-pin-land.sh, table-tested). Until t-xr4k it
+# wrote each file with the Contents API onto whatever the branch held: that API
+# commits on every PUT, identical bytes included, so the nightly stacked one
+# EMPTY commit per night on every open pull request, and the branch never
+# followed its base — the first fleet-sync push after it opened left 6 of the
+# 17 v3.3.1 pull requests BEHIND under strict protection, unmergeable for 8
+# days. The rebuild is fenced: a branch carrying a commit this workflow did
+# not author is left alone.
+#
 # Reading order after a glyph release: fleet-sync (06:00) distributes the two,
 # this (06:20) opens pull requests for the rest, glyph-pin-audit (06:30) reports
 # what is still off — and stays red until the pull requests merge, correctly.
@@ -204,30 +216,29 @@ jobs:
           [ -n "${MANAGED// /}" ] || { echo "::error::MANIFEST parsed to an empty dest list — refusing to run"; exit 1; }
           echo "fleet-managed dests (skipped here):$MANAGED"
 
+          # Each line is "<name> <default-branch>": the default branch comes free
+          # with the listing, and the per-repo pass below pins itself to ONE tip
+          # sha of it — the listing, the file reads and the landing all see the
+          # same commit, so a push landing mid-run cannot slip an older file's
+          # rewrite over the newer one.
           mapfile -t REPOS < <(gh repo list "$OWNER" --no-archived --source --limit 200 \
-            --json name,isFork -q '.[] | select(.isFork==false) | .name' | sort)
+            --json name,isFork,defaultBranchRef -q '.[] | select(.isFork==false) | "\(.name) \(.defaultBranchRef.name)"' | sort)
           [ "${#REPOS[@]}" -ge 1 ] || { echo "::error::empty repo list from gh repo list — aborting (transient API failure?)."; exit 1; }
           echo "considering ${#REPOS[@]} repos"
 
-          # Create-or-adopt the per-repo branch and resolve the default branch.
-          # Reads the loop's $full/$branch, sets $db. One home because two
-          # callers need it now: the first rewritten FILE, and a repo whose
-          # pins are level but whose glyph.toml is missing (config-only PR).
-          ensure_branch() {
-            db="$(gh api "repos/$full" --jq .default_branch)" || return 1
-            if ! gh api "repos/$full/git/ref/heads/$branch" >/dev/null 2>/dev/null; then
-              local bsha
-              bsha="$(gh api "repos/$full/git/ref/heads/$db" --jq .object.sha)" || return 1
-              gh api -X POST "repos/$full/git/refs" -f "ref=refs/heads/$branch" -f "sha=$bsha" >/dev/null || return 1
-            fi
-          }
-
           rewritten=0; prs=0; unfixable=0; skipped=0; hard=0; configs=0
-          for repo in "${REPOS[@]}"; do
+          for line in "${REPOS[@]}"; do
+            repo="${line%% *}"; db="${line#* }"
             if [ -n "$ONLY_REPO" ] && [ "$repo" != "$ONLY_REPO" ]; then continue; fi
             full="$OWNER/$repo"
 
-            tree="$(gh api "repos/$full/git/trees/HEAD?recursive=1" --jq \
+            base="$(gh api "repos/$full/git/ref/heads/$db" --jq .object.sha 2>/dev/null || true)"
+            if [ -z "$base" ]; then
+              echo "::warning::glyph-pin-rewrite: could not read the tip of $full@$db — it was NOT examined this run"
+              skipped=$((skipped + 1))
+              continue
+            fi
+            tree="$(gh api "repos/$full/git/trees/$base?recursive=1" --jq \
               '.tree[] | select(.path | startswith(".github/")) | select(.path | test("\\.ya?ml$")) | .path' 2>/dev/null || true)"
             if [ -z "$tree" ]; then
               # NOT silent. A repo this loop could not read is a repo it did not
@@ -239,12 +250,15 @@ jobs:
 
             branch="glyph-pin/$want"
             changed_paths=""
+            pairs=()
+            rm -rf "$RUNNER_TEMP/new"; mkdir -p "$RUNNER_TEMP/new"
             has_glyph_ref=0
             from_refs=""
             while IFS= read -r path; do
               [ -n "$path" ] || continue
-              orig="$RUNNER_TEMP/orig.yml"; new="$RUNNER_TEMP/new.yml"
-              if ! gh api "repos/$full/contents/$path" --jq '.content' 2>/dev/null | base64 -d > "$orig" 2>/dev/null || [ ! -s "$orig" ]; then
+              # One rewritten file per path: they are landed together, below.
+              orig="$RUNNER_TEMP/orig.yml"; new="$RUNNER_TEMP/new/${path//\//__}"
+              if ! gh api "repos/$full/contents/$path?ref=$base" --jq '.content' 2>/dev/null | base64 -d > "$orig" 2>/dev/null || [ ! -s "$orig" ]; then
                 echo "::warning::glyph-pin-rewrite: could not read $full $path — it was NOT examined this run"
                 skipped=$((skipped + 1))
                 continue
@@ -312,38 +326,9 @@ jobs:
               rewritten=$((rewritten + 1))
               [ "$DRY" = "true" ] && continue
 
-              # Land it on the branch. The branch is created off the default
-              # branch the first time it is needed, so a repo with nothing to fix
-              # never grows one.
-              if [ -z "$changed_paths" ]; then
-                ensure_branch \
-                  || { echo "::warning::glyph-pin-rewrite: cannot prepare $branch on $full; skipping"; skipped=$((skipped + 1)); continue; }
-              fi
-
-              # Re-read the path ON THE BRANCH for its blob sha: a re-run after a
-              # partial failure must update, not collide.
-              bsha2=""
-              if bjson="$(gh api "repos/$full/contents/$path?ref=$branch" 2>/dev/null)"; then
-                bsha2="$(printf '%s' "$bjson" | jq -r '.sha')"
-              fi
-              # The `[bot]` author is attribution only: glyph v1's `*[bot]`
-              # skip was removed in v2 (glyph f5a7f2a, #187) and no fleet
-              # glyph.toml excludes this name, so it buys nothing in lint OR
-              # in the fold. The `=` is what keeps a pin move from bumping the
-              # consumer repo's release — a glyph pin is that repo's CI input,
-              # not its API.
-              pargs=(-X PUT "repos/$full/contents/$path"
-                -f "message=:arrow_up:(ci)= pin glyph $want in $path"
-                -f "author[name]=glyph-pin-rewrite[bot]"
-                -f "author[email]=glyph-pin-rewrite[bot]@users.noreply.github.com"
-                -f "content=$(base64 -w0 < "$new")" -f "branch=$branch")
-              # `if`, not `[ … ] && …`: a run: block is bash -e, and the empty-sha
-              # case (a file NEW on the branch) turns the guard itself into the
-              # failing last command — measured killing run 32863341701 on the
-              # config arm's first live write.
-              if [ -n "$bsha2" ]; then pargs+=(-f "sha=$bsha2"); fi
-              gh api "${pargs[@]}" >/dev/null \
-                || { echo "::warning::glyph-pin-rewrite: cannot write $path on $full@$branch; skipping"; skipped=$((skipped + 1)); continue; }
+              # Queued, not written: every path of a repo lands as ONE commit
+              # once the config arm below has had its say.
+              pairs+=("$new:$path")
               changed_paths="$changed_paths $path"
             done <<< "$tree"
 
@@ -355,28 +340,13 @@ jobs:
             # repo is skipped whole (no PR, counted, loud).
             if [ -n "$config_src" ] && [ "$has_glyph_ref" -eq 1 ]; then
               cfg_err="$RUNNER_TEMP/cfg.err"
-              if gh api "repos/$full/contents/glyph.toml" >/dev/null 2>"$cfg_err"; then
+              if gh api "repos/$full/contents/glyph.toml?ref=$base" >/dev/null 2>"$cfg_err"; then
                 : # config present — the repo's own grammar, never touched here
               elif grep -qE 'HTTP 404' "$cfg_err"; then
                 echo "needs-config: $full"
                 configs=$((configs + 1))
                 if [ "$DRY" != "true" ]; then
-                  if [ -z "$changed_paths" ] && ! ensure_branch; then
-                    echo "::warning::glyph-pin-rewrite: cannot prepare $branch on $full for its glyph.toml; skipping"
-                    skipped=$((skipped + 1)); continue
-                  fi
-                  csha=""
-                  if cjson="$(gh api "repos/$full/contents/glyph.toml?ref=$branch" 2>/dev/null)"; then
-                    csha="$(printf '%s' "$cjson" | jq -r '.sha')"
-                  fi
-                  cargs=(-X PUT "repos/$full/contents/glyph.toml"
-                    -f "message=:wrench:(ci)= add glyph.toml — the v3 engine reads the repo's own grammar"
-                    -f "author[name]=glyph-pin-rewrite[bot]"
-                    -f "author[email]=glyph-pin-rewrite[bot]@users.noreply.github.com"
-                    -f "content=$(base64 -w0 < "$config_src")" -f "branch=$branch")
-                  if [ -n "$csha" ]; then cargs+=(-f "sha=$csha"); fi
-                  gh api "${cargs[@]}" >/dev/null \
-                    || { echo "::warning::glyph-pin-rewrite: cannot write glyph.toml on $full@$branch; skipping"; skipped=$((skipped + 1)); continue; }
+                  pairs+=("$config_src:glyph.toml")
                   changed_paths="$changed_paths glyph.toml"
                 fi
               else
@@ -409,8 +379,28 @@ jobs:
             # shellcheck disable=SC2016  # the backticks are markdown code spans in the PR body, not command substitution
             body="$(printf 'Moves every glyph pin in this repo to **%s** (%s), the version `fleet/commit-lint.yml` distributes.\n\nThese sites are NOT fleet-managed: they live in files this repo owns, so `fleet-sync` cannot byte-copy them and until now they moved only by hand — one pull request per repo, per glyph release.\n%s\nFiles:\n%s\n\nOnly lines carrying a glyph pin were changed; the rewriter refuses and writes nothing if any other line moves. See `akira-toriyama/.github`: `scripts/glyph-pin-rewrite.sh`, `docs/glyph-rollout-runbook.md`.\n' \
               "$want" "$moves" "$config_note" "$(for p in $changed_paths; do printf -- '- %s\n' "$p"; done)")"
+            # The `=` is what keeps a pin move from bumping the consumer repo's
+            # release — a glyph pin is that repo's CI input, not its API. The
+            # same line is the commit's subject (the landing takes the message
+            # whole), so a one-commit squash keeps the sigil.
             title=":arrow_up:(ci)= pin glyph $want ($moves)"
             case "$moves" in "(no pin moved"*) title=":wrench:(ci)= add glyph.toml — the config-first invariant, ahead of the $config_ref pins" ;; esac
+
+            # ONE commit per repo on the tip this pass read from, the branch
+            # rebuilt onto it — or left alone when it already is that. exit 3
+            # is a person's commit on the branch: theirs now, not rebuilt over.
+            set +e
+            land_out="$(bash scripts/glyph-pin-land.sh "$full" "$base" "$branch" \
+              "$title"$'\n\n'"$(for p in $changed_paths; do printf '%s\n' "$p"; done)" "${pairs[@]}" 2>"$RUNNER_TEMP/land.err")"
+            land_rc=$?
+            set -e
+            case "$land_rc" in
+              0) echo "${land_out%% *}: $full $branch@$(printf '%.7s' "${land_out##* }") ($changed_paths )" ;;
+              3) echo "::warning::glyph-pin-rewrite: $branch on $full carries commits this workflow did not author — left as is; update or close it by hand ($(head -c 300 "$RUNNER_TEMP/land.err" | tr '\n' ' '))"
+                 skipped=$((skipped + 1)); continue ;;
+              *) echo "::warning::glyph-pin-rewrite: cannot land $branch on $full; skipping ($(head -c 300 "$RUNNER_TEMP/land.err" | tr '\n' ' '))"
+                 skipped=$((skipped + 1)); continue ;;
+            esac
             if pr_err="$(gh pr create --repo "$full" --base "$db" --head "$branch" \
                  --title "$title" --body "$body" 2>&1)"; then
               echo "pr-opened: $full ($changed_paths )"

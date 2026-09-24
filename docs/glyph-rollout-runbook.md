@@ -153,7 +153,10 @@ config first, pins second, and it changes the sequence above in four ways:
    `glyph-pin/vX.Y.Z` PR per repo still carrying an unmanaged pin, moving the
    `@tag` and the `version:` under it in the same edit. Merge them. (Its
    `workflow_dispatch` defaults to dry-run for the same reason fleet-sync's does;
-   run it without the flag first if you want the list.)
+   run it without the flag first if you want the list.) A pull request that a
+   later fleet-sync push left `BEHIND` catches up on the next scheduled run —
+   the branch is rebuilt on the current tip (`scripts/glyph-pin-land.sh`) — so
+   a stale one is a reason to wait for the nightly, not to update it by hand.
 6. Verify with the audit and the live check below.
 
 ## Traps
