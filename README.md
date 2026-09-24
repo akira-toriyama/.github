@@ -90,8 +90,13 @@ workflow, `actions/install@`, and the `version:` binary pin under it — so
 lines instead: it rewrites **only** the pin lines, in whatever file they are in,
 and opens one `glyph-pin/vX.Y.Z` pull request per repo. The confinement is proved
 rather than intended — [`scripts/glyph-pin-rewrite.sh`](scripts/glyph-pin-rewrite.sh)
-writes nothing at all if any other line moves. Merging the pull requests stays
-manual. Sequence: [`docs/glyph-rollout-runbook.md`](docs/glyph-rollout-runbook.md).
+writes nothing at all if any other line moves. The branch behind each pull
+request is rebuilt on the repo's current default-branch tip on every run — one
+commit, and none when the branch already holds it
+([`scripts/glyph-pin-land.sh`](scripts/glyph-pin-land.sh)) — so a pull request
+that a later fleet-sync push left behind catches up by itself. Merging the pull
+requests stays manual. Sequence:
+[`docs/glyph-rollout-runbook.md`](docs/glyph-rollout-runbook.md).
 
 ## Versioning the reusables
 

@@ -419,6 +419,25 @@ jobs:
       - name: Table-test fleet-commit-bundle
         run: bash tests/fleet-commit-bundle.test.sh
 
+  # RUN the pin-branch writer over a case table (the real .sh, stubbed gh).
+  # glyph-pin-rewrite lands every repo's pin move through this script, and the
+  # two properties it exists for are invisible to a live run that merely
+  # succeeds: a branch already holding the rewrite receives NO commit (the
+  # per-path PUT it replaced stacked one empty commit per night), and a branch
+  # whose base moved is rebuilt on the new tip (t-xr4k: 6 of the 17 v3.3.1
+  # pull requests sat BEHIND and unmergeable for 8 days). The stub records
+  # every mutating call, and the cases assert on the recording.
+  glyph-pin-land-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # Runs a script against a stubbed gh; never pushes (zizmor artipacked). t-2nh8
+          persist-credentials: false
+      - name: Table-test glyph-pin-land
+        run: bash tests/glyph-pin-land.test.sh
+
   # RUN the covered-pull extractor over a case table (the real .sh).
   # glyph-covered-pull-audit.yml asserts an ABSENCE across every owned repo —
   # no bot-authored merge commit in any release window, no --merge/--rebase on
@@ -510,6 +529,7 @@ jobs:
           bash tests/apply-repo-settings.test.sh
           bash tests/platform-floor-scan.test.sh
           bash tests/token-expiry-probe.test.sh
+          bash tests/glyph-pin-land.test.sh
 
   # RUN the go-bite gate over a case table (the real .sh) so a break fails HERE, not
   # in a fleet caller after @v2 moves. Each case builds a throwaway Go repo under
