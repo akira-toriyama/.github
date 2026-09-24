@@ -10,10 +10,10 @@
 # are gone hub-first (t-2nh8) and fleet-wide (t-yaxa): every checkout now either sets
 # `persist-credentials: false` or declares an intentional, commented
 # `persist-credentials: true` (update-tap's two tap-push checkouts, and the tracker
-# push in fleet-sync-pat-expiry-reminder), which artipacked does not report. Running at low keeps artipacked permanently
-# gated on NEW checkouts. Trade-off: any other low-confidence finding gates too —
-# waive a genuine false positive inline with `# zizmor: ignore[rule]` rather than
-# re-raising the floor.
+# push in fleet-sync-pat-expiry-reminder), which artipacked does not report.
+# Running at low keeps artipacked permanently gated on NEW checkouts. Trade-off:
+# any other low-confidence finding gates too — waive a genuine false positive
+# inline with `# zizmor: ignore[rule]` rather than re-raising the floor.
 
 rules:
   unpinned-uses:

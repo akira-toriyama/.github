@@ -53,8 +53,6 @@ import Foundation
 // `grep -r bite-exempt` finds both ends of the contract.
 let exemptMarker = "bite-exempt:"
 
-// ---------------------------------------------------------------- sourcekitd
-
 typealias Obj = UnsafeMutableRawPointer
 
 let devDir: String = {
@@ -119,8 +117,6 @@ func structure(of file: String) -> [String: Any]? {
     let data = Data(bytes: json, count: strlen(json))
     return (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
 }
-
-// ------------------------------------------------------------------- helpers
 
 struct SourceFile {
     let path: String
@@ -204,8 +200,6 @@ struct CommentSpan {
     let endLine: Int
     let text: String
 }
-
-// ----------------------------------------------------------------- the walk
 
 var records: [Record] = []
 var rc: Int32 = 0

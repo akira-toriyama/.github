@@ -98,8 +98,7 @@ jobs:
           go-version-file: ${{ inputs.go-version-file }}
           cache: true
 
-      # Module hygiene: go.mod/go.sum must be tidy and the deps must match go.sum.
-      # OS-independent, so one leg is enough. `-diff` is a no-op unless drift exists.
+      # OS-independent, so one leg is enough.
       - name: module hygiene (go mod tidy -diff + verify)
         if: runner.os == 'Linux'
         run: |

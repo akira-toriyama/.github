@@ -172,7 +172,6 @@ for line in "${REPOS[@]}"; do
     if [ "$cs_state" = "configured" ] && [ "$cs_has_actions" = 1 ]; then
       echo "    ok: code scanning already configured (actions) in $R"
     elif [ "$cs_state" = "configured" ]; then
-      # configured for other languages only -> add actions, preserve the rest (no clobber)
       body=$(printf '%s' "$cs" | jq -c '{state:"configured", languages:((.languages // [])+["actions"]|unique)}')
       run "code-scanning: add 'actions' to configured set $(printf '%s' "$cs" | jq -c '.languages')" \
         gh api -X PATCH "repos/$full/code-scanning/default-setup" --input - <<<"$body"
@@ -276,7 +275,6 @@ for line in "${REPOS[@]}"; do
       else
         echo "    warn: cannot read check-runs on $R@HEAD — 'build' not considered this run (the next run heals)"
       fi
-      # Drop whatever an active ruleset already requires; protect the rest.
       need=""
       while IFS= read -r w; do
         [ -n "$w" ] || continue

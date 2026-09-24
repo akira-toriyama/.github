@@ -137,7 +137,6 @@ stand_down() {
   exit 0
 }
 
-# ---------------------------------------------------------------- change survey
 # --no-renames turns a rename into delete+add, which is exactly what the overlay
 # wants (drop the old path, treat the new one as wholly new) and keeps name-status
 # to two fields.
@@ -246,7 +245,6 @@ if [ ! -s "$work/added" ] && [ ! -s "$work/modified" ] && [ ! -s "$work/fuzz" ];
   stand_down "no Go test file or fuzz seed was added or changed"
 fi
 
-# --------------------------------------------------- test functions at HEAD
 (cd "$work" && go build -o bitescan "$here/bitescan.go") || die "cannot build bitescan"
 
 : >"$work/funcs.tsv"
@@ -284,10 +282,8 @@ scan_package() {
 cat "$work/added" "$work/modified" >"$work/changed"
 extract "$work/changed"
 
-# ------------------------------------------------------------------ selection
 : >"$work/selected.tsv"
 
-# Every test function in an added file is new.
 while IFS= read -r path; do
   awk -F'\t' -v f="$path" '$1 == f && $6 == "run"' "$work/funcs.tsv" >>"$work/selected.tsv"
 done <"$work/added"
@@ -398,7 +394,6 @@ if [ ! -s "$work/run.tsv" ]; then
   stand_down "no test function was added, and none changed beyond comments or blank lines"
 fi
 
-# ------------------------------------------------------- the pre-change tree
 git worktree add --detach --quiet "$tree" "$before" \
   || die "cannot materialise the pre-change tree at $before"
 
@@ -411,7 +406,6 @@ while IFS= read -r path; do
   rm -f "$tree/$path"
 done <"$work/remove"
 
-# ------------------------------------------------------------------- verdict
 # The nearest go.mod above a package is its module root; run there, so a nested
 # module is tested as itself rather than as a stray directory of the outer one.
 module_root() {

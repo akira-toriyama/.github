@@ -36,7 +36,6 @@ fail() {
   fails=$((fails + 1))
 }
 
-# plain bump moves url + sha
 run_case plain.rb v2.0.0 "$NEWSHA" akira-toriyama/facet facet false
 if [ "$RC" -eq 0 ] \
   && grep -q "github.com/akira-toriyama/facet/archive/refs/tags/v2.0.0.tar.gz" "$WORK" \
@@ -46,7 +45,6 @@ else
   fail "plain bump moves url+sha"
 fi
 
-# resource block: third-party url + sha untouched (#98 bug)
 run_case with-resource.rb v2.0.0 "$NEWSHA" akira-toriyama/facet facet false
 if [ "$RC" -eq 0 ] \
   && grep -q "github.com/akira-toriyama/facet/archive/refs/tags/v2.0.0.tar.gz" "$WORK" \
@@ -58,7 +56,6 @@ else
   fail "resource block third-party url+sha untouched (#98)"
 fi
 
-# head spec must not move
 run_case with-head.rb v2.0.0 "$NEWSHA" akira-toriyama/facet facet false
 if [ "$RC" -eq 0 ] \
   && grep -q 'head "https://github.com/akira-toriyama/facet.git", branch: "main"' "$WORK" \
@@ -68,7 +65,6 @@ else
   fail "head line unmoved"
 fi
 
-# revision line dropped on bump
 run_case with-revision.rb v2.0.0 "$NEWSHA" akira-toriyama/facet facet false
 if [ "$RC" -eq 0 ] \
   && ! grep -qE '^  revision [0-9]+$' "$WORK" \
@@ -78,7 +74,6 @@ else
   fail "revision line dropped"
 fi
 
-# downgrade refused (default) — exit 1
 run_case plain.rb v0.9.0 "$NEWSHA" akira-toriyama/facet facet false
 if [ "$RC" -eq 1 ] && printf '%s' "$OUT" | grep -q "Refusing to move"; then
   pass "downgrade refused"
@@ -86,7 +81,6 @@ else
   fail "downgrade refused"
 fi
 
-# downgrade allowed with allow-downgrade=true — exit 0, url moved back
 run_case plain.rb v0.9.0 "$NEWSHA" akira-toriyama/facet facet true
 if [ "$RC" -eq 0 ] \
   && grep -q "github.com/akira-toriyama/facet/archive/refs/tags/v0.9.0.tar.gz" "$WORK"; then
@@ -95,7 +89,6 @@ else
   fail "downgrade allowed with flag"
 fi
 
-# same tag + same sha → no-op, file unchanged
 run_case plain.rb v1.0.0 "$OLDSHA" akira-toriyama/facet facet false
 if [ "$RC" -eq 0 ] \
   && printf '%s' "$OUT" | grep -q "already at v1.0.0" \

@@ -60,8 +60,6 @@ fi
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 
-# One message for one push. n=1 names the dest in the subject; n>1 says
-# how many and lists them in the body, one per line.
 message() {
   if [ "$#" -eq 1 ]; then
     printf ':wrench:(fleet)= sync %s' "$1"
@@ -80,7 +78,6 @@ while :; do
   base_tree="$(gh api "repos/$full/git/commits/$base" --jq .tree.sha)" \
     || { echo "cannot read the tree of $full@$base" >&2; exit 1; }
 
-  # blobs → one tree entry per changed file
   entries="[]"
   dests=()
   for pair in "$@"; do

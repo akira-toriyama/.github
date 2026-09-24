@@ -118,7 +118,7 @@ jobs:
             branch="${row##*$'\t'}"
             full="$OWNER/$repo"
 
-            # ---- 1. the COMMIT: bot-authored merges inside the next walk's
+            # 1. the COMMIT: bot-authored merges inside the next walk's
             # window. `releases/latest` is the latest PUBLISHED release — the
             # fleet's rolling drafts are invisible to it, which is right: the
             # walk base is the last tag actually cut.
@@ -159,7 +159,7 @@ jobs:
               apifail=$((apifail + 1))
             fi # a 404 is a repo that has never released — no walk, no trap
 
-            # ---- 2. the WORD: an arming merge strategy written in a workflow.
+            # 2. the WORD: an arming merge strategy written in a workflow.
             # Same tree walk as glyph-pin-audit.yml, same accounting.
             tree_err="$RUNNER_TEMP/audit-tree.err"
             if ! tree="$(gh api "repos/$full/git/trees/HEAD?recursive=1" --jq \

@@ -114,14 +114,14 @@ check() { # check <name> <condition...>
   fi
 }
 
-# ---- usage ------------------------------------------------------------------
+# usage
 fresh
 run_script >/dev/null; rc=$?
 check "no arguments is usage (exit 2)" [ "$rc" -eq 2 ]
 run_script o/r base-1 glyph-pin/v9.9.9 "$msg" >/dev/null; rc=$?
 check "no files is usage (exit 2)" [ "$rc" -eq 2 ]
 
-# ---- no branch yet: created at ONE commit on the base ----------------------
+# no branch yet: created at ONE commit on the base
 fresh
 out="$(land)"; rc=$?
 check "a missing branch lands: exit 0, landed 2" \
@@ -141,7 +141,7 @@ check "the commit is the bot's, parented on the base, message verbatim" \
          and .message == ":arrow_up:(ci)= pin glyph v9.9.9 (v9.9.8 -> v9.9.9)\n\n.github/workflows/release.yml\nglyph.toml"' \
   "$STUB_HOME/commit-payload.json"
 
-# ---- level: one commit on the base with this tree → NOTHING is written ------
+# level: one commit on the base with this tree → NOTHING is written
 # The empty-commit-per-night failure: the old writer PUT identical bytes here.
 fresh pin-1
 printf 'tree-new base-1\n' > "$STUB_HOME/pin-meta"
@@ -151,7 +151,7 @@ check "a branch already holding the rewrite is level: exit 0" \
 check "…and receives NO commit and NO ref update" \
   [ "$(calls '^POST .*git/commits$')" -eq 0 -a "$(calls '^PATCH')" -eq 0 -a "$(calls '^POST .*git/refs ')" -eq 0 ]
 
-# ---- behind: same tree, but not on the base → rebuilt ON the base ----------
+# behind: same tree, but not on the base → rebuilt ON the base
 # The BEHIND failure: fleet-sync moved main under the branch, and the stacked
 # nightly commits sit on the old tip. All the bot's own, so the force is safe.
 fresh pin-9
@@ -165,7 +165,7 @@ check "the new commit parents on the base, not on the stale head" \
 check "the ref is force-moved exactly once, not re-created" \
   [ "$(calls '^PATCH .*git/refs/heads/glyph-pin/v9.9.9 sha=commit-1 force=true$')" -eq 1 -a "$(calls '^POST .*git/refs ')" -eq 0 ]
 
-# ---- on the base but with other bytes (a partial earlier write) → rebuilt ---
+# on the base but with other bytes (a partial earlier write) → rebuilt
 fresh pin-2
 printf 'tree-old base-1\n' > "$STUB_HOME/pin-meta"
 printf 'glyph-pin-rewrite[bot]\n' > "$STUB_HOME/authors"
@@ -173,7 +173,7 @@ out="$(land)"; rc=$?
 check "a branch on the base with other bytes is rebuilt" \
   [ "$rc" -eq 0 -a "$out" = "landed 2 commit-1" -a "$(calls '^PATCH')" -eq 1 ]
 
-# ---- a person's commit on the branch → untouched, exit 3 -------------------
+# a person's commit on the branch → untouched, exit 3
 fresh pin-3
 printf 'tree-new base-0\n' > "$STUB_HOME/pin-meta"
 printf 'glyph-pin-rewrite[bot]\nSome Person\n' > "$STUB_HOME/authors"
@@ -184,7 +184,7 @@ check "…names the stranger, and moves nothing" \
          && [ \"\$(grep -c '^PATCH' '$STUB_HOME/calls.log')\" -eq 0 ] \
          && [ \"\$(grep -c '^POST .*git/commits\$' '$STUB_HOME/calls.log')\" -eq 0 ]"
 
-# ---- the ref cannot be read, and it is not a 404 → exit 1, nothing created --
+# the ref cannot be read, and it is not a 404 → exit 1, nothing created
 fresh
 touch "$STUB_HOME/ref-500"
 out="$(land)"; rc=$?
@@ -192,7 +192,7 @@ check "an unreadable ref that is not a 404 exits 1" [ "$rc" -eq 1 ]
 check "…and neither creates nor moves nor commits" \
   [ "$(calls '^POST .*git/refs ')" -eq 0 -a "$(calls '^PATCH')" -eq 0 -a "$(calls '^POST .*git/commits$')" -eq 0 ]
 
-# ---- a failed blob → exit 1 before anything moves --------------------------
+# a failed blob → exit 1 before anything moves
 fresh pin-1
 printf 'tree-new base-1\n' > "$STUB_HOME/pin-meta"
 touch "$STUB_HOME/fail-blobs"

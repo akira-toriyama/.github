@@ -83,9 +83,7 @@ refuse_() {
   rm -f "$err"
 }
 
-# ---------------------------------------------------------------------------
 # The three sites fleet-sync cannot reach. These are the whole point.
-# ---------------------------------------------------------------------------
 
 # Site 3: a repo's own release.yml calling glyph's release reusable.
 case_ "release.yml caller pin moves" "$(cat <<'EOF'
@@ -153,7 +151,6 @@ jobs:
 EOF
 )"
 
-# ---------------------------------------------------------------------------
 # Trap 2: commented placeholders must STAY placeholders.
 #
 # glyph's reusables ship a commented caller stub pinned to `@vX.Y.Z`, and glyph's
@@ -164,7 +161,6 @@ EOF
 #
 # The executable `uses:` below is the positive control: without it this case
 # would pass just as well against a rewriter that matches nothing at all.
-# ---------------------------------------------------------------------------
 case_ "a commented placeholder survives while the real pin moves" "$(cat <<'EOF'
 # Example caller:
 #   jobs:
@@ -185,13 +181,11 @@ jobs:
 EOF
 )"
 
-# ---------------------------------------------------------------------------
 # Trap 3: `version:` is a generic input name.
 #
 # taplo, every setup-*, half the fleet's third-party steps take one. The only
 # thing that makes an occurrence a glyph pin is the STEP it sits in — so the
 # glyph step's version moves (positive control) and the neighbour's does not.
-# ---------------------------------------------------------------------------
 case_ "a neighbouring step's version: is left alone" "$(cat <<'EOF'
 jobs:
   release:
@@ -244,9 +238,7 @@ jobs:
 EOF
 )"
 
-# ---------------------------------------------------------------------------
 # Everything around the pin survives the substitution.
-# ---------------------------------------------------------------------------
 case_ "a trailing comment survives the retag" "$(cat <<'EOF'
 jobs:
   lint:
@@ -293,11 +285,9 @@ jobs:
 EOF
 )"
 
-# ---------------------------------------------------------------------------
 # Refs that are not a concrete release tag ARE fixable — that is the point of
 # moving them. Each of these is drift by definition (it can resolve elsewhere
 # tomorrow), and the audit reports it as such.
-# ---------------------------------------------------------------------------
 case_ "a branch ref is pinned to the release" "$(cat <<'EOF'
 jobs:
   lint:
@@ -366,10 +356,8 @@ jobs:
 EOF
 )"
 
-# ---------------------------------------------------------------------------
 # Files that must come back untouched. `same_` asserts byte equality, so a
 # rewriter that "helpfully" reformatted anything fails here.
-# ---------------------------------------------------------------------------
 
 # Already level: the caller compares content to decide whether to write, so an
 # unchanged file MUST be unchanged or every run opens the same PR again.
@@ -411,10 +399,8 @@ jobs:
 EOF
 )"
 
-# ---------------------------------------------------------------------------
 # Refusals. Both write NOTHING to stdout — a caller that redirects stdout into
 # the file it is about to PUT must not be handed a half-rewrite.
-# ---------------------------------------------------------------------------
 
 # Inserting a `version:` is a structural edit, not a pin move. The audit is
 # already red about this file and staying red is the correct outcome.
@@ -452,11 +438,9 @@ for bad in main v0 v0.12 v0.12.0-rc.1 latest ''; do
   fi
 done
 
-# ---------------------------------------------------------------------------
 # A file that ships without a trailing newline must come back without one. awk
 # terminates its last line either way, so this is a real byte difference — and
 # it would make "unchanged" untrue for every such file, forever.
-# ---------------------------------------------------------------------------
 nonl_in="$(mktemp)"; nonl_out="$(mktemp)"
 printf 'jobs:\n  lint:\n    uses: akira-toriyama/glyph/.github/workflows/lint.yml@v0.11.2' > "$nonl_in"
 if bash "$script" "$WANT" < "$nonl_in" > "$nonl_out" 2>/dev/null &&
@@ -471,13 +455,11 @@ else
 fi
 rm -f "$nonl_in" "$nonl_out"
 
-# ---------------------------------------------------------------------------
 # The canonical itself. fleet/commit-lint.yml is the file the audit reads the
 # fleet's intended version OUT of, so the rewriter must agree with it exactly:
 # rewriting the live canonical to the tag it already carries must be a no-op.
 # This is the case that fails when the real fleet file grows a shape none of the
 # invented documents above cover.
-# ---------------------------------------------------------------------------
 canonical="$root/fleet/commit-lint.yml"
 if [ ! -f "$canonical" ]; then
   fail_ "the live canonical rewrites to itself" "missing $canonical"
@@ -493,7 +475,6 @@ else
   fi
 fi
 
-# ---------------------------------------------------------------------------
 # The two runtime guards, pinned by MUTATION.
 #
 # Everything above proves the rewriter is right on inputs it handles correctly.
@@ -505,7 +486,6 @@ fi
 #
 # So break the script on purpose, in a copy, and require the refusal. Same idea
 # as go-bite-self in self-test.yml: hold the guard to the standard it enforces.
-# ---------------------------------------------------------------------------
 mutant_() { # <name> <sed-expression> <expected-rc> <yaml>
   local name="$1" expr="$2" want_rc="$3" in_="$4" dir rc out
   dir="$(mktemp -d)"

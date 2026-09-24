@@ -53,9 +53,7 @@ GLYPH_REUSABLES="$(assign_value GLYPH_REUSABLES)" || {
   exit 1
 }
 
-# ---------------------------------------------------------------------------
 # 1. Every MANIFEST src exists, and every dest is distinct.
-# ---------------------------------------------------------------------------
 missing=""
 dests=""
 dupes=""
@@ -79,7 +77,6 @@ else
   ok "MANIFEST dests are distinct"
 fi
 
-# ---------------------------------------------------------------------------
 # 2. No MANIFEST dest collides with a glyph reusable DEFINITION.
 #
 # fleet-sync already refuses this at run time, but that run is daily and
@@ -87,7 +84,6 @@ fi
 # 287-line pr-verdict reusable with a 25-line caller; only the fact that callers
 # pin tags rather than main kept the fleet up. Catch it on the PR that adds the
 # MANIFEST line instead.
-# ---------------------------------------------------------------------------
 collisions=""
 for pair in $MANIFEST; do
   dest="${pair##*:}"
@@ -105,14 +101,12 @@ else
   ok "no MANIFEST dest collides with a glyph reusable"
 fi
 
-# ---------------------------------------------------------------------------
 # 3. Every distributable file in fleet/ is actually distributed.
 #
 # A canonical that no MANIFEST line names is dead weight that reads as live: the
 # next author edits it, sees a green PR, and ships nothing. Excluded on purpose:
 # README.md (documentation), dependabot.yml + dependabot.d/* (ASSEMBLED per
 # repo inside the sync loop rather than listed as a pair).
-# ---------------------------------------------------------------------------
 undistributed=""
 for f in "$root"/fleet/*; do
   [ -f "$f" ] || continue
@@ -127,14 +121,12 @@ else
   ok "every fleet/ canonical is in MANIFEST"
 fi
 
-# ---------------------------------------------------------------------------
 # 4. Every distributed canonical is DOCUMENTED in fleet/README.md.
 #
 # These files appear unannounced in ~36 repos. fleet/README.md's "Files" section
 # is where a consumer finds out what a file is and who owns it; a canonical that
 # is missing from it is invisible until someone wonders what it is doing there.
 # (version-preview.yml shipped fleet-wide undocumented for exactly this reason.)
-# ---------------------------------------------------------------------------
 undocumented=""
 for pair in $MANIFEST; do
   src="${pair%%:*}"
@@ -148,14 +140,12 @@ else
   ok "every distributed canonical is documented in fleet/README.md"
 fi
 
-# ---------------------------------------------------------------------------
 # 5. dependabot.d/ blocks and their manifest probes agree.
 #
 # The assembly loop appends fleet/dependabot.d/$eco.yml for each `manifest:eco`
 # probe pair. A block with no probe never ships; a probe with no block makes
 # `cat` fail mid-assembly and skips dependabot.yml for that repo. fleet/README.md
 # tells a future author to keep both in step — this makes it true.
-# ---------------------------------------------------------------------------
 probe_line="$(grep -E '^[[:space:]]*for probe in ' "$sync" | head -1)"
 if [ -z "$probe_line" ]; then
   bad "dependabot probe pairs are readable" "no \`for probe in ...\` loop found in $sync"
@@ -184,14 +174,12 @@ else
   fi
 fi
 
-# ---------------------------------------------------------------------------
 # 6. The hub's hand-maintained task-status caller matches the canonical.
 #
 # fleet-sync EXCLUDEs `.github` (it IS the hub), so fleet/task-status.yml never
 # syncs onto the hub and the hub's own copy is maintained BY HAND. The two must
 # agree below their provenance headers — most importantly on the furrow pin, which
 # has to be bumped in BOTH files. Only the leading comment block may differ.
-# ---------------------------------------------------------------------------
 canonical="$root/fleet/task-status.yml"
 hub="$root/.github/workflows/task-status.yml"
 # Drop the leading run of `#` lines (the provenance header) and compare the rest.
@@ -208,7 +196,6 @@ else
     "$(printf '%s' "$diff_out" | head -30)"
 fi
 
-# ---------------------------------------------------------------------------
 # 7. The hub's hand-maintained commit-lint caller pins the same glyph as the
 #    canonical.
 #
@@ -218,7 +205,6 @@ fi
 # reason as task-status: fleet-sync EXCLUDEs the hub. Its job id differs on
 # purpose (`commit-lint`, so main's required check keeps its context), so this
 # compares the PIN rather than the file.
-# ---------------------------------------------------------------------------
 pin_of() { # $1 = file — the tag of the first akira-toriyama `uses:` in it
   awk '$1 == "uses:" && $2 ~ /^akira-toriyama\// { sub(/^.*@/, "", $2); print $2; exit }' "$1"
 }
@@ -236,7 +222,6 @@ else
     "bump both in the same PR — fleet-sync EXCLUDEs .github and will not fix this"
 fi
 
-# ---------------------------------------------------------------------------
 # 8. Every furrow reference in the repo names the same release.
 #
 # The furrow pin has no canonical and three call sites, one of which no `uses:`-
@@ -245,7 +230,6 @@ fi
 # stale furrow pin (v0.2.1/v0.12.0 → v0.13.0)", and the tracker has carried
 # several separate one-off bump tasks for the same mechanical invariant. Bumping
 # furrow should fail here until every site moves together.
-# ---------------------------------------------------------------------------
 furrow_refs="$(grep -rhoE 'akira-toriyama/furrow[^ ]*@v[0-9]+\.[0-9]+\.[0-9]+' \
   "$root/.github/workflows" "$root/fleet" 2>/dev/null | sed 's/^.*@//' | sort -u)"
 furrow_count="$(grep -rlE 'akira-toriyama/furrow[^ ]*@v[0-9]+\.[0-9]+\.[0-9]+' \
@@ -261,7 +245,6 @@ else
     "one call site is a \`FURROW_RELEASE:\` env on a run: step, invisible to any uses:-shaped scan"
 fi
 
-# ---------------------------------------------------------------------------
 # 9. README.md indexes every consumable and every design record.
 #
 # CLAUDE.md declares README.md "the consumer index", and it is the front page a
@@ -271,7 +254,6 @@ fi
 # named seven reusables when there were eight, and the docs index listed eight of
 # ten files — the two missing being the fleet-change policy and the glyph rollout
 # runbook, i.e. the two a fleet author most needs to find.
-# ---------------------------------------------------------------------------
 top_readme="$root/README.md"
 unindexed=""
 # A reusable is a workflow that declares `on: workflow_call`. Matched at the start

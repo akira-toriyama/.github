@@ -39,7 +39,7 @@ if [ "${SWIFT_BITE_TEST_SCAN_ONLY:-}" = "1" ]; then
   scan_only=1
 fi
 
-# ---------------------------------------------------------- capability probe
+# capability probe
 probe() {
   local dir
   dir="$(mktemp -d)"
@@ -85,7 +85,7 @@ if [ "$scan_only" -eq 0 ]; then
   fi
 fi
 
-# --------------------------------------------------------------------- harness
+# harness
 
 # repo_new creates a git repo whose "before" commit holds a package with one
 # always-passing swift-testing test, and leaves $REPO/$BEFORE set.
@@ -175,7 +175,7 @@ public func greet(_ name: String) -> String {
 EOF
 }
 
-# ------------------------------------------------- cases: before the verdict
+# cases: before the verdict
 # These stop before any swift build, so they run even scan-only.
 
 # A test-only pull request claims nothing about behaviour.
@@ -310,7 +310,7 @@ RC=$?
 expect 2 "an unreachable base commit is an environment error" \
   'not in this checkout'
 
-# ----------------------------------------------------- cases: the verdict
+# cases: the verdict
 if [ "$scan_only" -eq 1 ]; then
   # Name every verdict case being skipped, so the tally below cannot read as
   # coverage that never happened.
@@ -685,7 +685,7 @@ expect 0 "a test that crashes without the change is a bite" \
 
 fi  # scan_only
 
-# ----------------------------------------------------------------------- tally
+# tally
 echo
 if [ "$fails" -gt 0 ]; then
   echo "$fails case(s) FAILED"

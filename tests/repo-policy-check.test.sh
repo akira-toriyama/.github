@@ -51,11 +51,11 @@ run_case() {
   echo "ok   - $name"
 }
 
-# --- an empty repo is clean, not an error ------------------------------------
+# an empty repo is clean, not an error
 repo empty
 run_case "empty repo is clean" 0 "repo-policy: clean"
 
-# --- check 1: translation files ----------------------------------------------
+# check 1: translation files
 repo ja-root
 add_file "README.ja.md" <<'EOF'
 # 日本語版
@@ -136,7 +136,7 @@ untracked scratch
 EOF
 run_case "an untracked *.ja.* file is not a violation" 0 "repo-policy: clean"
 
-# --- check 2: availability gates vs the declared floor -----------------------
+# check 2: availability gates vs the declared floor
 floor_pkg() { # writes a Package.swift with the family's string-form floor
   add_file "Package.swift" <<'EOF'
 let package = Package(
