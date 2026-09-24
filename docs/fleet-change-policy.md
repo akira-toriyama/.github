@@ -120,7 +120,8 @@ is worse than no rule.
   is the daily `glyph-pin-audit` (with the blind spots named above), not a
   staged gate.
 
-Closing the stage-2 gap is tracked work, not a footnote: the rehearsal that
-fires the release path at real GitHub is an open task. Until it exists, stages
-1–2 are a discipline — write down which ones you actually performed, and say
+Nothing tracks closing the stage-2 gap: no task on the board rehearses the
+release path at real GitHub, and the hub's own `release.yml` — the reusable
+that sentence was written for — has since been retired to glyph. Stages 1–2
+are a discipline — write down which ones you actually performed, and say
 plainly which you skipped.
