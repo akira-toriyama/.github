@@ -82,19 +82,21 @@ config first, pins second, and it changes the sequence above in four ways:
 
 1. **Before step 0**: land the sigil grammar in CONTRIBUTING (this repo — the
    convention's canonical copy) and commit a `glyph.toml` to every consumer.
-   The file is GENERATED, not hand-copied: `glyph init --gemoji --v1-window`
-   writes the whole thing — the v1-acceptance window block is embedded in the
-   binary as its single source, and glyph's own committed `glyph.toml` is held
-   byte-identical to that output by test, so there is no reference copy to
-   transcribe and nothing to drift. Under the window a sigil-less gitmoji
-   subject lints clean and folds as none, and every gate annotates a
-   `::warning::` naming the fix — green and loud is the expected migration
-   state, not a defect. (v1's breaking `!` already sits where the v2 major
-   sigil does, so nothing breaking is lost to the window.) The vehicle is
-   glyph-pin-rewrite's **config arm**: it fetches glyph's own `glyph.toml` at
-   the tag (generator output, by the byte-equality test) and adds it to any
-   consumer that has none, in the same per-repo PR as the pins. **Run the
-   config pass BEFORE the canonical bump** —
+   The file is GENERATED, not hand-copied: `glyph init --gemoji` writes the
+   whole thing, and glyph's own committed `glyph.toml` is held byte-identical
+   to that output by test (`TestGlyphOwnConfigIsTheGemojiPreset`), so there is
+   no reference copy to transcribe and nothing to drift. From glyph v4.0.0 the
+   generator writes NO v1-acceptance window (`--v1-window` is gone, exit 2):
+   a repository whose walk base still sits below sigil-less history keeps the
+   window block it already has, as its own grammar. Under the window a
+   sigil-less gitmoji subject lints clean and folds as none, and every gate
+   annotates a `::warning::` naming the fix — green and loud is the expected
+   migration state, not a defect. (v1's breaking `!` already sits where the
+   v2 major sigil does, so nothing breaking is lost to the window.) The
+   vehicle is glyph-pin-rewrite's **config arm**: it fetches glyph's own
+   `glyph.toml` at the tag (generator output, by the byte-equality test) and
+   adds it to any consumer that has none, in the same per-repo PR as the
+   pins. **Run the config pass BEFORE the canonical bump** —
    `gh workflow run glyph-pin-rewrite.yml -f dry-run=false -f config-ref=vX.Y.Z`
    — and merge those config-only PRs first: the file is inert under the v1
    pins the fleet still runs, whereas the other order has a real red window
@@ -232,9 +234,10 @@ that takes away something another repo or a user can reference carries `!`):
   -> lint / lint  PASS
 ```
 
-`glyph-test` still carries the v1-acceptance window (measured 2026-09-13), so
-the sigil-less half warns there rather than failing — fire it in a windowless
-repo (`glyph-monorepo-test`, `zmk-hid-host`) when the FAIL half is the point.
+`glyph-test` dropped its v1-acceptance window on 2026-09-25 (glyph-test #94),
+so both halves fire there exactly as shown; before that the sigil-less half
+only warned there, and a windowless repo (`glyph-monorepo-test`,
+`zmk-hid-host`) was needed for the FAIL half.
 
 Close the PR without merging.
 

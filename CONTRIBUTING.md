@@ -55,11 +55,13 @@ What stays convention here, above any pattern file:
   not the linter (no commit-message linter can know whether a removed symbol
   was public).
 
-> **Migration state.** Repositories moving from the v1 grammar run a
-> v1-acceptance window in their `glyph.toml`: a sigil-less gitmoji subject
-> lints clean WITH a warning and folds as none — green and loud is the
-> expected state, not a defect. The window is removed per repo once the
-> release walk's base sits past its sigil-less history. The v1 grammar
+> **Migration state.** A repository that moved from the v1 grammar may still
+> carry a v1-acceptance window block in its `glyph.toml` (glyph up to v3
+> generated it; from v4.0.0 the generator writes none, and the block is each
+> repository's own): a sigil-less gitmoji subject lints clean WITH a warning
+> and folds as none — green and loud is the expected state, not a defect. The
+> window is removed per repo once the release walk's base sits past its
+> sigil-less history (glyph-test did, 2026-09-25). The v1 grammar
 > (gitmoji-as-type driving semver, footer parsing) and the Conventional
 > Commits + git-cliff era before it are history, kept only in this file's own
 > git log.
