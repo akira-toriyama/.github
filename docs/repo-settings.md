@@ -1,8 +1,10 @@
 # Recommended repo settings (fleet-wide)
 
-`fleet-sync` distributes *files*; these are *repo settings*, so they are applied
-out-of-band by [`scripts/apply-repo-settings.sh`](../scripts/apply-repo-settings.sh).
-The recipe is the one proven on `.github` (t-s7me) and rolled out fleet-wide (t-tvzh).
+`fleet-sync` distributes *files*; these are *repo settings*, so they go through
+[`scripts/apply-repo-settings.sh`](../scripts/apply-repo-settings.sh) instead. The
+safe baseline is reconciled by machine — [`repo-settings-sync.yml`](../.github/workflows/repo-settings-sync.yml),
+daily and on push, in the fleet-sync shape — and the opt-ins are run by hand. The
+recipe is the one proven on `.github` (t-s7me) and rolled out fleet-wide (t-tvzh).
 
 ## What it sets
 
@@ -25,10 +27,31 @@ a separate per-repo decision, not this always-on baseline. The GET returns the
 detectable languages even when `not-configured`, so the step guards on it: repos
 with no workflow (`actions` not detected) are skipped, an already-`actions` config
 is a no-op, a repo configured for *other* languages gets `actions` **added**
-(union, never clobbered), and a GET that fails transiently warns and skips rather
-than misreporting "no actions". Because the PATCH kicks off an async validation
-run, re-running the script back-to-back (before state flips to `configured`) can
-transiently log a `FAILED` code-scanning line; the next run reconciles it.
+(union, never clobbered), and a GET that fails is `unreadable:` (see the contract
+below) rather than a false "no actions". Because the PATCH kicks off an async
+validation run, it is the one write the script does not read back in the same run
+(`applied:`, counted as `async=` in the summary, not `landed:`); re-running
+back-to-back while that validation is still pending can make the PATCH itself
+fail (a `::FAILED::` line), and the next run reconciles it. A repo that shows up
+as `async=1` every day is one whose validation keeps failing — look at it.
+
+**Contract for every setting, in both modes** (pinned by
+[`tests/apply-repo-settings.test.sh`](../tests/apply-repo-settings.test.sh)):
+
+- A state the script could not *read* is neither compliant nor drifted. It is
+  reported as `unreadable:`, never written to, and fails the run — in dry-run and
+  in `APPLY=1` alike. Before this, every failed GET read as drift: on 2026-09-24
+  a rate-limited token produced 37 repos × 2 false `would:` lines, and an apply
+  would have PUT/PATCHed every one of them (t-4ghh). For branch protection the
+  same rule means only a 404 is "unprotected"; a fresh PUT over protection the
+  run merely failed to read would reset force-push / reviews / strict. A failed
+  GET is retried once first, unless the error is a 404 (an answer) or a rate
+  limit (not transient at this timescale).
+- `landed:` is a read-back: the setting was re-fetched after the write and holds.
+  A 2xx whose read-back does not show the change is a `::FAILED::` mutation and a
+  non-zero exit — the same honesty fleet-sync applies to files. A read-back that
+  itself cannot read is `unreadable:` (the write was sent; nothing is known).
+- `ONLY=` naming no repo is a non-zero exit, not a clean canary over zero repos.
 
 Opt-in (need per-repo judgement, hence flags):
 
@@ -44,7 +67,8 @@ Opt-in (need per-repo judgement, hence flags):
   runs — the swift family's hand-added `build` is now distributed, and a new
   app repo gets it on the first run after its first `build` lands on main. A
   transient probe failure warns and requires `lint` alone that run (never a
-  silent "no build"); the next run heals. Already-protected repos are
+  silent "no build"); the next run heals. Protection the run cannot read
+  (anything but a 404) is `unreadable:` and never overwritten. Already-protected repos are
   **PATCH**ed (only the
   status-check contexts change, preserving `strict`/force-push/reviews); unprotected
   repos get a fresh **PUT** matching the `.github` template. Contexts whose *ruleset*
@@ -80,28 +104,52 @@ Opt-in (need per-repo judgement, hence flags):
 ## Usage
 
 ```sh
-./scripts/apply-repo-settings.sh                      # DRY RUN (report only)
-APPLY=1 ./scripts/apply-repo-settings.sh              # apply the safe baseline
+./scripts/apply-repo-settings.sh                      # DRY RUN (report only: exit 0 on drift, non-zero on anything unreadable)
+APPLY=1 ./scripts/apply-repo-settings.sh              # apply the safe baseline (what the workflow does)
 APPLY=1 WITH_TOKEN_FLIP=1 ./scripts/apply-repo-settings.sh
 APPLY=1 WITH_PROTECTION=1 PROTECT_REPOS="chord facet glance halo perch sill swift-toml-edit wand" \
   ./scripts/apply-repo-settings.sh
 APPLY=1 WITH_CODEQL_GO=1 ./scripts/apply-repo-settings.sh   # CodeQL go on GO_REPOS
-ONLY=facet APPLY=1 ./scripts/apply-repo-settings.sh   # one repo
+ONLY=facet APPLY=1 ./scripts/apply-repo-settings.sh   # one repo (the canary)
 ```
 
 New repos are picked up automatically (the repo list is fetched at run time).
 
-## Drift audit (scheduled)
+## Reconcile (the workflow)
 
-[`repo-settings-audit.yml`](../.github/workflows/repo-settings-audit.yml) runs
-the same script daily as a dry run with `FAIL_ON_DIFF=1`: red = some repo has
-drifted from the safe baseline, and the log's `would:` lines name each drift.
-It audits the baseline only (the `WITH_*` opt-ins need per-repo judgement), and
-**applying stays manual** — read the diff, then `APPLY=1` by hand. Before the
-audit existed the script only ever ran by hand, and every repo created after
-the last hand-run was born with the baseline OFF: on 2026-07-26, 10 of 35 repos
-had Dependabot alerts disabled, 6 of them with real dependency manifests
-(t-qsea).
+[`repo-settings-sync.yml`](../.github/workflows/repo-settings-sync.yml) runs the
+script with `APPLY=1` in the fleet-sync shape: a dispatch defaults to dry-run,
+and `-f only-repo=<repo>` is the canary. It passes no `WITH_*` flag, so the
+opt-ins stay a hand-run with per-repo judgement.
+
+**Staged (docs/fleet-change-policy.md).** The workflow currently carries
+`workflow_dispatch` only. GitHub registers a workflow for dispatch from the
+default branch alone (measured 2026-09-25), so a brand-new workflow cannot be
+canaried before it is on `main`; the follow-up adds the daily `schedule` and the
+`push` trigger once the canary from `main` has landed one repo. Until then the
+baseline is applied by dispatch (or by hand, above). After it, a new repo is
+level within a day of its creation.
+
+Why the machine applies. The script only ever ran by hand, and every repo
+created after the last hand-run was born with the baseline OFF: on 2026-07-26,
+10 of 35 repos had Dependabot alerts disabled, 6 of them with real dependency
+manifests (t-qsea). t-qsea added a daily dry-run *audit* that went red on drift
+and left the apply to a human. That audit was red on 22 of the 29 days to
+2026-09-24 — four repos (dotfiles-private, glyph-monorepo-test, kiln,
+furrow-test) were born drifted after the one hand-run in that window and stayed
+so for up to three weeks (t-4ghh). A red that waits for a human is not acted on
+in this fleet. The blast radius of a bad run is the five baseline settings, each
+idempotent and each an "on" toggle; rollback is a revert of the workflow.
+
+Canary, from `main`, both halves — knock a baseline setting off on `glyph-test`
+by hand, then:
+
+```sh
+gh workflow run repo-settings-sync.yml -f dry-run=true  -f only-repo=glyph-test   # expect would:, nothing applied
+gh workflow run repo-settings-sync.yml -f dry-run=false -f only-repo=glyph-test   # expect landed:
+```
+
+and read the setting back with `gh api` before believing the log.
 
 ## Immutable releases — enabled (hardened)
 

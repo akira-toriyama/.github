@@ -1,0 +1,99 @@
+# Fleet settings reconcile: every owned, non-fork, non-archived repo carries the
+# SAFE BASELINE that scripts/apply-repo-settings.sh defines (Dependabot alerts +
+# security updates, private vulnerability reporting, CodeQL `actions`, branch
+# auto-delete). fleet-sync distributes FILES; this distributes SETTINGS, in the
+# same shape: dispatch defaults to dry-run, every write is read back by the
+# script, and a setting the run could not read is red and never written.
+#
+# STAGING (docs/fleet-change-policy.md). This file lands with `workflow_dispatch`
+# ONLY: GitHub registers a workflow for dispatch from the default branch alone
+# (measured 2026-09-25: `actions/workflows` lists main's files, not a branch's),
+# so a brand-new workflow cannot be canaried before it is on main. The follow-up
+# adds `schedule` and `push` once the canary from main has landed one repo — the
+# first machine write with FLEET_SYNC_PAT ever made from Actions (the audit this
+# replaces only read).
+#
+# Why the machine applies (t-qsea -> t-4ghh). The script only ever ran by hand.
+# t-qsea (2026-07-26) found 10 of 35 repos with Dependabot alerts OFF and added a
+# daily dry-run audit that went red on drift and left the apply to a human. That
+# audit was red on 22 of the 29 days to 2026-09-24: every repo created after the
+# last hand-run (dotfiles-private, glyph-monorepo-test, kiln, furrow-test) was
+# born with the baseline OFF and stayed so until a hand-run 22 days later. A red
+# that waits for a human is not acted on in this fleet, so the baseline is now
+# reconciled the way the files are. The WITH_* opt-ins (token flip, branch
+# protection, immutable releases, CodeQL go) stay by hand: they need per-repo
+# judgement, and this workflow never passes them.
+#
+# Blast radius: the five baseline settings, each idempotent and each an "on"
+# toggle — the worst a bad run can do is turn on what was already on. Rollback
+# is a revert of this file; a setting itself is flipped back by hand.
+#
+# THE RECONCILER SEES WHAT IT WRITES: the same credential as fleet-sync, a hard
+# failure without it, and a private-repo canary — a degraded token lists only
+# public repos, and the script would then reconcile a subset while its green
+# read as "the fleet is compliant" (glyph-pin-audit's 29-of-35 incident).
+
+name: repo-settings-sync
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: Log what would change without applying it.
+        type: boolean
+        default: true
+      only-repo:
+        description: Limit to a single repo name (optional).
+        type: string
+        default: ''
+
+concurrency:
+  group: repo-settings-sync
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Reconcile every repo's settings with the safe baseline
+        env:
+          # fleet-sync's credential, NOT github.token — the default token sees no
+          # private repos, and reading or writing repo security settings needs
+          # `repo` scope.
+          GH_TOKEN: ${{ secrets.FLEET_SYNC_PAT }}
+          OWNER: akira-toriyama
+          EVENT: ${{ github.event_name }}
+          DRY_RUN: ${{ inputs.dry-run }}
+          ONLY_REPO: ${{ inputs.only-repo }}
+        run: |
+          set -euo pipefail
+
+          # Fail loud, not open: a degraded run must be RED, because its green is
+          # a false claim about repos it cannot see.
+          [ -n "${GH_TOKEN:-}" ] || { echo "::error::FLEET_SYNC_PAT is not set — refusing to run with a public-only view (drift in a private repo would read as compliance)."; exit 1; }
+
+          # The private-repo canary — the SHAPE of the list, not its size (a
+          # hand-kept count would rot; see glyph-pin-audit's header).
+          private_n="$(gh repo list "$OWNER" --no-archived --source --limit 200 \
+            --json visibility -q '[.[] | select(.visibility=="PRIVATE")] | length')"
+          if [ "${private_n:-0}" -eq 0 ]; then
+            echo "::error::the repo list contains no private repos — the token's view is degraded (this is how the 29-of-35 audit happened); refusing to call this a fleet run."
+            exit 1
+          fi
+          echo "token sees $private_n private repo(s)"
+
+          # The fleet-sync shape, kept so the follow-up that adds `schedule` and
+          # `push` changes only `on:`: those events carry no inputs, DRY_RUN is
+          # empty, and the apply branch runs.
+          DRY="${DRY_RUN:-false}"
+          [ "$EVENT" = "schedule" ] && DRY=false
+          echo "event=$EVENT dry-run=$DRY only-repo=${ONLY_REPO:-<all>}"
+          APPLY="$([ "$DRY" = "true" ] && echo 0 || echo 1)" ONLY="$ONLY_REPO" bash scripts/apply-repo-settings.sh
