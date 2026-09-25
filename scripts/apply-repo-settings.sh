@@ -2,27 +2,39 @@
 # apply-repo-settings.sh — idempotently apply akira-toriyama's recommended GitHub
 # settings across the fleet (t-tvzh). The recipe is the one proven on `.github`
 # (t-s7me). fleet-sync distributes *files*; THESE are *repo settings*, so they go
-# through gh api here instead.
+# through gh api here instead. The safe baseline is reconciled by machine
+# (.github/workflows/repo-settings-sync.yml — by dispatch now; daily and on push
+# once its canary from main has run); the WITH_* opt-ins below are run by hand.
 #
 # Usage:
 #   ./apply-repo-settings.sh                 # DRY RUN: report the diff, change nothing
-#   FAIL_ON_DIFF=1 ./apply-repo-settings.sh  # DRY RUN that exits 1 when any drift exists
-#   APPLY=1 ./apply-repo-settings.sh         # apply the SAFE baseline (5 settings)
+#   APPLY=1 ./apply-repo-settings.sh         # apply the SAFE baseline (5 settings), read each write back
 #   APPLY=1 WITH_TOKEN_FLIP=1 ...            # also flip default token -> read (see SKIP_TOKEN_FLIP)
 #   APPLY=1 WITH_PROTECTION=1 ...            # also add the commit-lint required check (additive)
 #   APPLY=1 WITH_IMMUTABLE=1 ...             # also enable immutable releases on release repos
 #   APPLY=1 WITH_CODEQL_GO=1 ...             # also add CodeQL "go" (build) on GO_REPOS
-#   ONLY=facet APPLY=1 ...                   # limit to one repo
+#   ONLY=facet APPLY=1 ...                   # limit to one repo (the canary)
 #
 # Safe baseline (always): delete_branch_on_merge, private vuln reporting (public
 # repos), code scanning default setup (CodeQL "actions", public repos), Dependabot
 # alerts, Dependabot security updates. Token-flip / branch protection / immutable
 # releases / CodeQL-go are opt-in because they need per-repo judgement.
+#
+# Contract for every setting, in both modes:
+#   - a state this script could not READ is neither compliant nor drifted. It is
+#     reported as `unreadable:`, never written to, and fails the run. The old shape
+#     read every GET failure as drift: on 2026-09-24 a rate-limited token produced
+#     37 repos x 2 false `would:` lines, and in APPLY mode would have PUT/PATCHed
+#     every one of them (t-4ghh).
+#   - `landed:` means the setting was re-read after the write and HOLDS. A 2xx
+#     whose read-back does not show the change is a ::FAILED:: mutation; a
+#     read-back that itself cannot read is `unreadable:` (the write was sent,
+#     nothing is known). Code scanning is the one asynchronous API here: it is
+#     reported `applied:` and confirmed by the next run.
 set -uo pipefail
 
 OWNER=akira-toriyama
 APPLY="${APPLY:-0}"                       # 0 = dry run
-FAIL_ON_DIFF="${FAIL_ON_DIFF:-0}"         # 1 = dry run exits 1 on any drift (audit mode)
 ONLY="${ONLY:-}"
 WITH_TOKEN_FLIP="${WITH_TOKEN_FLIP:-0}"
 WITH_PROTECTION="${WITH_PROTECTION:-0}"
@@ -52,30 +64,103 @@ PROTECT_REPOS="${PROTECT_REPOS:-}"
 here="$(cd "$(dirname "$0")" && pwd)"
 root="$(dirname "$here")"
 
-# Every mutation that failed, across every repo. A fleet-wide run makes hundreds
-# of calls and prints hundreds of lines; without a tally the operator has to read
-# all of them to notice that (say) an expired token 403'd every single one, and
-# the script would still exit 0 under "done (mode: APPLY)".
-failures=0
-# Every mutation a dry run WOULD make. This is what lets a scheduled audit run
-# (FAIL_ON_DIFF=1) turn red on drift instead of exiting 0 over a wall of
-# `would:` lines nobody reads — the script only ever ran by hand, and every repo
-# created after the last hand-run sat with Dependabot alerts OFF, invisibly
-# (t-qsea: 10 of 35 repos, 6 of them actually missing alerts).
-drift=0
+# Tallies across every repo. A fleet-wide run makes hundreds of calls and prints
+# hundreds of lines; without them the operator has to read all of it to notice
+# that (say) an expired token 403'd every single mutation, or that half the fleet
+# was never read at all, and the script would still exit 0 under "done".
+failures=0   # mutations that failed, or whose read-back shows the change did not take
+landed=0     # mutations re-read after the write and confirmed
+async=0      # mutations accepted by the one asynchronous API (code scanning) — not
+             # confirmed in this run; a repo that shows up here every day is stuck
+drift=0      # mutations a dry run WOULD make
+unread=0     # settings this run could not read — reported, never written, and fatal
+examined=0
 
-run() { # echo + (apply) a gh api mutation
-  local desc="$1"; shift
-  if [ "$APPLY" = "1" ]; then
-    if "$@" >/dev/null 2>&1; then
-      echo "    applied: $desc"
-    else
-      echo "    ::FAILED:: $desc"
-      failures=$((failures + 1))
-    fi
-  else
+errf="$(mktemp)"
+trap 'rm -f "$errf"' EXIT
+
+# A failed GET is retried once, unless its error is an answer (404) or a
+# rate-limited token (not transient at this timescale — retrying only burns
+# time). One blip must not turn the daily run red; a run that is red should be
+# red for something the next run cannot heal by itself.
+transient() { ! grep -qE 'HTTP 404|rate limit' "$errf"; }
+# get_field <path> <jq> — the field's value; exit 1 = the GET failed (unreadable).
+get_field() {
+  local v try
+  for try in 1 2; do
+    if v=$(gh api "$1" --jq "$2" 2>"$errf"); then printf '%s\n' "$v"; return 0; fi
+    transient || return 1
+    [ "$try" = 1 ] && sleep 2
+  done
+  return 1
+}
+# get_toggle <path> — `on` (2xx) or `off` (404) for the bare-PUT/DELETE toggle
+# endpoints (vulnerability-alerts, immutable-releases); exit 1 = any other failure.
+get_toggle() {
+  local try
+  for try in 1 2; do
+    if gh api "$1" >/dev/null 2>"$errf"; then echo on; return 0; fi
+    if grep -q 'HTTP 404' "$errf"; then echo off; return 0; fi
+    transient || return 1
+    [ "$try" = 1 ] && sleep 2
+  done
+  return 1
+}
+# unreadable <what> [<consequence>] — report a state this run could not read.
+unreadable() {
+  echo "    unreadable: $1 in $R — ${2:-not touched this run} (transient API failure? rate limit?)"
+  unread=$((unread + 1))
+}
+
+# holds <setting> — the read-back: re-fetch <setting> on $full. 0 = it is in its
+# target state now; 1 = it is readable and is NOT; 2 = it could not be read (so
+# nothing is known — neither "landed" nor "failed"). `protection` checks that
+# every context in $want_ctxs (a JSON array) is required.
+holds() {
+  local v
+  case "$1" in
+    delete_branch_on_merge)          v=$(get_field "repos/$full" '.delete_branch_on_merge') || return 2; [ "$v" = "true" ] ;;
+    private-vulnerability-reporting) v=$(get_field "repos/$full/private-vulnerability-reporting" '.enabled') || return 2; [ "$v" = "true" ] ;;
+    vulnerability-alerts)            v=$(get_toggle "repos/$full/vulnerability-alerts") || return 2; [ "$v" = "on" ] ;;
+    automated-security-fixes)        v=$(get_field "repos/$full/automated-security-fixes" '.enabled') || return 2; [ "$v" = "true" ] ;;
+    default_workflow_permissions)    v=$(get_field "repos/$full/actions/permissions/workflow" '.default_workflow_permissions') || return 2; [ "$v" = "read" ] ;;
+    immutable-releases)              v=$(get_field "repos/$full/immutable-releases" '.enabled') || return 2; [ "$v" = "true" ] ;;
+    protection)
+      v=$(get_field "repos/$full/branches/main/protection" '.required_status_checks.contexts // []') || return 2
+      jq -e --argjson have "$v" 'all(.[]; . as $c | $have | index($c) != null)' <<<"$want_ctxs" >/dev/null 2>&1 ;;
+    *) return 1 ;;
+  esac
+}
+
+# run <desc> <setting> <gh api mutation...> — dry-run: report; APPLY: mutate, then
+# `holds <setting>` re-reads it. `-` skips the read-back for the one asynchronous
+# API (code scanning), which the next run confirms.
+run() {
+  local desc="$1" setting="$2" hs; shift 2
+  if [ "$APPLY" != "1" ]; then
     echo "    would: $desc"
     drift=$((drift + 1))
+    return
+  fi
+  if ! "$@" >/dev/null 2>&1; then
+    echo "    ::FAILED:: $desc"
+    failures=$((failures + 1))
+    return
+  fi
+  if [ "$setting" = "-" ]; then
+    echo "    applied: $desc (asynchronous — the next run reads it back)"
+    async=$((async + 1))
+    return
+  fi
+  holds "$setting"; hs=$?
+  if [ "$hs" -eq 0 ]; then
+    echo "    landed: $desc"
+    landed=$((landed + 1))
+  elif [ "$hs" -eq 2 ]; then
+    unreadable "$desc" "read-back after the write: the call returned 2xx, but this run cannot confirm it"
+  else
+    echo "    ::FAILED:: $desc — the call returned 2xx but the read-back does not show it"
+    failures=$((failures + 1))
   fi
 }
 
@@ -136,18 +221,25 @@ for line in "${REPOS[@]}"; do
   in_list "$R" "$EXCLUDE" && { echo "skip(excluded): $R"; continue; }
   [ -n "$ONLY" ] && [ "$R" != "$ONLY" ] && continue
   full="$OWNER/$R"
+  examined=$((examined + 1))
   echo "== $R ($VIS) =="
 
   # 1) auto-delete head branch on merge
-  cur=$(gh api "repos/$full" --jq '.delete_branch_on_merge' 2>/dev/null)
-  [ "$cur" = "true" ] || run "delete_branch_on_merge=true" \
-    gh api -X PATCH "repos/$full" -F delete_branch_on_merge=true
+  if cur=$(get_field "repos/$full" '.delete_branch_on_merge'); then
+    [ "$cur" = "true" ] || run "delete_branch_on_merge=true" delete_branch_on_merge \
+      gh api -X PATCH "repos/$full" -F delete_branch_on_merge=true
+  else
+    unreadable "delete_branch_on_merge"
+  fi
 
   # 2) private vulnerability reporting (public repos only; 404/N-A on private)
   if [ "$VIS" = "PUBLIC" ]; then
-    cur=$(gh api "repos/$full/private-vulnerability-reporting" --jq '.enabled' 2>/dev/null || echo "?")
-    [ "$cur" = "true" ] || run "private-vulnerability-reporting=on" \
-      gh api -X PUT "repos/$full/private-vulnerability-reporting"
+    if cur=$(get_field "repos/$full/private-vulnerability-reporting" '.enabled'); then
+      [ "$cur" = "true" ] || run "private-vulnerability-reporting=on" private-vulnerability-reporting \
+        gh api -X PUT "repos/$full/private-vulnerability-reporting"
+    else
+      unreadable "private-vulnerability-reporting"
+    fi
   else
     echo "    n/a: private vuln reporting (private repo)"
   fi
@@ -173,16 +265,16 @@ for line in "${REPOS[@]}"; do
       echo "    ok: code scanning already configured (actions) in $R"
     elif [ "$cs_state" = "configured" ]; then
       body=$(printf '%s' "$cs" | jq -c '{state:"configured", languages:((.languages // [])+["actions"]|unique)}')
-      run "code-scanning: add 'actions' to configured set $(printf '%s' "$cs" | jq -c '.languages')" \
+      run "code-scanning: add 'actions' to configured set $(printf '%s' "$cs" | jq -c '.languages')" - \
         gh api -X PATCH "repos/$full/code-scanning/default-setup" --input - <<<"$body"
     elif [ "$cs_state" = "not-configured" ] && [ "$cs_has_actions" = 1 ]; then
-      run "code-scanning default setup=configured (languages=[actions])" \
+      run "code-scanning default setup=configured (languages=[actions])" - \
         gh api -X PATCH "repos/$full/code-scanning/default-setup" \
           --input - <<<'{"state":"configured","languages":["actions"]}'
     elif [ "$cs_state" = "not-configured" ]; then
       echo "    n/a: code scanning (no 'actions' language detected in $R)"
     else
-      echo "    warn: code scanning state unreadable in $R (skipped; transient API failure?)"
+      unreadable "code scanning default setup"
     fi
   else
     echo "    n/a: code scanning default setup (private repo; needs GH Advanced Security)"
@@ -209,35 +301,42 @@ for line in "${REPOS[@]}"; do
         echo "    ok: code scanning already analyzes 'go' in $R"
       elif [ "$cs_state" = "configured" ]; then
         body=$(printf '%s' "$cs" | jq -c '{state:"configured", languages:((.languages // [])+["go"]|unique)}')
-        run "code-scanning: add 'go' to configured set $(printf '%s' "$cs" | jq -c '.languages') in $R" \
+        run "code-scanning: add 'go' to configured set $(printf '%s' "$cs" | jq -c '.languages') in $R" - \
           gh api -X PATCH "repos/$full/code-scanning/default-setup" --input - <<<"$body"
       elif [ "$cs_state" = "not-configured" ]; then
         echo "    defer: code scanning not configured in $R yet — 'go' lands after the 'actions' baseline settles (re-run)"
       else
-        echo "    warn: code scanning state unreadable in $R (go opt-in skipped; transient API failure?)"
+        unreadable "code scanning default setup (go opt-in)"
       fi
     fi
   fi
 
-  # 3) Dependabot alerts
-  if gh api "repos/$full/vulnerability-alerts" >/dev/null 2>&1; then :; else
-    run "vulnerability-alerts=on" gh api -X PUT "repos/$full/vulnerability-alerts"
+  # 3) Dependabot alerts (toggle endpoint: 204 = on, 404 = off)
+  if cur=$(get_toggle "repos/$full/vulnerability-alerts"); then
+    [ "$cur" = "on" ] || run "vulnerability-alerts=on" vulnerability-alerts \
+      gh api -X PUT "repos/$full/vulnerability-alerts"
+  else
+    unreadable "vulnerability-alerts"
   fi
 
   # 4) Dependabot security updates (needs alerts on)
-  cur=$(gh api "repos/$full/automated-security-fixes" --jq '.enabled' 2>/dev/null || echo "?")
-  [ "$cur" = "true" ] || run "automated-security-fixes=on" \
-    gh api -X PUT "repos/$full/automated-security-fixes"
+  if cur=$(get_field "repos/$full/automated-security-fixes" '.enabled'); then
+    [ "$cur" = "true" ] || run "automated-security-fixes=on" automated-security-fixes \
+      gh api -X PUT "repos/$full/automated-security-fixes"
+  else
+    unreadable "automated-security-fixes"
+  fi
 
   # 5) default workflow GITHUB_TOKEN -> read (opt-in; skip the unverified ones)
   if [ "$WITH_TOKEN_FLIP" = "1" ]; then
     if in_list "$R" "$SKIP_TOKEN_FLIP"; then
       echo "    skip(token-flip): $R needs per-workflow permissions verification first"
-    else
-      cur=$(gh api "repos/$full/actions/permissions/workflow" --jq '.default_workflow_permissions' 2>/dev/null)
-      [ "$cur" = "read" ] || run "default_workflow_permissions=read, can_approve=false" \
+    elif cur=$(get_field "repos/$full/actions/permissions/workflow" '.default_workflow_permissions'); then
+      [ "$cur" = "read" ] || run "default_workflow_permissions=read, can_approve=false" default_workflow_permissions \
         gh api -X PUT "repos/$full/actions/permissions/workflow" \
           -F default_workflow_permissions=read -F can_approve_pull_request_reviews=false
+    else
+      unreadable "default_workflow_permissions"
     fi
   fi
 
@@ -288,8 +387,16 @@ for line in "${REPOS[@]}"; do
       if [ -z "$need" ]; then
         : # every wanted context is ruleset-held
       else
-        prot=$(gh api "repos/$full/branches/main/protection" 2>/dev/null) || prot=""
-        if [ -n "$prot" ]; then
+        # An unprotected branch is a 404; anything else is a state this run must
+        # not act on — a fresh PUT over protection it merely failed to read would
+        # reset force-push / reviews / strict on a repo that had them.
+        if prot=$(gh api "repos/$full/branches/main/protection" 2>"$errf"); then :
+        elif grep -q 'HTTP 404' "$errf"; then prot=""
+        else unreadable "branch protection"; prot="?"
+        fi
+        if [ "$prot" = "?" ]; then
+          :
+        elif [ -n "$prot" ]; then
           existing=$(printf '%s' "$prot" | jq -r '(.required_status_checks.contexts // [])[]' 2>/dev/null || true)
           missing=$(printf '%s' "$need" | while IFS= read -r w; do
             [ -n "$w" ] || continue
@@ -301,7 +408,8 @@ for line in "${REPOS[@]}"; do
             strict=$(printf '%s' "$prot" | jq -r '.required_status_checks.strict // false' 2>/dev/null)
             merged=$(printf '%s\n%s\n' "$existing" "$missing" | sed '/^$/d' | sort -u | jq -R . | jq -sc .)
             patch=$(jq -nc --argjson ctx "$merged" --argjson strict "$strict" '{strict:$strict, contexts:$ctx}')
-            run "protection(PATCH): require [$(printf '%s' "$merged" | jq -r 'join(", ")')] (preserve other settings)" \
+            want_ctxs="$merged"
+            run "protection(PATCH): require [$(printf '%s' "$merged" | jq -r 'join(", ")')] (preserve other settings)" protection \
               gh api -X PATCH "repos/$full/branches/main/protection/required_status_checks" --input - <<<"$patch"
           fi
         else
@@ -312,7 +420,8 @@ for line in "${REPOS[@]}"; do
             allow_force_pushes:false, allow_deletions:false,
             required_linear_history:false, required_conversation_resolution:false
           }')
-          run "protection(PUT new): require [$(printf '%s' "$ctxs" | jq -r 'join(", ")')] (admin bypass, .github template)" \
+          want_ctxs="$ctxs"
+          run "protection(PUT new): require [$(printf '%s' "$ctxs" | jq -r 'join(", ")')] (admin bypass, .github template)" protection \
             gh api -X PUT "repos/$full/branches/main/protection" --input - <<<"$body"
         fi
       fi
@@ -323,14 +432,21 @@ for line in "${REPOS[@]}"; do
   #    Toggle endpoint like vulnerability-alerts: bare PUT enables, DELETE disables —
   #    no body. (`enabled` is a GET-response field, not a writable key → 422.)
   if [ "$WITH_IMMUTABLE" = "1" ] && in_list "$R" "$RELEASE_REPOS"; then
-    cur=$(gh api "repos/$full/immutable-releases" --jq '.enabled' 2>/dev/null || echo "?")
-    [ "$cur" = "true" ] || run "immutable-releases=on" \
-      gh api -X PUT "repos/$full/immutable-releases"
+    if cur=$(get_field "repos/$full/immutable-releases" '.enabled'); then
+      [ "$cur" = "true" ] || run "immutable-releases=on" immutable-releases \
+        gh api -X PUT "repos/$full/immutable-releases"
+    else
+      unreadable "immutable-releases"
+    fi
   fi
 done
 
 echo
-echo "done (mode: $([ "$APPLY" = 1 ] && echo APPLY || echo DRY-RUN))."
+if [ "$APPLY" = "1" ]; then
+  echo "done (mode: APPLY): landed=$landed async=$async failed=$failures unreadable=$unread across $examined repo(s)"
+else
+  echo "done (mode: DRY-RUN — NOTHING WAS APPLIED): would=$drift unreadable=$unread across $examined repo(s)"
+fi
 
 # Fail loud on the two ways this script has silently done nothing.
 #
@@ -350,9 +466,16 @@ if [ "$failures" -gt 0 ]; then
   echo "::error:: $failures mutation(s) FAILED — see the ::FAILED:: lines above."
   rc=1
 fi
-if [ "$APPLY" != "1" ] && [ "$FAIL_ON_DIFF" = "1" ] && [ "$drift" -gt 0 ]; then
-  echo "::error:: $drift setting(s) drifted from the baseline — the \`would:\` lines above name each one."
-  echo "          Read the diff, then re-apply by hand: APPLY=1 ./scripts/apply-repo-settings.sh"
+# Fail loud, not open: a run that could not read a setting must not be green,
+# because its green would read as "compliant" for repos it never saw.
+if [ "$unread" -gt 0 ]; then
+  echo "::error:: $unread setting(s) could not be read — this run says nothing about them (see the unreadable: lines above)."
+  rc=1
+fi
+# ONLY= is the canary. A name that matches nothing (a typo, an archived repo, a
+# fork) must not read as a clean canary over zero repos.
+if [ -n "$ONLY" ] && [ "$examined" -eq 0 ]; then
+  echo "::error:: ONLY=$ONLY matched no repo — nothing was examined (typo? archived? a fork?)."
   rc=1
 fi
 exit "$rc"
