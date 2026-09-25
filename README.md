@@ -123,7 +123,7 @@ all it takes to surface a Sponsor button fleet-wide, should that ever change.
 
 - [`reusable-versioning.md`](docs/reusable-versioning.md) — the moving-`v2` / immutable-`v2.x.y` ref policy and how to cut a release.
 - [`action-pinning-policy.md`](docs/action-pinning-policy.md) — how `uses:` refs are pinned (first-party tag / third-party SHA / self-owned tag) and why.
-- [`repo-settings.md`](docs/repo-settings.md) — fleet-wide repo settings: the safe baseline is reconciled by `repo-settings-sync` through [`scripts/apply-repo-settings.sh`](scripts/apply-repo-settings.sh); the opt-ins are run by hand.
+- [`repo-settings.md`](docs/repo-settings.md) — fleet-wide repo settings: the safe baseline is reconciled daily by `repo-settings-sync` through [`scripts/apply-repo-settings.sh`](scripts/apply-repo-settings.sh); the opt-ins are run by hand.
 - [`immutable-releases-hardening.md`](docs/immutable-releases-hardening.md) — why the retired `release.yml` was deadlock-hardened for GitHub immutable releases (historical; glyph's release reusable inherits the discipline).
 - [`release-tap-unification.md`](docs/release-tap-unification.md) — whether `glance` / `chord` converge onto the shared release / tap reusables (historical; the fleet has since converged onto glyph's release reusable).
 - [`swift-format-adoption.md`](docs/swift-format-adoption.md) — the house procedure for turning the `swift-format` gate green in a new Swift repo.
