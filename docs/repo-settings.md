@@ -115,20 +115,21 @@ ONLY=facet APPLY=1 ./scripts/apply-repo-settings.sh   # one repo (the canary)
 
 New repos are picked up automatically (the repo list is fetched at run time).
 
-## Reconcile (the workflow)
+## Reconcile (scheduled, and on push)
 
 [`repo-settings-sync.yml`](../.github/workflows/repo-settings-sync.yml) runs the
-script with `APPLY=1` in the fleet-sync shape: a dispatch defaults to dry-run,
-and `-f only-repo=<repo>` is the canary. It passes no `WITH_*` flag, so the
-opt-ins stay a hand-run with per-repo judgement.
+script with `APPLY=1` every day (07:15Z) and on every push to `main` that touches
+the script or the workflow — the fleet-sync shape: merging the change *is* the
+deploy, a dispatch defaults to dry-run, and `-f only-repo=<repo>` is the canary.
+It passes no `WITH_*` flag, so the opt-ins stay a hand-run with per-repo
+judgement. A new repo is level within a day of its creation.
 
-**Staged (docs/fleet-change-policy.md).** The workflow currently carries
-`workflow_dispatch` only. GitHub registers a workflow for dispatch from the
-default branch alone (measured 2026-09-25), so a brand-new workflow cannot be
-canaried before it is on `main`; the follow-up adds the daily `schedule` and the
-`push` trigger once the canary from `main` has landed one repo. Until then the
-baseline is applied by dispatch (or by hand, above). After it, a new repo is
-level within a day of its creation.
+It landed in two steps, because GitHub registers a workflow for dispatch from the
+default branch alone (measured 2026-09-25): #240 put the file on `main` with
+`workflow_dispatch` only; the canary ran from there on `glyph-test`, both halves
+(the dry run wrote nothing; the apply landed three settings and read each back —
+runs 36090265429 and 36090367335, the first write `FLEET_SYNC_PAT` ever made
+from Actions); then `schedule` and `push` were enabled.
 
 Why the machine applies. The script only ever ran by hand, and every repo
 created after the last hand-run was born with the baseline OFF: on 2026-07-26,
@@ -141,12 +142,13 @@ so for up to three weeks (t-4ghh). A red that waits for a human is not acted on
 in this fleet. The blast radius of a bad run is the five baseline settings, each
 idempotent and each an "on" toggle; rollback is a revert of the workflow.
 
-Canary, from `main`, both halves — knock a baseline setting off on `glyph-test`
-by hand, then:
+Canary before merging a change to the script or the workflow, from the branch,
+both halves — knock a baseline setting off on `glyph-test` by hand (the fleet
+is level, so nothing else exercises the write path), then:
 
 ```sh
-gh workflow run repo-settings-sync.yml -f dry-run=true  -f only-repo=glyph-test   # expect would:, nothing applied
-gh workflow run repo-settings-sync.yml -f dry-run=false -f only-repo=glyph-test   # expect landed:
+gh workflow run repo-settings-sync.yml --ref <branch> -f dry-run=true  -f only-repo=glyph-test   # expect would:, nothing applied
+gh workflow run repo-settings-sync.yml --ref <branch> -f dry-run=false -f only-repo=glyph-test   # expect landed:
 ```
 
 and read the setting back with `gh api` before believing the log.

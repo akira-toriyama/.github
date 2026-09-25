@@ -2,16 +2,9 @@
 # SAFE BASELINE that scripts/apply-repo-settings.sh defines (Dependabot alerts +
 # security updates, private vulnerability reporting, CodeQL `actions`, branch
 # auto-delete). fleet-sync distributes FILES; this distributes SETTINGS, in the
-# same shape: dispatch defaults to dry-run, every write is read back by the
-# script, and a setting the run could not read is red and never written.
-#
-# STAGING (docs/fleet-change-policy.md). This file lands with `workflow_dispatch`
-# ONLY: GitHub registers a workflow for dispatch from the default branch alone
-# (measured 2026-09-25: `actions/workflows` lists main's files, not a branch's),
-# so a brand-new workflow cannot be canaried before it is on main. The follow-up
-# adds `schedule` and `push` once the canary from main has landed one repo — the
-# first machine write with FLEET_SYNC_PAT ever made from Actions (the audit this
-# replaces only read).
+# same shape: dispatch defaults to dry-run, schedule and push apply, every write
+# is read back by the script, and a setting the run could not read is red and
+# never written.
 #
 # Why the machine applies (t-qsea -> t-4ghh). The script only ever ran by hand.
 # t-qsea (2026-07-26) found 10 of 35 repos with Dependabot alerts OFF and added a
@@ -27,6 +20,19 @@
 # Blast radius: the five baseline settings, each idempotent and each an "on"
 # toggle — the worst a bad run can do is turn on what was already on. Rollback
 # is a revert of this file; a setting itself is flipped back by hand.
+#
+# Canary before merging a change to this file or the script
+# (docs/fleet-change-policy.md): knock a baseline setting off on glyph-test by
+# hand (the fleet is level, so nothing else exercises the write path), then
+# dispatch from the branch, both halves,
+#   gh workflow run repo-settings-sync.yml --ref <branch> -f dry-run=true  -f only-repo=glyph-test
+#   gh workflow run repo-settings-sync.yml --ref <branch> -f dry-run=false -f only-repo=glyph-test
+# and read that repo's `landed:` lines, then the settings themselves. A workflow
+# is dispatchable from the default branch alone, which is why this file landed
+# in two steps: #240 with workflow_dispatch only, canaried from main on
+# glyph-test (2026-09-25, runs 36090265429 dry / 36090367335 apply, landed=3 —
+# the first write FLEET_SYNC_PAT ever made from Actions), then `schedule` and
+# `push`.
 #
 # THE RECONCILER SEES WHAT IT WRITES: the same credential as fleet-sync, a hard
 # failure without it, and a private-repo canary — a degraded token lists only
@@ -46,6 +52,15 @@ on:
         description: Limit to a single repo name (optional).
         type: string
         default: ''
+  # Merging a change to the script IS the deploy (the fleet-sync shape, t-7t07).
+  # push events carry no inputs, so DRY_RUN is empty and the apply branch runs.
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/apply-repo-settings.sh'
+      - '.github/workflows/repo-settings-sync.yml'
+  schedule:
+    - cron: '15 7 * * *' # daily, after fleet-sync (06:00) and furrow-pin-audit (06:45) — a new repo is level within a day
 
 concurrency:
   group: repo-settings-sync
@@ -90,9 +105,8 @@ jobs:
           fi
           echo "token sees $private_n private repo(s)"
 
-          # The fleet-sync shape, kept so the follow-up that adds `schedule` and
-          # `push` changes only `on:`: those events carry no inputs, DRY_RUN is
-          # empty, and the apply branch runs.
+          # schedule and push carry no inputs: DRY_RUN is empty and the apply
+          # branch runs (the fleet-sync shape).
           DRY="${DRY_RUN:-false}"
           [ "$EVENT" = "schedule" ] && DRY=false
           echo "event=$EVENT dry-run=$DRY only-repo=${ONLY_REPO:-<all>}"

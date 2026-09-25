@@ -3,8 +3,8 @@
 # settings across the fleet (t-tvzh). The recipe is the one proven on `.github`
 # (t-s7me). fleet-sync distributes *files*; THESE are *repo settings*, so they go
 # through gh api here instead. The safe baseline is reconciled by machine
-# (.github/workflows/repo-settings-sync.yml — by dispatch now; daily and on push
-# once its canary from main has run); the WITH_* opt-ins below are run by hand.
+# (.github/workflows/repo-settings-sync.yml: daily, and on every push to main that
+# touches this script); the WITH_* opt-ins below are run by hand.
 #
 # Usage:
 #   ./apply-repo-settings.sh                 # DRY RUN: report the diff, change nothing
