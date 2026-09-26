@@ -172,9 +172,10 @@ jobs:
           #
           # The distributed bytes are glyph's own committed glyph.toml AT THE
           # CANONICAL TAG — not a hand-written copy, and not a second generator:
-          # glyph holds that file byte-identical to `glyph init --gemoji
-          # --v1-window` output by test (TestGlyphOwnConfigIsTheComposedV1WindowPreset),
-          # so fetching it IS fetching generator output, without running a
+          # glyph holds that file byte-identical to `glyph init --gemoji`
+          # output by test (TestGlyphOwnConfigIsTheGemojiPreset; from v4.0.0
+          # the generator writes no v1-acceptance window), so fetching it IS
+          # fetching generator output, without running a
           # binary here. The arm only ever ADDS the file where none exists —
           # a repo's committed glyph.toml is that repo's own grammar to evolve
           # (windows are removed per repo as histories become all-sigil), and
@@ -374,7 +375,7 @@ jobs:
             config_note=""
             # shellcheck disable=SC2016  # the backticks are markdown code spans in the PR body, not command substitution
             case " $changed_paths " in *" glyph.toml "*)
-              config_note="$(printf '\n**This PR also adds `glyph.toml`** (generator output at %s). From v3.0.0 glyph reads the repository'"'"'s own pattern file instead of an embedded grammar, and a v3-pinned workflow in a config-less repo answers usage (exit 2) on every gate — so the config must never merge later than the pin (it is inert under the v1 pins, so merging it early costs nothing). The file is `glyph init --gemoji --v1-window` output, fetched from the tag and held byte-identical by glyph'"'"'s own test: under its v1-acceptance window the existing sigil-less gitmoji history keeps linting clean, with a warning naming the sigil to start writing.\n' "$config_ref")"
+              config_note="$(printf '\n**This PR also adds `glyph.toml`** (generator output at %s). From v3.0.0 glyph reads the repository'"'"'s own pattern file instead of an embedded grammar, and a v3-pinned workflow in a config-less repo answers usage (exit 2) on every gate — so the config must never merge later than the pin (it is inert under the v1 pins, so merging it early costs nothing). The file is `glyph init --gemoji` output, fetched from the tag and held byte-identical by glyph'"'"'s own test. It carries NO v1-acceptance window (glyph v4.0.0 and later write none): a sigil-less gitmoji subject on or after the release walk'"'"'s base fails `lint` at exit 3 and wedges `release`, so either start the walk past such history with a tag or add the window block by hand (rollout runbook, "Before step 0").\n' "$config_ref")"
             ;; esac
             # shellcheck disable=SC2016  # the backticks are markdown code spans in the PR body, not command substitution
             body="$(printf 'Moves every glyph pin in this repo to **%s** (%s), the version `fleet/commit-lint.yml` distributes.\n\nThese sites are NOT fleet-managed: they live in files this repo owns, so `fleet-sync` cannot byte-copy them and until now they moved only by hand — one pull request per repo, per glyph release.\n%s\nFiles:\n%s\n\nOnly lines carrying a glyph pin were changed; the rewriter refuses and writes nothing if any other line moves. See `akira-toriyama/.github`: `scripts/glyph-pin-rewrite.sh`, `docs/glyph-rollout-runbook.md`.\n' \
@@ -384,7 +385,7 @@ jobs:
             # same line is the commit's subject (the landing takes the message
             # whole), so a one-commit squash keeps the sigil.
             title=":arrow_up:(ci)= pin glyph $want ($moves)"
-            case "$moves" in "(no pin moved"*) title=":wrench:(ci)= add glyph.toml — the config-first invariant, ahead of the $config_ref pins" ;; esac
+            case "$moves" in "(no pin moved"*) title=":wrench:(ci)= add glyph.toml — the config-first invariant behind the $config_ref pins" ;; esac
 
             # ONE commit per repo on the tip this pass read from, the branch
             # rebuilt onto it — or left alone when it already is that. exit 3
