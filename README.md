@@ -94,8 +94,9 @@ writes nothing at all if any other line moves. The branch behind each pull
 request is rebuilt on the repo's current default-branch tip on every run — one
 commit, and none when the branch already holds it
 ([`scripts/glyph-pin-land.sh`](scripts/glyph-pin-land.sh)) — so a pull request
-that a later fleet-sync push left behind catches up by itself. Merging the pull
-requests stays manual. Sequence:
+that a later fleet-sync push left behind catches up by itself. A pull request
+below a major is merged by fleet-automerge (next section) once the repo's
+required checks pass; a major pin is merged by hand. Sequence:
 [`docs/glyph-rollout-runbook.md`](docs/glyph-rollout-runbook.md).
 
 ## fleet-automerge — the third fleet writer
@@ -114,8 +115,9 @@ draft, a conflict, a pull labelled `hold`, and anything unclassifiable stay a
 person's, one log line each. It runs here with `FLEET_SYNC_PAT` because an
 auto-merge that `GITHUB_TOKEN` armed lands as github-actions[bot]'s merge and
 raises no `on: push` workflow in the repo (measured on glyph-test, t-ksee).
-Orchestration: [`scripts/fleet-automerge.sh`](scripts/fleet-automerge.sh);
-dispatch defaults to dry-run.
+Orchestration: [`scripts/fleet-automerge.sh`](scripts/fleet-automerge.sh). It
+runs as the last job of every glyph-pin-rewrite and fleet-sync run, four times a
+day on its own, and on a push that changes it; a dispatch defaults to dry-run.
 
 ## Versioning the reusables
 

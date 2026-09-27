@@ -31,11 +31,16 @@
 # (`:arrow_up:(fleet)= move the glyph canonicals …`) are not a bot family here:
 # that pull is the fleet-change-policy's hand gate and stays one.
 #
-# Stages (docs/fleet-change-policy.md): POC on glyph-test (t-ksee, four pulls,
-# both tokens, strict, the squash title) -> live fire on glyph-test through this
-# file's dispatch with only-repo -> canary one repo -> fleet. This file landed in
-# two steps like repo-settings-sync: workflow_dispatch first (a workflow is
-# dispatchable from the default branch alone), then the schedule and the chains.
+# Stages (docs/fleet-change-policy.md), each performed: POC on glyph-test
+# (t-ksee, pulls #97-#100: both tokens, strict, the squash title) -> live fire
+# from main on glyph-test (2026-09-27, runs 36314585425 dry over 38 repos,
+# 36314657067 apply with only-repo: the patch-shaped #102 merged as the PAT
+# user's merge with Release + commit-lint raised, the major-shaped #103 and the
+# foreign-author dependabot/ #104 left as major-left / held) -> canary on one
+# consumer (halo#70, a real dependabot sill minor) -> this step: the schedule,
+# the push apply and the chains. Landed in two steps like repo-settings-sync
+# (#245 dispatch-only, since a workflow is dispatchable from the default branch
+# alone). Rollback: revert this step and it is dispatch-only again.
 #
 # THE ARMER SEES WHAT IT WRITES: the same credential as fleet-sync, a hard
 # failure without it, the private-repo canary (a degraded token lists only public
@@ -54,6 +59,35 @@ on:
         description: Limit to a single repo name (optional).
         type: string
         default: ''
+  # Chained by the two producers (glyph-pin-rewrite.yml, fleet-sync.yml) as the
+  # last job of their runs, so a pull they just opened is armed in the same
+  # minute and merges the moment its checks pass. The caller passes its own
+  # dry-run / only-repo through, so a dry-run dispatch of a producer stays a dry
+  # run here.
+  workflow_call:
+    inputs:
+      dry-run:
+        type: boolean
+        default: false
+      only-repo:
+        type: string
+        default: ''
+    secrets:
+      FLEET_SYNC_PAT:
+        required: true
+  # Merging a change to the scripts or this file IS the deploy (the fleet-sync
+  # shape, t-7t07). push events carry no inputs, so the apply branch runs.
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/fleet-automerge.sh'
+      - 'scripts/automerge-tier.sh'
+      - '.github/workflows/fleet-automerge.yml'
+  # Four times a day for the pulls no producer chained: dependabot's weekly
+  # bumps, and anything opened between chains. :40 stays clear of the fleet
+  # jobs' 06:00-07:30 slots; the 06:40 run follows glyph-pin-rewrite (06:20).
+  schedule:
+    - cron: '40 */6 * * *'
 
 concurrency:
   group: fleet-automerge
@@ -66,6 +100,12 @@ jobs:
   arm:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    # The workflow-level group above does not reach a chained (workflow_call)
+    # run, whose concurrency is its caller's; this one does, so a chain and the
+    # schedule never arm the same pull at once.
+    concurrency:
+      group: fleet-automerge-arm
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -97,8 +137,10 @@ jobs:
           fi
           echo "token sees $private_n private repo(s)"
 
-          # Only a dispatch carries inputs; every other event applies (the
-          # fleet-sync shape).
+          # Only a dispatch carries inputs; schedule and push apply (the
+          # fleet-sync shape). A chained run inherits its CALLER's event name and
+          # the caller passes its own dry-run input through, so a dispatched dry
+          # run of a producer reads as a dispatch here and stays dry.
           DRY="${DRY_RUN:-false}"
           [ "$EVENT" = "workflow_dispatch" ] || DRY=false
           echo "event=$EVENT dry-run=$DRY only-repo=${ONLY_REPO:-<all>}"
