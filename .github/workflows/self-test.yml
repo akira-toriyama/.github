@@ -438,6 +438,33 @@ jobs:
       - name: Table-test glyph-pin-land
         run: bash tests/glyph-pin-land.test.sh
 
+  # fleet-automerge arms auto-merge on bot pull requests with the PAT. The tier
+  # classifier is pure text (the `(vA -> vB)` title, dependabot's
+  # `update-type:` trailer) and fails closed; the orchestrator's properties — a
+  # dry run arms nothing, allow_auto_merge=false skips the repo, every
+  # person-owned shape is a held line, and an arm is read back — are invisible
+  # to a live run that merely succeeds. The stub records every call.
+  automerge-tier-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Table-test automerge-tier
+        run: bash tests/automerge-tier.test.sh
+
+  fleet-automerge-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # Runs a script against a stubbed gh; never pushes (zizmor artipacked). t-2nh8
+          persist-credentials: false
+      - name: Table-test fleet-automerge
+        run: bash tests/fleet-automerge.test.sh
+
   # RUN the covered-pull extractor over a case table (the real .sh).
   # glyph-covered-pull-audit.yml asserts an ABSENCE across every owned repo —
   # no bot-authored merge commit in any release window, no --merge/--rebase on
@@ -528,6 +555,8 @@ jobs:
           bash tests/platform-floor-scan.test.sh
           bash tests/token-expiry-probe.test.sh
           bash tests/glyph-pin-land.test.sh
+          bash tests/automerge-tier.test.sh
+          bash tests/fleet-automerge.test.sh
 
   # RUN the go-bite gate over a case table (the real .sh) so a break fails HERE, not
   # in a fleet caller after @v2 moves. Each case builds a throwaway Go repo under

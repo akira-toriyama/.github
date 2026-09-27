@@ -98,6 +98,25 @@ that a later fleet-sync push left behind catches up by itself. Merging the pull
 requests stays manual. Sequence:
 [`docs/glyph-rollout-runbook.md`](docs/glyph-rollout-runbook.md).
 
+## fleet-automerge — the third fleet writer
+
+The two writers above open pull requests; until 2026-09 every one of them was
+merged by hand, none with a judgement recorded (163 glyph-pin, 39 fleet-sync and
+101 dependabot pulls in 60 days; a glyph release reached the fleet 8 days after
+its pulls opened, or 8 minutes when someone happened to be watching).
+[`fleet-automerge.yml`](.github/workflows/fleet-automerge.yml) arms
+`gh pr merge --auto --squash` on the bot pulls a person never reads — `glyph-pin/`
+and `fleet-sync/` pulls this hub opened, `dependabot/` bumps below a major — so
+each repo's **required checks** merge them. The tier is read where the producer
+wrote it ([`scripts/automerge-tier.sh`](scripts/automerge-tier.sh): the title's
+`(vA -> vB)`, dependabot's `update-type:` trailer) and fails closed; a major, a
+draft, a conflict, a pull labelled `hold`, and anything unclassifiable stay a
+person's, one log line each. It runs here with `FLEET_SYNC_PAT` because an
+auto-merge that `GITHUB_TOKEN` armed lands as github-actions[bot]'s merge and
+raises no `on: push` workflow in the repo (measured on glyph-test, t-ksee).
+Orchestration: [`scripts/fleet-automerge.sh`](scripts/fleet-automerge.sh);
+dispatch defaults to dry-run.
+
 ## Versioning the reusables
 
 Callers pin the **moving `@v2`** tag; merging to `main` does not reach them until

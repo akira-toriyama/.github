@@ -1,0 +1,105 @@
+# Fleet auto-merge: arm `gh pr merge --auto --squash` on the bot pull requests a
+# person never reads — glyph-pin/ and fleet-sync/ pulls this hub opened, and
+# dependabot/ bumps below a major — so a repo's own required checks merge them.
+# The third fleet writer, in the shape of the other two: dispatch defaults to
+# dry-run, the scheduled and chained runs apply, every arm is read back, and a
+# refusal is counted, never swallowed (scripts/fleet-automerge.sh, table-tested
+# in tests/fleet-automerge.test.sh).
+#
+# Why this runs HERE with FLEET_SYNC_PAT and not in each repo with GITHUB_TOKEN.
+# Measured on glyph-test (t-ksee, 2026-09-27, pulls #97-#100): an auto-merge
+# that GITHUB_TOKEN armed lands as github-actions[bot]'s merge and raises NO
+# `on: push` workflow on the default branch — a repo's release.yml never sees
+# its pin move, and its head branch is not even deleted. Armed by the PAT user
+# it lands as that user's merge; Release and commit-lint start within seconds.
+# The PAT actor is the whole point.
+#
+# Why the machine may merge these at all. 60 days measured (e-xj9m): 163
+# glyph-pin pulls, 39 fleet-sync pulls, 101 dependabot pulls — every merged one
+# merged by hand, none with a judgement recorded, dependabot's median wait 3.8
+# days and 40 of them closed unmerged because the next weekly bump overtook them.
+# A glyph release reached the fleet 8 days after its pulls opened; the one time a
+# person happened to be sitting there, 8 minutes. The difference was never the
+# review. What a person keeps: every major (the tier is read from the title's
+# `(vA -> vB)` or dependabot's `update-type:` trailer — scripts/automerge-tier.sh),
+# drafts, conflicts, a pull labelled `hold`, and anything unclassifiable.
+#
+# The reviewer is the repository's required checks: GitHub refuses to arm on an
+# unprotected branch (counted as skipped(unprotected)), and a repo whose
+# allow_auto_merge is off is skipped whole (scripts/apply-repo-settings.sh levels
+# that setting fleet-wide). The hub's OWN canonical-bump pulls
+# (`:arrow_up:(fleet)= move the glyph canonicals …`) are not a bot family here:
+# that pull is the fleet-change-policy's hand gate and stays one.
+#
+# Stages (docs/fleet-change-policy.md): POC on glyph-test (t-ksee, four pulls,
+# both tokens, strict, the squash title) -> live fire on glyph-test through this
+# file's dispatch with only-repo -> canary one repo -> fleet. This file landed in
+# two steps like repo-settings-sync: workflow_dispatch first (a workflow is
+# dispatchable from the default branch alone), then the schedule and the chains.
+#
+# THE ARMER SEES WHAT IT WRITES: the same credential as fleet-sync, a hard
+# failure without it, the private-repo canary (a degraded token lists only public
+# repos and would read as "nothing to arm"), and a read-back of every arm.
+
+name: fleet-automerge
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: Log what would be armed without arming anything.
+        type: boolean
+        default: true
+      only-repo:
+        description: Limit to a single repo name (optional).
+        type: string
+        default: ''
+
+concurrency:
+  group: fleet-automerge
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  arm:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Arm auto-merge on the fleet's bot pull requests
+        env:
+          # fleet-sync's credential, NOT github.token: the merge must be the PAT
+          # user's so the landed commit raises the repo's push workflows (header).
+          GH_TOKEN: ${{ secrets.FLEET_SYNC_PAT }}
+          OWNER: akira-toriyama
+          EVENT: ${{ github.event_name }}
+          DRY_RUN: ${{ inputs.dry-run }}
+          ONLY_REPO: ${{ inputs.only-repo }}
+        run: |
+          set -euo pipefail
+
+          # Fail loud, not open: without the PAT the token sees no private repos
+          # and arms as the wrong actor.
+          [ -n "${GH_TOKEN:-}" ] || { echo "::error::FLEET_SYNC_PAT is not set — refusing to run as github.token (wrong actor, public-only view)."; exit 1; }
+
+          # The private-repo canary — the SHAPE of the list, not its size
+          # (glyph-pin-audit's 29-of-35 incident).
+          private_n="$(gh repo list "$OWNER" --no-archived --source --limit 200 \
+            --json visibility -q '[.[] | select(.visibility=="PRIVATE")] | length')"
+          if [ "${private_n:-0}" -eq 0 ]; then
+            echo "::error::the repo list contains no private repos — the token's view is degraded; refusing to call this a fleet run."
+            exit 1
+          fi
+          echo "token sees $private_n private repo(s)"
+
+          # Only a dispatch carries inputs; every other event applies (the
+          # fleet-sync shape).
+          DRY="${DRY_RUN:-false}"
+          [ "$EVENT" = "workflow_dispatch" ] || DRY=false
+          echo "event=$EVENT dry-run=$DRY only-repo=${ONLY_REPO:-<all>}"
+          APPLY="$([ "$DRY" = "true" ] && echo 0 || echo 1)" bash scripts/fleet-automerge.sh "$OWNER" "$ONLY_REPO"
