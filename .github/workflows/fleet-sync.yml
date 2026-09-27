@@ -666,3 +666,20 @@ jobs:
             echo "::error::read-back: the fleet does NOT hold what this apply run claims ($stale stale, $unreadable unreadable). Success above was a claim; this is the measurement."
             exit 1
           fi
+
+  # The pull requests this run just opened (the protected-branch fallback) are
+  # armed before it ends (fleet-automerge.yml: a fleet-sync/ pull is always
+  # below a major — the bytes already landed on 30+ default branches by direct
+  # push — so the repo's required checks merge it, with the same PAT). dry-run
+  # and only-repo pass through, so a dry-run dispatch here arms nothing there.
+  # Runs whatever the outcome above short of a cancel: the pulls already open are
+  # independent of whether this run could add to them.
+  automerge:
+    needs: sync
+    if: ${{ !cancelled() }}
+    uses: ./.github/workflows/fleet-automerge.yml
+    with:
+      dry-run: ${{ inputs.dry-run == true }}
+      only-repo: ${{ inputs.only-repo }}
+    secrets:
+      FLEET_SYNC_PAT: ${{ secrets.FLEET_SYNC_PAT }}

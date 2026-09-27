@@ -36,8 +36,10 @@ three are lines inside files each repo owns and writes differently.
 Those bottom three moved **only by hand** until 2026-07-28 — one pull request per
 repo per glyph release, 22 references across 14 repos on the v0.11.2 rollout, with
 the audit red for the four days it took. `glyph-pin-rewrite.yml` opens those pull
-requests now; **merging them is still yours**, and until they merge the audit is
-correctly red.
+requests now, and `fleet-automerge.yml` (chained at the end of its run, and four
+times a day) arms auto-merge on every one **below a major**, so each repo's
+required checks merge it. **A major pin is still yours to merge**; until every
+pull merges the audit is correctly red.
 
 Do not look for those pins by filename. `sill` keeps its install step in
 `.github/workflows/build.yml` while the eight other consumers call it
@@ -157,9 +159,11 @@ config first, pins second, and it changes the sequence above in four ways:
 5. Run the rewriter **with apply**:
    `gh workflow run glyph-pin-rewrite.yml -f dry-run=false`. It opens one
    `glyph-pin/vX.Y.Z` PR per repo still carrying an unmanaged pin, moving the
-   `@tag` and the `version:` under it in the same edit. Merge them. (Its
-   `workflow_dispatch` defaults to dry-run for the same reason fleet-sync's does;
-   run it without the flag first if you want the list.) A pull request that a
+   `@tag` and the `version:` under it in the same edit. Below a major they merge
+   on their own — the run's last job arms auto-merge and each repo's required
+   checks do the rest; read that job's log for `major-left:` lines and merge
+   those by hand. (Its `workflow_dispatch` defaults to dry-run for the same
+   reason fleet-sync's does; run it without the flag first if you want the list.) A pull request that a
    later fleet-sync push left `BEHIND` catches up on the next scheduled run —
    the branch is rebuilt on the current tip (`scripts/glyph-pin-land.sh`) — so
    a stale one is a reason to wait for the nightly, not to update it by hand.

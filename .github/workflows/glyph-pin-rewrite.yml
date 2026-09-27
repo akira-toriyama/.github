@@ -50,9 +50,12 @@
 # the rewrite and its default branch, which is the only reviewer this mechanism
 # gets.
 #
-# WHAT IT DELIBERATELY DOES NOT DO: merge. Opening the pull requests is the half
-# that was mechanical; merging them is a judgment about a repo's own release
-# workflow.
+# WHAT MERGES THEM. Until 2026-09 this file said merging was a judgement about a
+# repo's own release workflow and left it to a person; 141 merged pulls later,
+# none had carried one, and a release reached the fleet 8 days after its pulls
+# opened. fleet-automerge.yml (chained below as this run's last job, and four
+# times a day) arms auto-merge on every pull below a MAJOR, so the repo's own
+# required checks merge it; a major pin stays a person's, one log line per run.
 #
 # THE BRANCH IS REBUILT, NEVER ADOPTED. Each apply run re-derives the
 # `glyph-pin/vX.Y.Z` branch as ONE commit on the repo's current default-branch
@@ -420,3 +423,18 @@ jobs:
           # fleet is level as far as I could see".
           [ "$skipped" -eq 0 ] || echo "::warning::glyph-pin-rewrite: $skipped file(s)/repo(s) could not be read or written — they were NOT repaired and this run says nothing about them"
           [ "$hard" -eq 0 ] || { echo "::error::the rewriter refused at least one file — that is a defect in glyph-pin-rewrite itself, not in a target repo"; exit 1; }
+
+  # The pulls this run just opened are armed before it ends (fleet-automerge.yml:
+  # below a major, by the repo's required checks, with the same PAT). dry-run and
+  # only-repo pass through, so a dry-run dispatch here arms nothing there. Runs
+  # whatever the outcome above short of a cancel: the pulls already open are
+  # independent of whether this run could add to them.
+  automerge:
+    needs: rewrite
+    if: ${{ !cancelled() }}
+    uses: ./.github/workflows/fleet-automerge.yml
+    with:
+      dry-run: ${{ inputs.dry-run == true }}
+      only-repo: ${{ inputs.only-repo }}
+    secrets:
+      FLEET_SYNC_PAT: ${{ secrets.FLEET_SYNC_PAT }}
