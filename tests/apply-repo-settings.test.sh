@@ -39,6 +39,7 @@ trap 'rm -rf "$stub_dir"' EXIT
 #   $STUB_HOME/alerts-off.<name>      present = that repo's vulnerability-alerts GET
 #                                     404s, i.e. Dependabot alerts are OFF (drift)
 #   $STUB_HOME/dbom-off.<name>        present = delete_branch_on_merge is false (drift)
+#   $STUB_HOME/automerge-off.<name>   present = allow_auto_merge is false (drift)
 #   $STUB_HOME/cs-off.<name>          present = code scanning is not-configured with
 #                                     `actions` detected (drift; the async PATCH)
 #   $STUB_HOME/unreadable.<name>      present = every GET on that repo fails 403
@@ -53,15 +54,21 @@ trap 'rm -rf "$stub_dir"' EXIT
 #                                     present = the branch-protection GET fails 403
 #                                     (not the 404 that means "unprotected")
 #   $STUB_HOME/protection.<name>      that repo's branch protection JSON (absent =
-#                                     404, an unprotected branch)
+#                                     404, an unprotected branch; its
+#                                     required_status_checks answers the
+#                                     sub-endpoint, absent = 404 there)
 #   $STUB_HOME/check-runs.<name>      that repo's HEAD check-run names, one per
 #                                     line (absent = a repo whose HEAD ran nothing)
 #   $STUB_HOME/check-runs-fail        present = the check-runs GET fails (transient)
 #   $STUB_HOME/mutations.log          written by the stub: one `VERB path` per -X
 #                                     call it accepted (what the script tried to write)
+#   $STUB_HOME/bodies.log             written by the stub: `path<TAB>body` per -X
+#                                     call that carried an --input body (what the
+#                                     script sent, byte for byte)
 # A mutation the stub accepts FLIPS its state (alerts-off.<name> is removed, the
-# protection body is recorded), so the script's read-back sees what a real API
-# would — unless stale-writes is present.
+# protection body is recorded; a PATCH on required_status_checks merges into what
+# is there, as the API leaves an omitted field alone), so the script's read-back
+# sees what a real API would — unless stale-writes is present.
 cat >"$stub_dir/gh" <<'STUB'
 #!/usr/bin/env bash
 set -uo pipefail
@@ -70,11 +77,12 @@ if [ "${1:-}" = "repo" ] && [ "${2:-}" = "list" ]; then
 fi
 [ "${1:-}" = "api" ] || { echo "stub gh: unhandled command: $*" >&2; exit 64; }
 shift
-verb=GET; path=""; jqexpr=""; body=""
+verb=GET; path=""; jqexpr=""; body=""; fields=""
 while [ "$#" -gt 0 ]; do
   case "$1" in
     -X) verb="$2"; shift 2 ;;
-    -H|-F|-f) shift 2 ;;
+    -F|-f) fields="$fields $2"; shift 2 ;;
+    -H) shift 2 ;;
     --jq) jqexpr="$2"; shift 2 ;;
     --input) [ "$2" = "-" ] && body="$(cat)"; shift 2 ;;
     -*) shift ;;
@@ -91,15 +99,21 @@ if [ "$p" = "$name" ]; then rest=""; else rest="${p#*/}"; fi
 if [ "$verb" != GET ]; then
   [ -e "$STUB_HOME/fail-mutations" ] && exit 1
   echo "$verb $path" >>"$STUB_HOME/mutations.log"
+  [ -n "$body" ] && printf '%s\t%s\n' "$path" "$body" >>"$STUB_HOME/bodies.log"
   [ -e "$STUB_HOME/stale-writes" ] && exit 0
   case "$rest" in
-    "")                           rm -f "$STUB_HOME/dbom-off.$name" ;;
+    "")
+      case " $fields " in *" delete_branch_on_merge=true "*) rm -f "$STUB_HOME/dbom-off.$name" ;; esac
+      case " $fields " in *" allow_auto_merge=true "*) rm -f "$STUB_HOME/automerge-off.$name" ;; esac ;;
     vulnerability-alerts)         rm -f "$STUB_HOME/alerts-off.$name" ;;
     code-scanning/default-setup)  rm -f "$STUB_HOME/cs-off.$name" ;;
     branches/main/protection)
       printf '%s' "$body" | jq -c '{required_status_checks: .required_status_checks}' >"$STUB_HOME/protection.$name" ;;
     branches/main/protection/required_status_checks)
-      printf '%s' "$body" | jq -c '{required_status_checks: .}' >"$STUB_HOME/protection.$name" ;;
+      f="$STUB_HOME/protection.$name"
+      [ -f "$f" ] || exit 1
+      jq -c --argjson b "$body" '.required_status_checks = ((.required_status_checks // {}) + $b)' "$f" >"$f.next" \
+        && mv "$f.next" "$f" ;;
   esac
   [ -e "$STUB_HOME/unreadable-after-write.$name" ] && : >"$STUB_HOME/unreadable.$name"
   exit 0
@@ -113,8 +127,10 @@ if [ -e "$STUB_HOME/flaky.$name" ]; then
 fi
 case "$rest" in
   "")
-    if [ -e "$STUB_HOME/dbom-off.$name" ]; then emit '{"delete_branch_on_merge":false}'
-    else emit '{"delete_branch_on_merge":true}'; fi ;;
+    dbom=true; aam=true
+    [ -e "$STUB_HOME/dbom-off.$name" ] && dbom=false
+    [ -e "$STUB_HOME/automerge-off.$name" ] && aam=false
+    emit "{\"delete_branch_on_merge\":$dbom,\"allow_auto_merge\":$aam}" ;;
   private-vulnerability-reporting)           emit '{"enabled":true}' ;;
   code-scanning/default-setup)
     if [ -e "$STUB_HOME/cs-off.$name" ]; then emit '{"state":"not-configured","languages":["actions"]}'
@@ -132,10 +148,13 @@ case "$rest" in
     else
       emit '{"check_runs":[]}'
     fi ;;
-  branches/main/protection)
+  branches/main/protection|branches/main/protection/required_status_checks)
     if [ -e "$STUB_HOME/protection-unreadable.$name" ]; then echo "gh: API rate limit exceeded (HTTP 403)" >&2; exit 1; fi
     f="$STUB_HOME/protection.$name"
-    if [ -f "$f" ]; then emit "$(cat "$f")"; else echo "gh: Branch not protected (HTTP 404)" >&2; exit 1; fi ;;
+    [ -f "$f" ] || { echo "gh: Branch not protected (HTTP 404)" >&2; exit 1; }
+    if [ "$rest" = branches/main/protection ]; then emit "$(cat "$f")"
+    elif jq -e '.required_status_checks != null' "$f" >/dev/null 2>&1; then emit "$(jq -c '.required_status_checks' "$f")"
+    else echo "gh: Not Found (HTTP 404)" >&2; exit 1; fi ;;
   contents/.github/workflows/commit-lint.yml)
     f="$STUB_HOME/commit-lint.$name"
     [ -f "$f" ] || exit 1
@@ -345,9 +364,9 @@ cp "$canonical" "$STUB_HOME/commit-lint.hasit"
 run_script
 if [ "$RC" -ne 0 ] \
   && ! printf '%s' "$OUT" | grep -q "would:" \
-  && [ "$(printf '%s\n' "$OUT" | grep -c "unreadable: .* in ghost")" -eq 5 ] \
-  && printf '%s' "$OUT" | grep -q "would=0 unreadable=5" \
-  && printf '%s' "$OUT" | grep -q "5 setting(s) could not be read"; then
+  && [ "$(printf '%s\n' "$OUT" | grep -c "unreadable: .* in ghost")" -eq 7 ] \
+  && printf '%s' "$OUT" | grep -q "would=0 unreadable=7" \
+  && printf '%s' "$OUT" | grep -q "7 setting(s) could not be read"; then
   pass "an unreadable repo is reported per setting, never counted as drift, and fails the dry run"
 else
   fail "an unreadable repo is reported per setting, never counted as drift, and fails the dry run"
@@ -357,7 +376,7 @@ run_script APPLY=1
 if [ "$RC" -ne 0 ] \
   && ! printf '%s' "$OUT" | grep -qE "landed:|applied:|::FAILED::" \
   && [ ! -e "$STUB_HOME/mutations.log" ] \
-  && printf '%s' "$OUT" | grep -q "landed=0 async=0 failed=0 unreadable=5"; then
+  && printf '%s' "$OUT" | grep -q "landed=0 async=0 failed=0 unreadable=7"; then
   pass "APPLY never writes to a setting it could not read"
 else
   fail "APPLY never writes to a setting it could not read"
@@ -430,9 +449,10 @@ else
   fail "delete_branch_on_merge is read back; the asynchronous code-scanning write is counted apart"
 fi
 
-# A private repo gets three of the five baseline settings; the two that need a
-# public repo (private vulnerability reporting, code scanning) are n/a, never
-# drift, never written.
+# A private repo gets three of the seven baseline settings; the four that need a
+# public repo (private vulnerability reporting, code scanning, and the two
+# merge-flow settings — this plan has no branch protection on private repos, so
+# auto-merge can never arm there) are n/a, never drift, never written.
 STUB_HOME="$stub_dir/fleet-private"; mkdir -p "$STUB_HOME"
 printf 'vault\tPRIVATE\n' >"$STUB_HOME/repos"
 : >"$STUB_HOME/alerts-off.vault"
@@ -441,12 +461,57 @@ run_script APPLY=1
 if [ "$RC" -eq 0 ] \
   && printf '%s' "$OUT" | grep -q "n/a: private vuln reporting (private repo)" \
   && printf '%s' "$OUT" | grep -q "n/a: code scanning default setup (private repo" \
+  && printf '%s' "$OUT" | grep -q "n/a: allow_auto_merge (private repo" \
+  && printf '%s' "$OUT" | grep -q "n/a: required_status_checks.strict (private repo" \
   && printf '%s' "$OUT" | grep -q "landed: vulnerability-alerts=on" \
   && printf '%s' "$OUT" | grep -q "landed=1 async=0 failed=0 unreadable=0" \
   && [ "$(cat "$STUB_HOME/mutations.log")" = "PUT repos/akira-toriyama/vault/vulnerability-alerts" ]; then
   pass "a private repo gets the three settings that apply to it and nothing else"
 else
   fail "a private repo gets the three settings that apply to it and nothing else"
+fi
+
+# The two merge-flow settings fleet-automerge relies on (t-5t1h): with
+# allow_auto_merge off it skips the repo whole, and under required_status_checks
+# .strict an armed pull that is BEHIND main stays open for good (measured,
+# glyph-test #99). The PATCH that lowers strict carries `strict` ALONE — measured
+# on glyph-test, that leaves the checks (app_id included) and every other
+# protection field as they were. `behind` has both drifts; `level` is protected
+# and already strict:false; `bare` has no protection at all (a 404 is "nothing to
+# level", never drift).
+STUB_HOME="$stub_dir/fleet-merge"; mkdir -p "$STUB_HOME"
+printf 'behind\tPUBLIC\nlevel\tPUBLIC\nbare\tPUBLIC\n' >"$STUB_HOME/repos"
+: >"$STUB_HOME/automerge-off.behind"
+printf '%s' '{"required_status_checks":{"strict":true,"checks":[{"context":"build","app_id":15368},{"context":"lint / lint","app_id":15368}],"contexts":["build","lint / lint"]},"enforce_admins":{"enabled":false}}' \
+  >"$STUB_HOME/protection.behind"
+printf '%s' '{"required_status_checks":{"strict":false,"checks":[{"context":"lint / lint","app_id":15368}],"contexts":["lint / lint"]}}' \
+  >"$STUB_HOME/protection.level"
+
+run_script
+if [ "$RC" -eq 0 ] \
+  && printf '%s' "$OUT" | grep -q "would: allow_auto_merge=true" \
+  && printf '%s' "$OUT" | grep -q "would: required_status_checks.strict=false (checks preserved)" \
+  && printf '%s' "$OUT" | grep -q "n/a: required_status_checks.strict (no protected main with required checks in bare)" \
+  && printf '%s' "$OUT" | grep -q "would=2 unreadable=0 across 3 repo(s)" \
+  && [ ! -e "$STUB_HOME/mutations.log" ]; then
+  pass "auto-merge off and strict on are drift; a level repo and an unprotected main are quiet"
+else
+  fail "auto-merge off and strict on are drift; a level repo and an unprotected main are quiet"
+fi
+
+run_script APPLY=1
+if [ "$RC" -eq 0 ] \
+  && printf '%s' "$OUT" | grep -q "landed: allow_auto_merge=true" \
+  && printf '%s' "$OUT" | grep -q "landed: required_status_checks.strict=false (checks preserved)" \
+  && printf '%s' "$OUT" | grep -q "landed=2 async=0 failed=0 unreadable=0" \
+  && [ "$(sort "$STUB_HOME/mutations.log" | tr '\n' ' ')" = "PATCH repos/akira-toriyama/behind PATCH repos/akira-toriyama/behind/branches/main/protection/required_status_checks " ] \
+  && [ "$(cut -f2 "$STUB_HOME/bodies.log")" = '{"strict":false}' ] \
+  && jq -e '.required_status_checks == {strict:false, checks:[{context:"build",app_id:15368},{context:"lint / lint",app_id:15368}], contexts:["build","lint / lint"]}
+            and .enforce_admins.enabled == false' "$STUB_HOME/protection.behind" >/dev/null \
+  && [ ! -e "$STUB_HOME/automerge-off.behind" ]; then
+  pass "strict is lowered by a PATCH carrying strict alone, the checks survive, and both settings are read back"
+else
+  fail "strict is lowered by a PATCH carrying strict alone, the checks survive, and both settings are read back"
 fi
 
 # ONLY= is the canary. A name that matches nothing must not be a clean canary

@@ -1,10 +1,10 @@
 # Fleet settings reconcile: every owned, non-fork, non-archived repo carries the
 # SAFE BASELINE that scripts/apply-repo-settings.sh defines (Dependabot alerts +
 # security updates, private vulnerability reporting, CodeQL `actions`, branch
-# auto-delete). fleet-sync distributes FILES; this distributes SETTINGS, in the
-# same shape: dispatch defaults to dry-run, schedule and push apply, every write
-# is read back by the script, and a setting the run could not read is red and
-# never written.
+# auto-delete, auto-merge allowed, required checks not `strict`). fleet-sync
+# distributes FILES; this distributes SETTINGS, in the same shape: dispatch
+# defaults to dry-run, schedule and push apply, every write is read back by the
+# script, and a setting the run could not read is red and never written.
 #
 # Why the machine applies (t-qsea -> t-4ghh). The script only ever ran by hand.
 # t-qsea (2026-07-26) found 10 of 35 repos with Dependabot alerts OFF and added a
@@ -17,9 +17,12 @@
 # protection, immutable releases, CodeQL go) stay by hand: they need per-repo
 # judgement, and this workflow never passes them.
 #
-# Blast radius: the five baseline settings, each idempotent and each an "on"
-# toggle — the worst a bad run can do is turn on what was already on. Rollback
-# is a revert of this file; a setting itself is flipped back by hand.
+# Blast radius: the seven baseline settings, each idempotent. Six are "on"
+# toggles — the worst a bad run can do is turn on what was already on. The
+# seventh, required_status_checks.strict=false, loosens one knob on a protected
+# main: the pull still needs every required check green, it just need not be
+# re-run against the newest main (docs/repo-settings.md, t-5t1h). Rollback is a
+# revert of this file; a setting itself is flipped back by hand.
 #
 # Canary before merging a change to this file or the script
 # (docs/fleet-change-policy.md): knock a baseline setting off on glyph-test by
