@@ -8,17 +8,19 @@
 #
 # Usage:
 #   ./apply-repo-settings.sh                 # DRY RUN: report the diff, change nothing
-#   APPLY=1 ./apply-repo-settings.sh         # apply the SAFE baseline (5 settings), read each write back
+#   APPLY=1 ./apply-repo-settings.sh         # apply the SAFE baseline (7 settings), read each write back
 #   APPLY=1 WITH_TOKEN_FLIP=1 ...            # also flip default token -> read (see SKIP_TOKEN_FLIP)
 #   APPLY=1 WITH_PROTECTION=1 ...            # also add the commit-lint required check (additive)
 #   APPLY=1 WITH_IMMUTABLE=1 ...             # also enable immutable releases on release repos
 #   APPLY=1 WITH_CODEQL_GO=1 ...             # also add CodeQL "go" (build) on GO_REPOS
 #   ONLY=facet APPLY=1 ...                   # limit to one repo (the canary)
 #
-# Safe baseline (always): delete_branch_on_merge, private vuln reporting (public
-# repos), code scanning default setup (CodeQL "actions", public repos), Dependabot
-# alerts, Dependabot security updates. Token-flip / branch protection / immutable
-# releases / CodeQL-go are opt-in because they need per-repo judgement.
+# Safe baseline (always): delete_branch_on_merge, allow_auto_merge (public repos),
+# required_status_checks.strict=false on a protected main (public repos), private
+# vuln reporting (public repos), code scanning default setup (CodeQL "actions",
+# public repos), Dependabot alerts, Dependabot security updates. Token-flip /
+# branch protection / immutable releases / CodeQL-go are opt-in because they need
+# per-repo judgement.
 #
 # Contract for every setting, in both modes:
 #   - a state this script could not READ is neither compliant nor drifted. It is
@@ -120,6 +122,8 @@ holds() {
   local v
   case "$1" in
     delete_branch_on_merge)          v=$(get_field "repos/$full" '.delete_branch_on_merge') || return 2; [ "$v" = "true" ] ;;
+    allow_auto_merge)                v=$(get_field "repos/$full" '.allow_auto_merge') || return 2; [ "$v" = "true" ] ;;
+    strict)                          v=$(get_field "repos/$full/branches/main/protection/required_status_checks" '.strict') || return 2; [ "$v" = "false" ] ;;
     private-vulnerability-reporting) v=$(get_field "repos/$full/private-vulnerability-reporting" '.enabled') || return 2; [ "$v" = "true" ] ;;
     vulnerability-alerts)            v=$(get_toggle "repos/$full/vulnerability-alerts") || return 2; [ "$v" = "on" ] ;;
     automated-security-fixes)        v=$(get_field "repos/$full/automated-security-fixes" '.enabled') || return 2; [ "$v" = "true" ] ;;
@@ -230,6 +234,46 @@ for line in "${REPOS[@]}"; do
       gh api -X PATCH "repos/$full" -F delete_branch_on_merge=true
   else
     unreadable "delete_branch_on_merge"
+  fi
+
+  # 1b) allow auto-merge. fleet-automerge.yml arms `gh pr merge --auto` on the bot
+  #    pulls below a major and skips whole any repo with this off (t-5t1h). Public
+  #    repos only: auto-merge can only arm on a protected branch, and on this plan
+  #    a private repo answers 403 ("Upgrade to GitHub Pro") to every protection
+  #    endpoint — the setting would hold there (fleet-test holds it) but buy nothing.
+  if [ "$VIS" = "PUBLIC" ]; then
+    if cur=$(get_field "repos/$full" '.allow_auto_merge'); then
+      [ "$cur" = "true" ] || run "allow_auto_merge=true" allow_auto_merge \
+        gh api -X PATCH "repos/$full" -F allow_auto_merge=true
+    else
+      unreadable "allow_auto_merge"
+    fi
+  else
+    echo "    n/a: allow_auto_merge (private repo; auto-merge needs branch protection, and this plan offers none on private repos)"
+  fi
+
+  # 1c) required_status_checks.strict=false where main is protected with required
+  #    checks. Under strict an armed pull that is BEHIND main stays open for good
+  #    (measured, glyph-test #99: 150 s past green, no merge) — the fleet's
+  #    auto-merge trusts the required checks, not a re-run against the newest main,
+  #    and the bot pulls rebase themselves (glyph-pin-land nightly, dependabot on
+  #    its own). The reference protection (the PUT template in 6) is strict:false;
+  #    six repos carried true by hand. The PATCH carries `strict` ALONE — measured
+  #    on glyph-test, that leaves the checks (with their app_id) and every other
+  #    protection field as they were; the contexts are 6's business. 404 = no
+  #    protected main, or one with no required checks: nothing to level. Private
+  #    repos: 403 on this plan, as in 1b.
+  if [ "$VIS" = "PUBLIC" ]; then
+    if cur=$(get_field "repos/$full/branches/main/protection/required_status_checks" '.strict'); then
+      [ "$cur" = "false" ] || run "required_status_checks.strict=false (checks preserved)" strict \
+        gh api -X PATCH "repos/$full/branches/main/protection/required_status_checks" --input - <<<'{"strict":false}'
+    elif grep -q 'HTTP 404' "$errf"; then
+      echo "    n/a: required_status_checks.strict (no protected main with required checks in $R)"
+    else
+      unreadable "required_status_checks.strict"
+    fi
+  else
+    echo "    n/a: required_status_checks.strict (private repo; branch protection is 403 on this plan)"
   fi
 
   # 2) private vulnerability reporting (public repos only; 404/N-A on private)

@@ -13,6 +13,8 @@ Safe baseline (always, idempotent):
 | Setting | API |
 |---|---|
 | auto-delete head branch on merge | `PATCH /repos/{R}` `delete_branch_on_merge=true` |
+| allow auto-merge (public repos) | `PATCH /repos/{R}` `allow_auto_merge=true` |
+| required status checks not `strict` (public repos whose `main` is protected with required checks) | `PATCH /repos/{R}/branches/main/protection/required_status_checks` `{"strict":false}` |
 | Private Vulnerability Reporting (public repos) | `PUT /repos/{R}/private-vulnerability-reporting` |
 | Code scanning default setup — CodeQL `actions` (public repos) | `PATCH /repos/{R}/code-scanning/default-setup` `state=configured` `languages=[actions]` |
 | Dependabot alerts | `PUT /repos/{R}/vulnerability-alerts` |
@@ -34,6 +36,25 @@ validation run, it is the one write the script does not read back in the same ru
 back-to-back while that validation is still pending can make the PATCH itself
 fail (a `::FAILED::` line), and the next run reconciles it. A repo that shows up
 as `async=1` every day is one whose validation keeps failing — look at it.
+
+**Auto-merge and `strict` are there for
+[`fleet-automerge`](../.github/workflows/fleet-automerge.yml)** (t-5t1h). It arms
+`gh pr merge --auto` on the bot pulls below a major and lets the repo's required
+checks decide; a repo with `allow_auto_merge` off is skipped there whole, and
+under `required_status_checks.strict` an armed pull that is BEHIND `main` stays
+open for good (measured on glyph-test #99: 150 s past green, no merge; the fleet's
+first apply run left facet#478 and wand#231 waiting exactly so). The hub's own
+reference protection — the fresh-PUT template of `WITH_PROTECTION` — has always
+been `strict:false`; six repos (chord dotfiles facet perch swift-toml-edit wand)
+carried `true` by hand. The PATCH carries `strict` **alone**: measured on
+glyph-test, that leaves the checks (with their `app_id`) and every other
+protection field exactly as they were. Both settings are public-only: on this plan a private repo
+answers 403 ("Upgrade to GitHub Pro") to every protection endpoint, so auto-merge
+can never arm there and there is nothing to level (`n/a:` lines, never drift).
+`strict=false` is the one baseline setting that loosens rather than tightens — the
+pull still needs every required check green; what it no longer needs is a re-run
+against the newest `main`, and the bot pulls rebase themselves (glyph-pin-land
+nightly, dependabot on its own).
 
 **Contract for every setting, in both modes** (pinned by
 [`tests/apply-repo-settings.test.sh`](../tests/apply-repo-settings.test.sh)):
@@ -139,14 +160,19 @@ and left the apply to a human. That audit was red on 22 of the 29 days to
 2026-09-24 — four repos (dotfiles-private, glyph-monorepo-test, kiln,
 furrow-test) were born drifted after the one hand-run in that window and stayed
 so for up to three weeks (t-4ghh). A red that waits for a human is not acted on
-in this fleet. The blast radius of a bad run is the five baseline settings, each
-idempotent and each an "on" toggle; rollback is a revert of the workflow.
+in this fleet. The blast radius of a bad run is the seven baseline settings, each
+idempotent — six are "on" toggles, and `strict=false` loosens one knob on a `main`
+whose required checks still gate the merge (above); rollback is a revert of the
+workflow.
 
 Canary before merging a change to the script or the workflow, from the branch,
 both halves — knock a baseline setting off on `glyph-test` by hand (the fleet
-is level, so nothing else exercises the write path), then:
+is level, so nothing else exercises the write path; the two merge-flow settings
+are the cheap ones to knock off), then:
 
 ```sh
+gh api -X PATCH repos/akira-toriyama/glyph-test -F allow_auto_merge=false
+gh api -X PATCH repos/akira-toriyama/glyph-test/branches/main/protection/required_status_checks --input - <<<'{"strict":true}'
 gh workflow run repo-settings-sync.yml --ref <branch> -f dry-run=true  -f only-repo=glyph-test   # expect would:, nothing applied
 gh workflow run repo-settings-sync.yml --ref <branch> -f dry-run=false -f only-repo=glyph-test   # expect landed:
 ```
