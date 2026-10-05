@@ -30,7 +30,11 @@ line to `MANIFEST` in [`.github/workflows/fleet-sync.yml`](../.github/workflows/
 - `commit-lint.yml` → each repo's `.github/workflows/commit-lint.yml` (caller
   stub pinning [glyph](https://github.com/akira-toriyama/glyph)'s `lint.yml`
   reusable at a concrete release tag; enforces the commit convention on every
-  PR. The hub's own shell-validator reusable it once called is retired).
+  PR. It hands the reusable `runner: ${{ vars.CI_RUNNER }}`, so a private
+  repository that owns a self-hosted runner moves its lint job with that one
+  Actions variable and every repository that leaves it unset stays on
+  ubuntu-latest. The hub's own shell-validator reusable it once called is
+  retired).
 - `taplo.yml` → each repo's `.github/workflows/taplo.yml` (caller stub for the
   shared [`taplo`](../.github/workflows/taplo.yml) reusable; a no-op on repos
   without any `*.toml`).
