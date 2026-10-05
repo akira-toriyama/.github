@@ -146,8 +146,9 @@ jobs:
           # furrow itself is audited like every other repo: its task-status.yml
           # is a fleet-synced copy like everyone else's, and a release-prep that
           # bumps it ahead of the canonical is exactly the drift to catch. Its
-          # reusable's `furrow-version` default is an input default, not a
-          # `…furrow…@ref` reference, so the extractor never reads it.
+          # reusable carries no version of its own for the extractor to read:
+          # from v8.0.0 it takes the binary version off the tag each caller
+          # pinned (job.workflow_ref).
           drift=0
           apifail=0
           for repo in "${REPOS[@]}"; do
