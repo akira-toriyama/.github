@@ -285,7 +285,7 @@ repo alpha
 pr alpha 1 dependabot/go_modules/gomod-1 app/dependabot 'bump (clone fails)'
 files alpha 1 go.mod go.sum
 head_ alpha dependabot/go_modules/gomod-1
-: > "$STUB_HOME/clone-alpha-dependabot/go_modules/gomod-1.fail" 2>/dev/null || { mkdir -p "$STUB_HOME/clone-alpha-dependabot/go_modules"; : > "$STUB_HOME/clone-alpha-dependabot/go_modules/gomod-1.fail"; }
+mkdir -p "$STUB_HOME/clone-alpha-dependabot/go_modules" && : > "$STUB_HOME/clone-alpha-dependabot/go_modules/gomod-1.fail"
 APPLY=1 run_script o; rc=$?
 check "a failed clone is exit 1" [ "$rc" -eq 1 ]
 check "…named" line "failed: o/alpha#1 cannot clone dependabot/go_modules/gomod-1: fatal: Remote branch"
