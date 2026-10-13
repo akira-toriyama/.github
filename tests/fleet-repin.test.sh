@@ -33,7 +33,9 @@ trap 'rm -rf "$stub_dir"' EXIT
 #                         missing file is 404, a missing dir is 500
 #   clone-<r>-<ref>.fail  present = the clone fails
 #   put-<r>               write outcome: ok (default; appends flake.nix to the
-#                         pull's files) | refuse | ghost (ok, files unchanged)
+#                         pull's files) | lag (ok, but the files list shows it
+#                         only from the third read on — the API's measured
+#                         lag) | refuse | ghost (ok, files unchanged)
 cat >"$stub_dir/gh" <<'STUB'
 #!/usr/bin/env bash
 set -uo pipefail
@@ -73,6 +75,11 @@ case "$cmd $sub $verb" in
         p="${path#repos/*/}"; rr="${p%%/*}"; n="${path##*/pulls/}"; n="${n%%/*}"
         f="$STUB_HOME/files-$rr-$n.txt"
         [ -e "$f" ] || { echo "gh: HTTP 500" >&2; exit 1; }
+        # A lagging write: the first two reads after the PUT still show the old list.
+        if [ -e "$STUB_HOME/lag-$rr" ]; then
+          c="$(cat "$STUB_HOME/lag-$rr")"; c=$((c + 1)); printf '%s' "$c" > "$STUB_HOME/lag-$rr"
+          if [ "$c" -le 2 ]; then emit "$(grep -vx flake.nix "$f" | jq -R '{filename: .}' | jq -s .)"; exit 0; fi
+        fi
         emit "$(jq -R '{filename: .}' "$f" | jq -s .)" ;;
       repos/*/contents/*)
         p="${path#repos/*/}"; rr="${p%%/*}"; file="${path#*/contents/}"; qref="${file##*\?ref=}"; file="${file%%\?*}"
@@ -93,6 +100,9 @@ case "$cmd $sub $verb" in
     case "$mode" in
       refuse) echo 'gh: HTTP 409: flake.nix does not match blob-x (https://docs.github.com/rest/repos/contents#create-or-update-file-contents)' >&2; exit 1 ;;
       ghost)  ;;
+      lag)    printf 0 > "$STUB_HOME/lag-$rr"
+              printf '%s' "$fields" | tr ' ' '\n' | sed -n 's/^content=//p' | base64 -d > "$STUB_HOME/written-$rr.nix"
+              n="$(ls "$STUB_HOME" | sed -n "s/^files-$rr-\([0-9]*\)\.txt$/\1/p" | head -1)"; echo flake.nix >> "$STUB_HOME/files-$rr-$n.txt" ;;
       *) printf '%s' "$fields" | tr ' ' '\n' | sed -n 's/^content=//p' | base64 -d > "$STUB_HOME/written-$rr.nix"
          n="$(ls "$STUB_HOME" | sed -n "s/^files-$rr-\([0-9]*\)\.txt$/\1/p" | head -1)"; echo flake.nix >> "$STUB_HOME/files-$rr-$n.txt" ;;
     esac
@@ -142,7 +152,7 @@ head_() {
   fi
 }
 
-run_script() { PATH="$stub_dir:$PATH" bash "$script" "$@" >"$stub_dir/out" 2>"$stub_dir/err"; }
+run_script() { PATH="$stub_dir:$PATH" FLEET_REPIN_READBACK_DELAY=0 bash "$script" "$@" >"$stub_dir/out" 2>"$stub_dir/err"; }
 out() { grep -c -- "$1" "$stub_dir/out"; }
 puts() { grep -c '^api  PUT' "$STUB_HOME/calls.log"; }
 clones() { grep -c '^repo clone' "$STUB_HOME/calls.log"; }
@@ -268,6 +278,18 @@ APPLY=1 run_script o; rc=$?
 check "a refused write is exit 1" [ "$rc" -eq 1 ]
 check "…with the API's words" line "failed: o/alpha#1 write refused: gh: HTTP 409: flake.nix does not match"
 
+# the pull's file list lags the push (measured): the read-back retries
+fresh
+repo alpha
+pr alpha 1 dependabot/go_modules/gomod-1 app/dependabot 'bump (lagging files list)'
+files alpha 1 go.mod go.sum
+head_ alpha dependabot/go_modules/gomod-1
+printf lag > "$STUB_HOME/put-alpha"
+APPLY=1 run_script o; rc=$?
+check "a lagging files list is still exit 0" [ "$rc" -eq 0 ]
+check "…read until the file shows (three reads after the one before the write)" [ "$(grep -c '^api  GET repos/o/alpha/pulls/1/files' "$STUB_HOME/calls.log")" -eq 4 ]
+check "…and reported as repinned" line "repinned: o/alpha#1 "
+
 # "gh exited 0" is a claim: a read-back without flake.nix in the diff fails
 fresh
 repo alpha
@@ -277,7 +299,8 @@ head_ alpha dependabot/go_modules/gomod-1
 printf ghost > "$STUB_HOME/put-alpha"
 APPLY=1 run_script o; rc=$?
 check "a ghost write is exit 1" [ "$rc" -eq 1 ]
-check "…named as a read-back failure" line "failed: o/alpha#1 write answered success but the pull request's diff shows no flake.nix"
+check "…named as a read-back failure" line "failed: o/alpha#1 write answered success but the pull request's diff shows no flake.nix after 6 reads"
+check "…after six reads, not one" [ "$(grep -c '^api  GET repos/o/alpha/pulls/1/files' "$STUB_HOME/calls.log")" -eq 7 ]
 
 # a clone that fails is a failure
 fresh

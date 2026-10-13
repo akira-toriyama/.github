@@ -44,7 +44,10 @@
 #
 # READ-BACK. A PUT gh reports as success is re-read: the pull's diff must now
 # carry flake.nix; anything else is `failed`, because "gh exited 0" is a claim
-# and the pull request is the measurement.
+# and the pull request is the measurement. The pull's file list lags the push
+# by a few seconds (measured on glyph-test#124, run 38372458940: the commit
+# was on the branch and the first read still showed go.mod,go.sum), so the
+# read is retried — a handful of times, seconds apart — before it is a verdict.
 set -uo pipefail
 
 owner="${1:-}"; only="${2:-}"
@@ -154,13 +157,21 @@ while IFS= read -r -u 4 name; do
           -f "content=$b64" -f "branch=$head" -f "sha=$flake_sha" >/dev/null 2>"$err" </dev/null; then
       fail "$tag write refused: $(head -c 300 "$err" | tr '\n' ' ') — $title"; continue
     fi
-    if ! back="$(gh api "repos/$full/pulls/$num/files" --paginate --jq '.[].filename' 2>/dev/null </dev/null)"; then
+    seen=false; back_ok=true
+    for attempt in 1 2 3 4 5 6; do
+      if ! back="$(gh api "repos/$full/pulls/$num/files" --paginate --jq '.[].filename' 2>/dev/null </dev/null)"; then
+        back_ok=false; break
+      fi
+      if printf '%s\n' "$back" | grep -qx 'flake.nix'; then seen=true; break; fi
+      [ "$attempt" -lt 6 ] && sleep "${FLEET_REPIN_READBACK_DELAY:-5}"
+    done
+    if [ "$back_ok" != true ]; then
       fail "$tag written, but the read-back failed — $title"; continue
     fi
-    if printf '%s\n' "$back" | grep -qx 'flake.nix'; then
+    if [ "$seen" = true ]; then
       echo "repinned: $tag $(printf '%s' "$out" | tail -n 1 | head -c 160) — $title"; repinned=$((repinned + 1))
     else
-      fail "$tag write answered success but the pull request's diff shows no flake.nix — $title"
+      fail "$tag write answered success but the pull request's diff shows no flake.nix after 6 reads — $title"
     fi
   done 3<<<"$prs"
 done 4<<<"$repos"
