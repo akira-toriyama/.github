@@ -51,19 +51,21 @@ on:
         description: Limit to a single repo name (optional).
         type: string
         default: ''
-  # Merging a change to the orchestrator or this file IS the deploy (the
-  # fleet-sync shape). push events carry no inputs, so the apply branch runs.
-  push:
-    branches: [main]
-    paths:
-      - 'scripts/fleet-repin.sh'
-      - '.github/workflows/fleet-repin.yml'
-  # Twenty minutes before each fleet-automerge pass (:40 */6): a bump that
-  # dependabot opened since the last pass is re-pinned, its checks re-run, and
-  # the armed merge lands on the first green — the two never contend, because
-  # arming is independent of check state.
-  schedule:
-    - cron: '20 */6 * * *'
+  # STEP ONE: dispatch only. A workflow is dispatchable from the default branch
+  # alone (gh resolves the file there — a `--ref <branch>` run of a file main
+  # does not carry is a 404), so the live fire on glyph-test's dependabot
+  # gomod pull has to happen from main: dry, then `only-repo=glyph-test`
+  # apply, both read back on the pull. The same two-step landing as
+  # fleet-automerge (#245 dispatch-only → the schedule, the push apply) and
+  # repo-settings-sync. STEP TWO, a separate pull after that evidence, adds:
+  #   push:      branches: [main], paths: the orchestrator and this file —
+  #              merging a change IS the deploy (push events carry no inputs,
+  #              so the apply branch runs)
+  #   schedule:  cron '20 */6 * * *' — twenty minutes before each
+  #              fleet-automerge pass (:40 */6), so a bump dependabot opened
+  #              since the last pass is re-pinned, its checks re-run, and the
+  #              armed merge lands on the first green; the two never contend,
+  #              because arming is independent of check state.
 
 concurrency:
   group: fleet-repin
@@ -117,7 +119,8 @@ jobs:
           gh auth setup-git
 
           # Only a dispatch carries inputs; schedule and push apply (the
-          # fleet-sync shape).
+          # fleet-sync shape) — step two's events, already handled here so
+          # turning them on is a trigger change alone.
           DRY="${DRY_RUN:-false}"
           [ "$EVENT" = "workflow_dispatch" ] || DRY=false
           echo "event=$EVENT dry-run=$DRY only-repo=${ONLY_REPO:-<all>}"
