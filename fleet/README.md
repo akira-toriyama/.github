@@ -9,7 +9,8 @@ It is **general on purpose**: `task-status` is just the first managed file. To
 standardize more files across the fleet, drop the canonical copy here and add a
 line to `MANIFEST` in [`.github/workflows/fleet-sync.yml`](../.github/workflows/fleet-sync.yml)
 — `src:dest`, or `src:dest:probe` for a file owed only to the repos whose root
-carries `probe` (checked per repo through the Contents API, 404 = not this repo).
+carries `probe` (`a+b` = all of them; checked per repo through the Contents
+API, 404 = not this repo).
 
 ## Files
 
@@ -74,8 +75,9 @@ carries `probe` (checked per repo through the Contents API, 404 = not this repo)
   so the stub is safe on non-Swift repos).
 
 - `repin-vendorhash.sh` → `scripts/repin-vendorhash.sh` in each repo whose root
-  carries a `flake.nix` (the probe on its `MANIFEST` entry: the Go tools furrow,
-  glyph, cifail and pare, whose flakes pin a `buildGoModule` `vendorHash`). The
+  carries both a `flake.nix` and a `go.sum` (the probe on its `MANIFEST` entry:
+  the Go tools furrow, glyph, cifail, pare, rundiff and prq, whose flakes pin a
+  `buildGoModule` `vendorHash`; `flake.nix` alone would also match dotfiles). The
   one-command re-pin ritual (fakeHash → `nix build` → paste the `got:` hash,
   refreshing a `# go.sum sha256:` stamp where the flake carries one):
   [`fleet-repin`](../.github/workflows/fleet-repin.yml) runs it on every

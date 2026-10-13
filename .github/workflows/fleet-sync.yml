@@ -144,13 +144,15 @@ jobs:
           # dest is version-preview.yml, NOT pr-verdict.yml — see the collision guard.
           # dependabot.yml is NOT in this list — it is ASSEMBLED per repo inside
           # the loop below (base + fleet/dependabot.d/ blocks; t-s3fp, t-vhr9).
-          # A third field is a PROBE: `src:dest:probe` ships only where the probe
-          # path exists at the target's root (the dependabot.d assembly's test,
-          # applied to one canonical). repin-vendorhash.sh re-pins a flake's
-          # buildGoModule vendorHash, so it goes to the Go repos that have a
-          # flake.nix (furrow, glyph, cifail, pare) and nowhere else — the
-          # alternative was 30+ repos carrying a script with nothing to re-pin.
-          MANIFEST="fleet/task-status.yml:.github/workflows/task-status.yml fleet/commit-lint.yml:.github/workflows/commit-lint.yml fleet/taplo.yml:.github/workflows/taplo.yml fleet/zizmor.yml:.github/workflows/zizmor.yml fleet/zizmor-config.yml:.github/zizmor.yml fleet/actionlint.yml:.github/workflows/actionlint.yml fleet/version-preview.yml:.github/workflows/version-preview.yml fleet/commit-convention.md:docs/commit-convention.md fleet/repo-policy.yml:.github/workflows/repo-policy.yml fleet/repin-vendorhash.sh:scripts/repin-vendorhash.sh:flake.nix"
+          # A third field is a PROBE: `src:dest:probe` ships only where every
+          # `+`-joined probe path exists at the target's root (the dependabot.d
+          # assembly's test, applied to one canonical). repin-vendorhash.sh
+          # re-pins a flake's buildGoModule vendorHash, so it goes to the repos
+          # with BOTH a flake.nix and a go.sum (furrow, glyph, cifail, pare,
+          # rundiff, prq — measured by the dry run of #258) and nowhere else:
+          # flake.nix alone also matched dotfiles, whose flake is a system
+          # config with nothing to re-pin.
+          MANIFEST="fleet/task-status.yml:.github/workflows/task-status.yml fleet/commit-lint.yml:.github/workflows/commit-lint.yml fleet/taplo.yml:.github/workflows/taplo.yml fleet/zizmor.yml:.github/workflows/zizmor.yml fleet/zizmor-config.yml:.github/zizmor.yml fleet/actionlint.yml:.github/workflows/actionlint.yml fleet/version-preview.yml:.github/workflows/version-preview.yml fleet/commit-convention.md:docs/commit-convention.md fleet/repo-policy.yml:.github/workflows/repo-policy.yml fleet/repin-vendorhash.sh:scripts/repin-vendorhash.sh:flake.nix+go.sum"
 
           # PRUNE: paths to DELETE from every target repo if present — how a canonical
           # is retired. Renaming one (fleet/x.yml -> fleet/y.yml) otherwise leaves the
@@ -272,20 +274,22 @@ jobs:
             changed_pairs=()
             for pair in $MANIFEST $dep_pair; do
               IFS=: read -r src dest probe <<<"$pair"
-              # A probed entry ships only where the probe path exists at the
+              # A probed entry ships only where EVERY probe path exists at the
               # target's root. 404 is the normal "not this repo"; any other
               # answer is counted like a dependabot probe failure — misreading
               # it as absent would silently withhold the canonical for a day.
-              if [ -n "$probe" ]; then
+              owed=true
+              for p in ${probe//+/ }; do
                 probe_err="$RUNNER_TEMP/manifest-probe.err"
-                if ! gh api "repos/$full/contents/$probe" >/dev/null 2>"$probe_err"; then
+                if ! gh api "repos/$full/contents/$p" >/dev/null 2>"$probe_err"; then
                   if grep -q 'HTTP 404' "$probe_err"; then
-                    echo "skip(no-$probe): $full $dest"; continue
+                    echo "skip(no-$p): $full $dest"; owed=false; break
                   fi
-                  echo "::warning::fleet: probe $probe failed for $full (skipping $dest this run): $(head -c 200 "$probe_err")"
-                  failed=$((failed + 1)); continue
+                  echo "::warning::fleet: probe $p failed for $full (skipping $dest this run): $(head -c 200 "$probe_err")"
+                  failed=$((failed + 1)); owed=error; break
                 fi
-              fi
+              done
+              [ "$owed" = true ] || continue
               local_b64="$(base64 < "$src" | tr -d '\n')"
               if remote_json="$(gh api "repos/$full/contents/$dest" 2>/dev/null)"; then
                 remote_b64="$(printf '%s' "$remote_json" | jq -r '.content' | tr -d '\n')"
@@ -622,18 +626,22 @@ jobs:
             for pair in $MANIFEST $dep_pair; do
               IFS=: read -r src dest probe <<<"$pair"
               err="$RUNNER_TEMP/readback.err"
-              # A probed canonical is owed only where its probe exists; a probe
-              # this step cannot read is unreadable, never "not applicable" —
-              # the two must not both be green.
-              if [ -n "$probe" ] && ! gh api "repos/$full/contents/$probe" >/dev/null 2>"$err"; then
-                if grep -q 'HTTP 404' "$err"; then
-                  record "$full" "$dest" "not-applicable"
-                  na=$((na + 1)); continue
+              # A probed canonical is owed only where every probe exists; a
+              # probe this step cannot read is unreadable, never "not
+              # applicable" — the two must not both be green.
+              owed=true
+              for p in ${probe//+/ }; do
+                if ! gh api "repos/$full/contents/$p" >/dev/null 2>"$err"; then
+                  if grep -q 'HTTP 404' "$err"; then
+                    record "$full" "$dest" "not-applicable"
+                    na=$((na + 1)); owed=false; break
+                  fi
+                  echo "::error::read-back: cannot probe $full $p — cannot tell whether $dest is owed: $(head -c 200 "$err")"
+                  record "$full" "$dest" "unreadable"
+                  unreadable=$((unreadable + 1)); owed=error; break
                 fi
-                echo "::error::read-back: cannot probe $full $probe — cannot tell whether $dest is owed: $(head -c 200 "$err")"
-                record "$full" "$dest" "unreadable"
-                unreadable=$((unreadable + 1)); continue
-              fi
+              done
+              [ "$owed" = true ] || continue
               want_b64="$(base64 < "$src" | tr -d '\n')"
               if got_json="$(gh api "repos/$full/contents/$dest" 2>"$err")"; then
                 if [ "$(printf '%s' "$got_json" | jq -r '.content' | tr -d '\n')" = "$want_b64" ]; then

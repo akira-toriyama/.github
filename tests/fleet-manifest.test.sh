@@ -53,11 +53,12 @@ GLYPH_REUSABLES="$(assign_value GLYPH_REUSABLES)" || {
   exit 1
 }
 
-# A MANIFEST entry is `src:dest` or, for a canonical owed only where a root
-# path exists on the target, `src:dest:probe` (fleet-sync.yml's loop and
-# read-back both read it this way; fleet-commit-bundle.sh is handed src:dest).
-# 1. Every MANIFEST src exists, every dest is distinct, and a probe is a bare
-#    root-level name (the sync loop asks the Contents API for it as-is).
+# A MANIFEST entry is `src:dest` or, for a canonical owed only where root
+# paths exist on the target, `src:dest:probe` with `+` joining several probes
+# that must ALL exist (fleet-sync.yml's loop and read-back both read it this
+# way; fleet-commit-bundle.sh is handed src:dest).
+# 1. Every MANIFEST src exists, every dest is distinct, and every probe is a
+#    bare root-level name (the sync loop asks the Contents API for it as-is).
 missing=""
 dests=""
 dupes=""
@@ -65,7 +66,9 @@ badprobe=""
 for pair in $MANIFEST; do
   IFS=: read -r src dest probe <<<"$pair"
   [ -f "$root/$src" ] || missing="$missing $src"
-  case "$probe" in "") ;; /*|*/*|.*) badprobe="$badprobe $src:$probe" ;; esac
+  for p in ${probe//+/ }; do
+    case "$p" in /*|*/*|.*) badprobe="$badprobe $src:$p" ;; esac
+  done
   case " $dests " in *" $dest "*) dupes="$dupes $dest" ;; esac
   dests="$dests $dest"
 done
