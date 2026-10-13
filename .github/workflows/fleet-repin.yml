@@ -1,0 +1,123 @@
+# Fleet re-pin: land the vendorHash re-pin that every dependabot gomod bump
+# needs and dependabot cannot write. The fourth fleet writer, in the shape of
+# fleet-automerge: dispatch defaults to dry-run, the scheduled and push runs
+# apply, every write is read back, and a refusal is counted, never swallowed
+# (scripts/fleet-repin.sh, table-tested in tests/fleet-repin.test.sh).
+#
+# WHAT IT FIXES. A buildGoModule flake pins the vendored modules with a
+# fixed-output hash; a gomod bump moves go.sum and leaves it stale, so the
+# repo's `nix build` (and furrow's lockstep guard) stay red while fleet-automerge
+# sits armed — furrow#396 waited 17 days for a hand. Measured over four months
+# on furrow alone: four gomod pulls (#5, #83, #140, #396), every one re-pinned
+# by hand before it could merge.
+#
+# WHO DOES THE RITUAL. Not this hub: the repo's own scripts/repin-vendorhash.sh,
+# the canonical fleet-sync ships to every repo with a root flake.nix + go.sum
+# (fleet/repin-vendorhash.sh). This run clones the bump branch, runs that
+# script with nix on PATH, and writes the result back through the Contents
+# API — one file, one commit, the head's blob sha named so a branch dependabot
+# moved meanwhile is a refused write, not a clobber.
+#
+# WHY IT RUNS HERE WITH FLEET_SYNC_PAT. The commit must be a user's: a push
+# github.token makes raises no pull_request run (measured on glyph-test,
+# t-ksee — the fact fleet-automerge is built on), so the bump's required
+# checks would never see the re-pin. And a workflow dependabot's own event
+# starts cannot read repository secrets at all — a per-repo re-pin would need
+# a PAT per repo in the Dependabot secret store. The hub already holds the one
+# credential every fleet write uses.
+#
+# NIX ON THE RUNNER. DeterminateSystems/nix-installer-action (third-party, so
+# SHA-pinned per docs/action-pinning-policy.md). The probe build fetches the
+# module set once per candidate pull; a run with no candidate never needs nix,
+# but installing it unconditionally keeps the job's shape one thing.
+#
+# Stages (docs/fleet-change-policy.md): 0 local — the table; 1/2 live fire —
+# fleet-test carries a go.mod and a vendorHash flake for exactly this, and its
+# dependabot gomod pull is the ammunition (dry, then only-repo apply, both
+# recorded on the pull request that added this file); 3 canary — the next
+# real gomod bump on furrow, observed; 4 fleet — the schedule below.
+
+name: fleet-repin
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: Log what would be re-pinned without writing anything.
+        type: boolean
+        default: true
+      only-repo:
+        description: Limit to a single repo name (optional).
+        type: string
+        default: ''
+  # Merging a change to the orchestrator or this file IS the deploy (the
+  # fleet-sync shape). push events carry no inputs, so the apply branch runs.
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/fleet-repin.sh'
+      - '.github/workflows/fleet-repin.yml'
+  # Twenty minutes before each fleet-automerge pass (:40 */6): a bump that
+  # dependabot opened since the last pass is re-pinned, its checks re-run, and
+  # the armed merge lands on the first green — the two never contend, because
+  # arming is independent of check state.
+  schedule:
+    - cron: '20 */6 * * *'
+
+concurrency:
+  group: fleet-repin
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  repin:
+    runs-on: ubuntu-latest
+    # One probe build per candidate pull (nixpkgs eval + the module set); a
+    # fleet with every Go tool bumping in the same week is six of them.
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - uses: DeterminateSystems/nix-installer-action@3138316df39ed29be04236d7ffc686fa525866aa # v23
+
+      - name: Re-pin vendorHash on the fleet's dependabot gomod branches
+        env:
+          # fleet-sync's credential, NOT github.token: the commit must be the PAT
+          # user's so the bump's pull_request checks re-run (header).
+          GH_TOKEN: ${{ secrets.FLEET_SYNC_PAT }}
+          OWNER: akira-toriyama
+          EVENT: ${{ github.event_name }}
+          DRY_RUN: ${{ inputs.dry-run }}
+          ONLY_REPO: ${{ inputs.only-repo }}
+        run: |
+          set -euo pipefail
+
+          # Fail loud, not open: without the PAT the token sees no private repos
+          # and writes as the wrong actor.
+          [ -n "${GH_TOKEN:-}" ] || { echo "::error::FLEET_SYNC_PAT is not set — refusing to run as github.token (wrong actor, public-only view)."; exit 1; }
+
+          # The private-repo canary — the SHAPE of the list, not its size
+          # (glyph-pin-audit's 29-of-35 incident).
+          private_n="$(gh repo list "$OWNER" --no-archived --source --limit 200 \
+            --json visibility -q '[.[] | select(.visibility=="PRIVATE")] | length')"
+          if [ "${private_n:-0}" -eq 0 ]; then
+            echo "::error::the repo list contains no private repos — the token's view is degraded; refusing to call this a fleet run."
+            exit 1
+          fi
+          echo "token sees $private_n private repo(s)"
+
+          # `gh repo clone` of a private bump branch goes through git, which
+          # needs the PAT as a credential helper — gh's own, fed by GH_TOKEN;
+          # the token never appears in a URL or a log.
+          gh auth setup-git
+
+          # Only a dispatch carries inputs; schedule and push apply (the
+          # fleet-sync shape).
+          DRY="${DRY_RUN:-false}"
+          [ "$EVENT" = "workflow_dispatch" ] || DRY=false
+          echo "event=$EVENT dry-run=$DRY only-repo=${ONLY_REPO:-<all>}"
+          APPLY="$([ "$DRY" = "true" ] && echo 0 || echo 1)" bash scripts/fleet-repin.sh "$OWNER" "$ONLY_REPO"
