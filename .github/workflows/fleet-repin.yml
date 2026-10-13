@@ -32,10 +32,11 @@
 # but installing it unconditionally keeps the job's shape one thing.
 #
 # Stages (docs/fleet-change-policy.md): 0 local — the table; 1/2 live fire —
-# fleet-test carries a go.mod and a vendorHash flake for exactly this, and its
-# dependabot gomod pull is the ammunition (dry, then only-repo apply, both
-# recorded on the pull request that added this file); 3 canary — the next
-# real gomod bump on furrow, observed; 4 fleet — the schedule below.
+# glyph-test carries a go.mod with one dependency and a vendorHash flake for
+# exactly this, and its dependabot gomod pull is the ammunition (dry, then
+# only-repo apply, both recorded on the pull request that added this file);
+# 3 canary — the next real gomod bump on furrow, observed; 4 fleet — the
+# schedule below.
 
 name: fleet-repin
 
