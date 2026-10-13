@@ -468,10 +468,11 @@ jobs:
 
   # RUN the canonical vendorHash re-pin ritual over a case table (the real
   # fleet/repin-vendorhash.sh, stubbed nix). fleet-sync distributes it to every
-  # repo whose root has a flake.nix, and fleet-repin runs it on each dependabot
-  # gomod branch — so a break here ships to four repos' scripts/ AND lands a
-  # broken flake.nix on a bump branch. The table's failure shapes are what a
-  # live run can never show on purpose: each must leave flake.nix byte-identical.
+  # repo whose root has a flake.nix + go.sum, and fleet-repin runs it on each
+  # dependabot gomod branch — so a break here ships to six repos' scripts/ AND
+  # lands a broken flake.nix on a bump branch. The table's failure shapes are
+  # what a live run can never show on purpose: each must leave flake.nix
+  # byte-identical.
   repin-vendorhash-test:
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -482,6 +483,20 @@ jobs:
           persist-credentials: false
       - name: Table-test repin-vendorhash
         run: bash tests/repin-vendorhash.test.sh
+
+  # fleet-repin writes flake.nix on dependabot gomod branches with the PAT.
+  # The orchestrator's decisions — which pull is a candidate, what is a counted
+  # skip, what is read back — are what a live run cannot show both ways.
+  fleet-repin-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # Runs a script against a stubbed gh; never pushes (zizmor artipacked). t-2nh8
+          persist-credentials: false
+      - name: Table-test fleet-repin
+        run: bash tests/fleet-repin.test.sh
 
   # RUN the covered-pull extractor over a case table (the real .sh).
   # glyph-covered-pull-audit.yml asserts an ABSENCE across every owned repo —
@@ -576,6 +591,7 @@ jobs:
           bash tests/automerge-tier.test.sh
           bash tests/fleet-automerge.test.sh
           bash tests/repin-vendorhash.test.sh
+          bash tests/fleet-repin.test.sh
 
   # RUN the go-bite gate over a case table (the real .sh) so a break fails HERE, not
   # in a fleet caller after @v2 moves. Each case builds a throwaway Go repo under

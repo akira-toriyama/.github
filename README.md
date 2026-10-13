@@ -119,6 +119,30 @@ Orchestration: [`scripts/fleet-automerge.sh`](scripts/fleet-automerge.sh). It
 runs as the last job of every glyph-pin-rewrite and fleet-sync run, four times a
 day on its own, and on a push that changes it; a dispatch defaults to dry-run.
 
+## fleet-repin — the fourth fleet writer
+
+A `buildGoModule` flake pins its vendored modules with a fixed-output
+`vendorHash` that dependabot cannot write, so every gomod bump in the Go tools
+(furrow, glyph, cifail, pare, rundiff, prq) left `flake.nix` stale until a hand
+re-pinned it — furrow#396 sat 17 days with auto-merge armed.
+[`fleet-repin.yml`](.github/workflows/fleet-repin.yml) finds the open
+`dependabot/go_modules/` pulls whose diff moves `go.sum` and not `flake.nix`,
+clones each bump branch, runs the repo's own synced
+[`scripts/repin-vendorhash.sh`](fleet/repin-vendorhash.sh) with nix on PATH,
+and writes `flake.nix` back through the Contents API as one commit — the head's
+blob sha named, so a branch dependabot moved meanwhile is a refused write, never
+a clobber — then reads the pull back for the file. A diff that already carries
+`flake.nix` is the idempotence signal (dependabot never writes it); a draft, a
+`hold` label, a foreign author, a conflict, and a head without a flake, a
+vendorHash or the synced script are each one counted line, never a guess. It
+runs here with `FLEET_SYNC_PAT` for the same reason fleet-automerge does: the
+commit must be a user's for the bump's checks to re-run. Orchestration:
+[`scripts/fleet-repin.sh`](scripts/fleet-repin.sh), table-tested with a stubbed
+`gh`; the ritual's own table is
+[`tests/repin-vendorhash.test.sh`](tests/repin-vendorhash.test.sh). It runs
+twenty minutes before each fleet-automerge pass, on a push that changes it, and
+a dispatch defaults to dry-run.
+
 ## Versioning the reusables
 
 Callers pin the **moving `@v2`** tag; merging to `main` does not reach them until
