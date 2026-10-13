@@ -7,7 +7,9 @@ automatically (the repo list is fetched at run time), so there is never a
 
 It is **general on purpose**: `task-status` is just the first managed file. To
 standardize more files across the fleet, drop the canonical copy here and add a
-line to `MANIFEST` in [`.github/workflows/fleet-sync.yml`](../.github/workflows/fleet-sync.yml).
+line to `MANIFEST` in [`.github/workflows/fleet-sync.yml`](../.github/workflows/fleet-sync.yml)
+— `src:dest`, or `src:dest:probe` for a file owed only to the repos whose root
+carries `probe` (checked per repo through the Contents API, 404 = not this repo).
 
 ## Files
 
@@ -70,6 +72,18 @@ line to `MANIFEST` in [`.github/workflows/fleet-sync.yml`](../.github/workflows/
   and no `available(macOS …)` gate at or below the repo's own `Package.swift`
   floor. Repos without a `Package.swift` skip the floor check automatically,
   so the stub is safe on non-Swift repos).
+
+- `repin-vendorhash.sh` → `scripts/repin-vendorhash.sh` in each repo whose root
+  carries a `flake.nix` (the probe on its `MANIFEST` entry: the Go tools furrow,
+  glyph, cifail and pare, whose flakes pin a `buildGoModule` `vendorHash`). The
+  one-command re-pin ritual (fakeHash → `nix build` → paste the `got:` hash,
+  refreshing a `# go.sum sha256:` stamp where the flake carries one):
+  [`fleet-repin`](../.github/workflows/fleet-repin.yml) runs it on every
+  dependabot gomod branch, because the fixed-output hash is nothing dependabot
+  can write and every bump used to wait for a hand (furrow#140, #396 — 17 days
+  with auto-merge armed); a session that changes `go.sum` by hand runs it before
+  pushing. Table-tested against a stubbed `nix` in
+  [`tests/repin-vendorhash.test.sh`](../tests/repin-vendorhash.test.sh).
 
 **Edit these canonical copies, never the per-repo copies** — fleet-sync overwrites
 them on the next run.

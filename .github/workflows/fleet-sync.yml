@@ -144,7 +144,13 @@ jobs:
           # dest is version-preview.yml, NOT pr-verdict.yml — see the collision guard.
           # dependabot.yml is NOT in this list — it is ASSEMBLED per repo inside
           # the loop below (base + fleet/dependabot.d/ blocks; t-s3fp, t-vhr9).
-          MANIFEST="fleet/task-status.yml:.github/workflows/task-status.yml fleet/commit-lint.yml:.github/workflows/commit-lint.yml fleet/taplo.yml:.github/workflows/taplo.yml fleet/zizmor.yml:.github/workflows/zizmor.yml fleet/zizmor-config.yml:.github/zizmor.yml fleet/actionlint.yml:.github/workflows/actionlint.yml fleet/version-preview.yml:.github/workflows/version-preview.yml fleet/commit-convention.md:docs/commit-convention.md fleet/repo-policy.yml:.github/workflows/repo-policy.yml"
+          # A third field is a PROBE: `src:dest:probe` ships only where the probe
+          # path exists at the target's root (the dependabot.d assembly's test,
+          # applied to one canonical). repin-vendorhash.sh re-pins a flake's
+          # buildGoModule vendorHash, so it goes to the Go repos that have a
+          # flake.nix (furrow, glyph, cifail, pare) and nowhere else — the
+          # alternative was 30+ repos carrying a script with nothing to re-pin.
+          MANIFEST="fleet/task-status.yml:.github/workflows/task-status.yml fleet/commit-lint.yml:.github/workflows/commit-lint.yml fleet/taplo.yml:.github/workflows/taplo.yml fleet/zizmor.yml:.github/workflows/zizmor.yml fleet/zizmor-config.yml:.github/zizmor.yml fleet/actionlint.yml:.github/workflows/actionlint.yml fleet/version-preview.yml:.github/workflows/version-preview.yml fleet/commit-convention.md:docs/commit-convention.md fleet/repo-policy.yml:.github/workflows/repo-policy.yml fleet/repin-vendorhash.sh:scripts/repin-vendorhash.sh:flake.nix"
 
           # PRUNE: paths to DELETE from every target repo if present — how a canonical
           # is retired. Renaming one (fleet/x.yml -> fleet/y.yml) otherwise leaves the
@@ -177,7 +183,7 @@ jobs:
           # published interface, not something to derive by fetching it at run time.
           GLYPH_REUSABLES="lint.yml release.yml pr-verdict.yml"
           for pair in $MANIFEST; do
-            dest="${pair##*:}"
+            IFS=: read -r _ dest _ <<<"$pair"
             case "$dest" in
               .github/workflows/*)
                 for reusable in $GLYPH_REUSABLES; do
@@ -265,7 +271,21 @@ jobs:
             #    t-kbqx — asserted by the bundle script's table test).
             changed_pairs=()
             for pair in $MANIFEST $dep_pair; do
-              src="${pair%%:*}"; dest="${pair##*:}"
+              IFS=: read -r src dest probe <<<"$pair"
+              # A probed entry ships only where the probe path exists at the
+              # target's root. 404 is the normal "not this repo"; any other
+              # answer is counted like a dependabot probe failure — misreading
+              # it as absent would silently withhold the canonical for a day.
+              if [ -n "$probe" ]; then
+                probe_err="$RUNNER_TEMP/manifest-probe.err"
+                if ! gh api "repos/$full/contents/$probe" >/dev/null 2>"$probe_err"; then
+                  if grep -q 'HTTP 404' "$probe_err"; then
+                    echo "skip(no-$probe): $full $dest"; continue
+                  fi
+                  echo "::warning::fleet: probe $probe failed for $full (skipping $dest this run): $(head -c 200 "$probe_err")"
+                  failed=$((failed + 1)); continue
+                fi
+              fi
               local_b64="$(base64 < "$src" | tr -d '\n')"
               if remote_json="$(gh api "repos/$full/contents/$dest" 2>/dev/null)"; then
                 remote_b64="$(printf '%s' "$remote_json" | jq -r '.content' | tr -d '\n')"
@@ -277,7 +297,9 @@ jobs:
               echo "needs-sync: $full $dest"
               queued=$((queued + 1))
               [ "$DRY" = "true" ] && continue
-              changed_pairs+=("$pair")
+              # The bundle script and the fallback below take `src:dest` — the
+              # probe has done its work by now.
+              changed_pairs+=("$src:$dest")
             done
 
             # Per-repo failures must NOT abort the rest of the fleet: warn, COUNT,
@@ -310,7 +332,7 @@ jobs:
             fi
 
             for pair in ${fallback_pairs[@]+"${fallback_pairs[@]}"}; do
-              src="${pair%%:*}"; dest="${pair##*:}"
+              IFS=: read -r src dest _ <<<"$pair"
               local_b64="$(base64 < "$src" | tr -d '\n')"
               destbase="$(basename "$dest")"
               branch="fleet-sync/${destbase%.*}"
@@ -579,7 +601,7 @@ jobs:
             --json name,isFork -q '.[] | select(.isFork==false) | .name' | sort)
           [ "${#REPOS[@]}" -ge 1 ] || { echo "::error::read-back: empty repo list from gh repo list — cannot verify anything."; exit 1; }
 
-          ok=0; pending=0; stale=0; unreadable=0; audited=0
+          ok=0; pending=0; stale=0; unreadable=0; na=0; audited=0
           for repo in "${REPOS[@]}"; do
             case " $EXCLUDE " in *" $repo "*) continue;; esac
             if [ -n "$ONLY_REPO" ] && [ "$repo" != "$ONLY_REPO" ]; then continue; fi
@@ -598,9 +620,21 @@ jobs:
             fi
 
             for pair in $MANIFEST $dep_pair; do
-              src="${pair%%:*}"; dest="${pair##*:}"
-              want_b64="$(base64 < "$src" | tr -d '\n')"
+              IFS=: read -r src dest probe <<<"$pair"
               err="$RUNNER_TEMP/readback.err"
+              # A probed canonical is owed only where its probe exists; a probe
+              # this step cannot read is unreadable, never "not applicable" —
+              # the two must not both be green.
+              if [ -n "$probe" ] && ! gh api "repos/$full/contents/$probe" >/dev/null 2>"$err"; then
+                if grep -q 'HTTP 404' "$err"; then
+                  record "$full" "$dest" "not-applicable"
+                  na=$((na + 1)); continue
+                fi
+                echo "::error::read-back: cannot probe $full $probe — cannot tell whether $dest is owed: $(head -c 200 "$err")"
+                record "$full" "$dest" "unreadable"
+                unreadable=$((unreadable + 1)); continue
+              fi
+              want_b64="$(base64 < "$src" | tr -d '\n')"
               if got_json="$(gh api "repos/$full/contents/$dest" 2>"$err")"; then
                 if [ "$(printf '%s' "$got_json" | jq -r '.content' | tr -d '\n')" = "$want_b64" ]; then
                   record "$full" "$dest" "ok"
@@ -658,9 +692,9 @@ jobs:
             done
           done
 
-          echo "read-back: $audited repo(s) verified / ${#REPOS[@]} listed; $ok ok, $pending pending(pr), $stale stale, $unreadable unreadable"
+          echo "read-back: $audited repo(s) verified / ${#REPOS[@]} listed; $ok ok, $pending pending(pr), $stale stale, $unreadable unreadable, $na not-applicable"
           {
-            echo "## read-back: $audited repo(s) — $ok ok, $pending pending (PR), $stale stale, $unreadable unreadable"
+            echo "## read-back: $audited repo(s) — $ok ok, $pending pending (PR), $stale stale, $unreadable unreadable, $na not applicable (probe absent)"
           } >> "$GITHUB_STEP_SUMMARY"
           if [ "$stale" -gt 0 ] || [ "$unreadable" -gt 0 ]; then
             echo "::error::read-back: the fleet does NOT hold what this apply run claims ($stale stale, $unreadable unreadable). Success above was a claim; this is the measurement."

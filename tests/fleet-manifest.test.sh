@@ -53,14 +53,19 @@ GLYPH_REUSABLES="$(assign_value GLYPH_REUSABLES)" || {
   exit 1
 }
 
-# 1. Every MANIFEST src exists, and every dest is distinct.
+# A MANIFEST entry is `src:dest` or, for a canonical owed only where a root
+# path exists on the target, `src:dest:probe` (fleet-sync.yml's loop and
+# read-back both read it this way; fleet-commit-bundle.sh is handed src:dest).
+# 1. Every MANIFEST src exists, every dest is distinct, and a probe is a bare
+#    root-level name (the sync loop asks the Contents API for it as-is).
 missing=""
 dests=""
 dupes=""
+badprobe=""
 for pair in $MANIFEST; do
-  src="${pair%%:*}"
-  dest="${pair##*:}"
+  IFS=: read -r src dest probe <<<"$pair"
   [ -f "$root/$src" ] || missing="$missing $src"
+  case "$probe" in "") ;; /*|*/*|.*) badprobe="$badprobe $src:$probe" ;; esac
   case " $dests " in *" $dest "*) dupes="$dupes $dest" ;; esac
   dests="$dests $dest"
 done
@@ -76,6 +81,12 @@ if [ -n "$dupes" ]; then
 else
   ok "MANIFEST dests are distinct"
 fi
+if [ -n "$badprobe" ]; then
+  bad "every MANIFEST probe is a bare root-level path" "bad:$badprobe" \
+    "the sync loop probes repos/<r>/contents/<probe> — a leading slash, a directory or a dot-path is not what the dependabot.d assembly rehearsed"
+else
+  ok "every MANIFEST probe is a bare root-level path"
+fi
 
 # 2. No MANIFEST dest collides with a glyph reusable DEFINITION.
 #
@@ -86,7 +97,7 @@ fi
 # MANIFEST line instead.
 collisions=""
 for pair in $MANIFEST; do
-  dest="${pair##*:}"
+  IFS=: read -r _ dest _ <<<"$pair"
   case "$dest" in
     .github/workflows/*)
       base="${dest##*/}"
@@ -129,7 +140,7 @@ fi
 # (version-preview.yml shipped fleet-wide undocumented for exactly this reason.)
 undocumented=""
 for pair in $MANIFEST; do
-  src="${pair%%:*}"
+  IFS=: read -r src _ _ <<<"$pair"
   base="${src##*/}"
   grep -q -- "$base" "$readme" || undocumented="$undocumented $base"
 done
