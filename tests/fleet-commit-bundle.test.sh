@@ -114,9 +114,9 @@ check "the tree carries both paths on the base tree" \
   jqe '.base_tree == "tree-of-base"
          and (.tree | map(.path) == [".github/workflows/one.yml", "docs/two.md"])
          and (.tree | all(.mode == "100644"))' "$STUB_HOME/tree-payload.json"
-check "the commit is authored by fleet-sync[bot] on the read base" \
-  jqe '.author.name == "fleet-sync[bot]"
-         and .author.email == "fleet-sync[bot]@users.noreply.github.com"
+check "the commit is authored by akira-fleet-sync[bot] on the read base" \
+  jqe '.author.name == "akira-fleet-sync[bot]"
+         and .author.email == "348354577+akira-fleet-sync[bot]@users.noreply.github.com"
          and .parents == ["base-1"]' "$STUB_HOME/commit-payload.json"
 # NB: the script builds the message in a $( ) substitution, which strips the
 # trailing newline — harmless in a commit message, pinned here so it is a

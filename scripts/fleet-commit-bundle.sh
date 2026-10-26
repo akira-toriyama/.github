@@ -23,7 +23,7 @@
 # apply-repo-settings.sh pattern).
 #
 # WHAT IT PRESERVES, deliberately:
-#   - the fleet-sync[bot] AUTHOR — attribution, and nothing more. glyph v1
+#   - the akira-fleet-sync[bot] AUTHOR — attribution, and nothing more. glyph v1
 #     skipped `*[bot]` / `github-actions*` / `web-flow` authors outright;
 #     that rule went out with the v2 rewrite (glyph f5a7f2a, #187), and since
 #     v2 the only exclusion is a literal `exclude_authors` entry matched
@@ -32,6 +32,17 @@
 #     below — not the author — is what keeps these commits clean. The Git Data
 #     API takes the author explicitly; the committer stays the PAT user, same
 #     as the Contents API path this replaces.
+#   - the author's EMAIL in its `<id>+<login>@users.noreply.github.com` form,
+#     where the login is a GitHub App THIS account owns
+#     (github.com/apps/akira-fleet-sync, bot user id 348354577, no permissions,
+#     installed nowhere — it exists for attribution only). GitHub resolves a
+#     commit's author by email alone, so the bare `fleet-sync[bot]@users.noreply`
+#     the fleet wrote until 2026-10-26 resolved to whoever registered an App
+#     of that name: from 2026-10-15 that was an unrelated organization's App,
+#     and every fleet-sync commit displayed as theirs (measured 2026-10-26 on
+#     glyph 82aebc5). The id prefix pins the attribution to our bot — an App
+#     rename keeps the id. fleet-sync.yml's Contents API paths carry the same
+#     pair; change them together.
 #   - the single-file commit message SHAPE — subject only, naming the one dest;
 #     the multi-file case gets a (subject + body) shape. The grammar is glyph's
 #     one sanctioned form (`:wrench:(fleet)= sync …`) — and the `=` is not
@@ -101,7 +112,7 @@ while :; do
 
   jq -n --arg msg "$(message "${dests[@]}")" --arg tree "$tree" --arg parent "$base" \
     '{message: $msg, tree: $tree, parents: [$parent],
-      author: {name: "fleet-sync[bot]", email: "fleet-sync[bot]@users.noreply.github.com"}}' \
+      author: {name: "akira-fleet-sync[bot]", email: "348354577+akira-fleet-sync[bot]@users.noreply.github.com"}}' \
     > "$tmp/commit.json" \
     || { echo "cannot build the commit payload" >&2; exit 1; }
   commit="$(gh api -X POST "repos/$full/git/commits" --input "$tmp/commit.json" --jq .sha)" \
