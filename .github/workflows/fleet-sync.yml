@@ -362,8 +362,8 @@ jobs:
                 # The `=` is what makes the subject lint-clean and fold none.
                 pargs=(-X PUT "repos/$full/contents/$dest"
                   -f "message=:wrench:(fleet)= sync $dest"
-                  -f "author[name]=fleet-sync[bot]"
-                  -f "author[email]=fleet-sync[bot]@users.noreply.github.com"
+                  -f "author[name]=akira-fleet-sync[bot]"
+                  -f "author[email]=348354577+akira-fleet-sync[bot]@users.noreply.github.com"
                   -f "content=$local_b64" -f "branch=$branch")
                 [ -n "$bsha2" ] && pargs+=(-f "sha=$bsha2")
                 gh api "${pargs[@]}" >/dev/null \
@@ -411,8 +411,8 @@ jobs:
               dmsg="$(printf ':fire:(fleet)= drop retired %s\n\nRemoving a distributed copy of a retired canonical file, not an API removal.' "$dead")"
               dargs=(-X DELETE "repos/$full/contents/$dead"
                 -f "message=$dmsg"
-                -f "author[name]=fleet-sync[bot]"
-                -f "author[email]=fleet-sync[bot]@users.noreply.github.com"
+                -f "author[name]=akira-fleet-sync[bot]"
+                -f "author[email]=348354577+akira-fleet-sync[bot]@users.noreply.github.com"
                 -f "sha=$dead_sha")
               if gh api "${dargs[@]}" >/dev/null 2>/dev/null; then
                 echo "pruned: $full $dead"
@@ -437,8 +437,8 @@ jobs:
               if bjson="$(gh api "repos/$full/contents/$dead?ref=$branch" 2>/dev/null)"; then
                 gh api -X DELETE "repos/$full/contents/$dead" \
                   -f "message=$dmsg" \
-                  -f "author[name]=fleet-sync[bot]" \
-                  -f "author[email]=fleet-sync[bot]@users.noreply.github.com" \
+                  -f "author[name]=akira-fleet-sync[bot]" \
+                  -f "author[email]=348354577+akira-fleet-sync[bot]@users.noreply.github.com" \
                   -f "sha=$(printf '%s' "$bjson" | jq -r '.sha')" -f "branch=$branch" >/dev/null \
                   || { echo "::warning::fleet: cannot delete $dead on $full@$branch; skipping"; failed=$((failed + 1)); continue; }
               fi
