@@ -21,9 +21,9 @@ tags), [`CONTRIBUTING.md`](../CONTRIBUTING.md) (the convention glyph enforces).
 
 ## What is pinned, and by whom
 
-Five things reference glyph, and **no single mechanism moves all five**. The split
+Six things reference glyph, and **no single mechanism moves all six**. The split
 is not cosmetic: the first two are one canonical byte-copied everywhere, the last
-three are lines inside files each repo owns and writes differently.
+four are lines inside files each repo owns and writes differently.
 
 | Reference | Where the pin lives | Propagated by |
 |---|---|---|
@@ -32,8 +32,9 @@ three are lines inside files each repo owns and writes differently.
 | `workflows/release.yml` | each repo's own release workflow | glyph-pin-rewrite (**opens a PR**) |
 | `actions/install` | each repo's release/CI workflows | glyph-pin-rewrite (**opens a PR**) |
 | the **binary** that action installs | `with: version:` on that same step | glyph-pin-rewrite (**opens a PR**) |
+| `actions/release-notes` | the release workflow of a repo that cuts tags by hand (glyph v6.1.0+) | glyph-pin-rewrite (**opens a PR**) |
 
-Those bottom three moved **only by hand** until 2026-07-28 — one pull request per
+Those bespoke references moved **only by hand** until 2026-07-28 — one pull request per
 repo per glyph release, 22 references across 14 repos on the v0.11.2 rollout, with
 the audit red for the four days it took. `glyph-pin-rewrite.yml` opens those pull
 requests now, and `fleet-automerge.yml` (chained at the end of its run, and four
