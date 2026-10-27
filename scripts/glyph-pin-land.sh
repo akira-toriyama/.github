@@ -39,10 +39,10 @@
 # the branch is merely behind by that commit, and the next run rebuilds it.
 #
 # WHAT IT PRESERVES, deliberately:
-#   - the akira-glyph-pin-rewrite[bot] AUTHOR: attribution, and the guard's key
+#   - the hub-glyph-pin-rewrite[bot] AUTHOR: attribution, and the guard's key
 #     — it is how a rebuild tells its own commits from a person's. The App is
 #     registered on this account for exactly that (github.com/apps/
-#     akira-glyph-pin-rewrite, bot user id 348594492, no permissions, installed
+#     hub-glyph-pin-rewrite, bot user id 348594492, no permissions, installed
 #     nowhere), and the id-prefixed noreply address is what pins the
 #     attribution: GitHub resolves an author by email alone, so a bare
 #     <name>[bot]@users.noreply resolves to whoever registers an App of that
@@ -63,7 +63,7 @@ if [ -z "$full" ] || [ -z "$base" ] || [ -z "$branch" ] || [ -z "$message" ] || 
   exit 2
 fi
 
-author='akira-glyph-pin-rewrite[bot]'
+author='hub-glyph-pin-rewrite[bot]'
 author_email="348594492+${author}@users.noreply.github.com"
 
 tmp="$(mktemp -d)"
