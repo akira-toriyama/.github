@@ -82,7 +82,7 @@ next run overwrites. Mechanism, secrets, and PAT rotation: [`fleet/README.md`](f
 ## glyph-pin-rewrite — the other fleet writer
 
 fleet-sync distributes **whole files**, which works only where every repo may
-carry the identical one. Three of the five things that reference glyph are lines
+carry the identical one. Four of the six things that reference glyph are lines
 inside files each repo owns and writes differently — a repo's own release
 workflow, `actions/install@`, and the `version:` binary pin under it — so
 `fleet-sync` cannot reach them, and refuses those dests by name.
