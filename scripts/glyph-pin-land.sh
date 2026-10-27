@@ -39,9 +39,16 @@
 # the branch is merely behind by that commit, and the next run rebuilds it.
 #
 # WHAT IT PRESERVES, deliberately:
-#   - the glyph-pin-rewrite[bot] AUTHOR: attribution, and the guard's key — it
-#     is how a rebuild tells its own commits from a person's. The committer
-#     stays the PAT user, as with the Contents API path this replaces.
+#   - the akira-glyph-pin-rewrite[bot] AUTHOR: attribution, and the guard's key
+#     — it is how a rebuild tells its own commits from a person's. The App is
+#     registered on this account for exactly that (github.com/apps/
+#     akira-glyph-pin-rewrite, bot user id 348594492, no permissions, installed
+#     nowhere), and the id-prefixed noreply address is what pins the
+#     attribution: GitHub resolves an author by email alone, so a bare
+#     <name>[bot]@users.noreply resolves to whoever registers an App of that
+#     name (fleet-sync[bot] was a stranger's from 2026-10-15; the history is in
+#     scripts/fleet-commit-bundle.sh). The committer stays the PAT user, as
+#     with the Contents API path this replaces.
 #   - the message is passed in whole. The caller composes it from the pull
 #     request's title, so a squash merge — which takes the commit's own subject
 #     when a PR holds exactly one commit — carries the same `=` sigil the PR
@@ -56,7 +63,8 @@ if [ -z "$full" ] || [ -z "$base" ] || [ -z "$branch" ] || [ -z "$message" ] || 
   exit 2
 fi
 
-author='glyph-pin-rewrite[bot]'
+author='akira-glyph-pin-rewrite[bot]'
+author_email="348594492+${author}@users.noreply.github.com"
 
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
@@ -111,9 +119,9 @@ elif ! grep -q 'HTTP 404' "$tmp/ref.err"; then
   exit 1
 fi
 
-jq -n --arg msg "$message" --arg tree "$tree" --arg parent "$base" --arg a "$author" \
+jq -n --arg msg "$message" --arg tree "$tree" --arg parent "$base" --arg a "$author" --arg e "$author_email" \
   '{message: $msg, tree: $tree, parents: [$parent],
-    author: {name: $a, email: ($a + "@users.noreply.github.com")}}' > "$tmp/commit.json" \
+    author: {name: $a, email: $e}}' > "$tmp/commit.json" \
   || { echo "cannot build the commit payload" >&2; exit 1; }
 commit="$(gh api -X POST "repos/$full/git/commits" --input "$tmp/commit.json" --jq .sha)" \
   || { echo "cannot create the commit on $full" >&2; exit 1; }

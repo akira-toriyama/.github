@@ -135,8 +135,8 @@ check "the tree carries both paths on the base tree, mode 100644" \
          and (.tree | map(.path) == [".github/workflows/release.yml", "glyph.toml"])
          and (.tree | all(.mode == "100644"))' "$STUB_HOME/tree-payload.json"
 check "the commit is the bot's, parented on the base, message verbatim" \
-  jqe '.author.name == "glyph-pin-rewrite[bot]"
-         and .author.email == "glyph-pin-rewrite[bot]@users.noreply.github.com"
+  jqe '.author.name == "akira-glyph-pin-rewrite[bot]"
+         and .author.email == "348594492+akira-glyph-pin-rewrite[bot]@users.noreply.github.com"
          and .parents == ["base-1"]
          and .message == ":arrow_up:(ci)= pin glyph v9.9.9 (v9.9.8 -> v9.9.9)\n\n.github/workflows/release.yml\nglyph.toml"' \
   "$STUB_HOME/commit-payload.json"
@@ -156,7 +156,7 @@ check "…and receives NO commit and NO ref update" \
 # nightly commits sit on the old tip. All the bot's own, so the force is safe.
 fresh pin-9
 printf 'tree-new base-0\n' > "$STUB_HOME/pin-meta"
-printf 'glyph-pin-rewrite[bot]\n%.0s' 1 2 3 > "$STUB_HOME/authors"
+printf 'akira-glyph-pin-rewrite[bot]\n%.0s' 1 2 3 > "$STUB_HOME/authors"
 out="$(land)"; rc=$?
 check "a branch behind its base is rebuilt: exit 0, landed" \
   [ "$rc" -eq 0 -a "$out" = "landed 2 commit-1" ]
@@ -168,7 +168,7 @@ check "the ref is force-moved exactly once, not re-created" \
 # on the base but with other bytes (a partial earlier write) → rebuilt
 fresh pin-2
 printf 'tree-old base-1\n' > "$STUB_HOME/pin-meta"
-printf 'glyph-pin-rewrite[bot]\n' > "$STUB_HOME/authors"
+printf 'akira-glyph-pin-rewrite[bot]\n' > "$STUB_HOME/authors"
 out="$(land)"; rc=$?
 check "a branch on the base with other bytes is rebuilt" \
   [ "$rc" -eq 0 -a "$out" = "landed 2 commit-1" -a "$(calls '^PATCH')" -eq 1 ]
@@ -176,11 +176,11 @@ check "a branch on the base with other bytes is rebuilt" \
 # a person's commit on the branch → untouched, exit 3
 fresh pin-3
 printf 'tree-new base-0\n' > "$STUB_HOME/pin-meta"
-printf 'glyph-pin-rewrite[bot]\nSome Person\n' > "$STUB_HOME/authors"
+printf 'akira-glyph-pin-rewrite[bot]\nSome Person\n' > "$STUB_HOME/authors"
 out="$(land)"; rc=$?
 check "a commit this workflow did not author exits 3" [ "$rc" -eq 3 ]
 check "…names the stranger, and moves nothing" \
-  sh -c "grep -q 'not authored by glyph-pin-rewrite\[bot\] (c-Some-)' '$stub_dir/err' \
+  sh -c "grep -q 'not authored by akira-glyph-pin-rewrite\[bot\] (c-Some-)' '$stub_dir/err' \
          && [ \"\$(grep -c '^PATCH' '$STUB_HOME/calls.log')\" -eq 0 ] \
          && [ \"\$(grep -c '^POST .*git/commits\$' '$STUB_HOME/calls.log')\" -eq 0 ]"
 
