@@ -38,9 +38,9 @@
 # would never re-run (the measured fact behind fleet-automerge). One file, one
 # commit — the Contents API, with the blob sha read from the same head, so a
 # branch dependabot moved meanwhile is a refused write (counted failed; the
-# next run is idempotent), never a clobber. The author is akira-fleet-repin[bot]
+# next run is idempotent), never a clobber. The author is hub-fleet-repin[bot]
 # for attribution only — the App registered on this account for exactly that
-# (github.com/apps/akira-fleet-repin, bot user id 348590270, no permissions,
+# (github.com/apps/hub-fleet-repin, bot user id 348590270, no permissions,
 # installed nowhere) — and the id-prefixed noreply address is what pins it:
 # GitHub resolves an author by email alone, so a bare <name>[bot]@users.noreply
 # resolves to whoever registers an App of that name (fleet-sync[bot] was a
@@ -157,8 +157,8 @@ while IFS= read -r -u 4 name; do
     msg="$(printf ':package:(nix)= re-pin vendorHash for the gomod bump\n\ngo.sum moved with the bump, so the flake'"'"'s fixed-output vendor hash no longer\nmatched. Derived by scripts/repin-vendorhash.sh (fleet-repin, %s).' "$(printf '%s' "$out" | tail -n 1 | head -c 200)")"
     if ! gh api -X PUT "repos/$full/contents/flake.nix" \
           -f "message=$msg" \
-          -f "author[name]=akira-fleet-repin[bot]" \
-          -f "author[email]=348590270+akira-fleet-repin[bot]@users.noreply.github.com" \
+          -f "author[name]=hub-fleet-repin[bot]" \
+          -f "author[email]=348590270+hub-fleet-repin[bot]@users.noreply.github.com" \
           -f "content=$b64" -f "branch=$head" -f "sha=$flake_sha" >/dev/null 2>"$err" </dev/null; then
       fail "$tag write refused: $(head -c 300 "$err" | tr '\n' ' ') — $title"; continue
     fi

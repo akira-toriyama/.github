@@ -239,8 +239,8 @@ check "clones the pull's head branch" [ "$(grep -c '^repo clone GET o/alpha depe
 check "writes flake.nix on that branch with the head's blob sha and the bot author" \
   [ "$(grep -c '^api  PUT repos/o/alpha/contents/flake.nix .*branch=dependabot/go_modules/gomod-1 sha=blob-alpha-dependabot/go_modules/gomod-1' "$STUB_HOME/calls.log")" -eq 1 ]
 check "…as :package:(nix)= with the = sigil" [ "$(grep -c 'message=:package:(nix)= re-pin vendorHash for the gomod bump' "$STUB_HOME/calls.log")" -eq 1 ]
-check "…authored akira-fleet-repin\[bot\] under the App bot's id-prefixed address" \
-  [ "$(grep -c 'author\[name\]=akira-fleet-repin\[bot\] author\[email\]=348590270+akira-fleet-repin\[bot\]@users.noreply.github.com' "$STUB_HOME/calls.log")" -eq 1 ]
+check "…authored hub-fleet-repin\[bot\] under the App bot's id-prefixed address" \
+  [ "$(grep -c 'author\[name\]=hub-fleet-repin\[bot\] author\[email\]=348590270+hub-fleet-repin\[bot\]@users.noreply.github.com' "$STUB_HOME/calls.log")" -eq 1 ]
 check "…with the ritual's output as the content" grep -q 'vendorHash = "sha256-NEW=";' "$STUB_HOME/written-alpha.nix"
 check "the pull is read back" [ "$(grep -c '^api  GET repos/o/alpha/pulls/1/files' "$STUB_HOME/calls.log")" -eq 2 ]
 check "repinned line carries the ritual's report" line "repinned: o/alpha#1 re-pinned — vendorHash sha256-OLD= -> sha256-NEW=; no stamp line to refresh — bump (re-pinned)"
