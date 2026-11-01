@@ -176,7 +176,8 @@ jobs:
           for repo in "${REPOS[@]}"; do
             full="$OWNER/$repo"
             # glyph is audited like every other repo. It reaches its own composite
-            # by relative path (`./.glyph-action/…`), which never matches, and the
+            # by self-repository reference (`$/.github/actions/…`, t-fzhx), which
+            # never matches (nor did the old `./.glyph-action/…`), and the
             # commented caller stubs its reusables ship are skipped as comments by
             # the extractor — so the pins left to see are the ones fleet-sync gave
             # it, which is exactly what should be checked. (A comment here used to

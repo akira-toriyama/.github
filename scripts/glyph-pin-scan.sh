@@ -55,8 +55,9 @@
 # too: a step installing an ancient glyph off a SHA-pinned action reported nothing
 # whatsoever. Everything glyph-shaped now emits a record; only the classification
 # varies.
-# glyph's OWN reusables are not affected: they reach the composite by relative
-# path (`./.glyph-action/…`), which never matches, so their computed
+# glyph's OWN reusables are not affected: they reach the composite by
+# self-repository reference (`$/.github/actions/…`, t-fzhx), which never matches
+# (nor did the old `./.glyph-action/…`), so their computed
 # `version: ${{ steps.glyph.outputs.version }}` is invisible here by construction.
 set -euo pipefail
 

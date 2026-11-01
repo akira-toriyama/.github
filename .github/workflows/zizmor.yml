@@ -48,7 +48,8 @@ on:
           whose `self-repository` audit reports every workspace-relative
           `uses: ./<path>` still in the fleet (26 sites in 8 repos, measured
           2026-10-27 over every repo: the hub itself, canon, glyph, glyph-test,
-          tmp-skipprop-audit, zmk-beacon, zmk-hid-host, zmk-lantern). Between
+          tmp-skipprop-audit, zmk-beacon, zmk-hid-host, zmk-lantern; glyph's 4
+          moved in t-fzhx, the hub's 12 in t-e7tb). Between
           1.26.1 and 1.31.1 that audit is the only new finding fleet-wide, so
           1.29.0 moves glyph's reusables to `$/` (glyph t-fzhx) with no repo
           reddened; the step to 1.30+ follows the last `./` site's move.

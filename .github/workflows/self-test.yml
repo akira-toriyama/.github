@@ -14,11 +14,12 @@ name: self test
 #
 #   actionlint  — static-lints the hub's own workflow files (YAML / expression /
 #                 shellcheck), via the same reusable the fleet gets (dogfooded
-#                 below, like zizmor). It bundles shellcheck for `run:` blocks
-#                 and validates local `uses: ./...` references, so a change under
-#                 actions/ is covered too (that is why actions/** is in the path
-#                 filter — the composite itself is not a workflow file, but the
-#                 workflows that consume it are re-linted when it changes).
+#                 below, like zizmor). It bundles shellcheck for `run:` blocks.
+#                 Local action references are `uses: $/<path>` (GitHub's
+#                 self-repository form, t-e7tb), which actionlint 1.7.12 does not
+#                 parse — the reusable waives its two messages — so a change
+#                 under actions/ is covered by the smoke jobs below, not by lint
+#                 (actions/** stays in the path filter for them).
 #   zizmor      — Actions-specific SECURITY lint (template injection, unpinned
 #                 third-party actions, over-broad permissions, …) over the same
 #                 files, as a hard PR gate. Overlaps but doesn't subsume the CodeQL
@@ -29,7 +30,7 @@ name: self test
 #                 break in their own runtime (bad tool call, input handling) fails
 #                 HERE, not in a caller after the tag moves — the lint jobs only
 #                 check the YAML, these exercise execution. taplo / design-md-lint /
-#                 swift-format run via `uses: ./`. update-tap's formula-mutation
+#                 swift-format run via `uses: $/`. update-tap's formula-mutation
 #                 half (actions/bump-formula) is EXTRACTED into a composite and
 #                 table-tested: bump-formula-test runs the real .sh over a case
 #                 table, bump-formula-smoke runs the composite wrapper once.
@@ -92,9 +93,16 @@ permissions:
   contents: read
 
 jobs:
+  # Every self-call below is `uses: $/<path>`: GitHub's self-repository
+  # reference, the path in the repository this workflow file lives in at the
+  # running commit — for these jobs exactly the tree `./<path>` resolved to.
+  # The form matters for the fleet gate: zizmor 1.30's `self-repository` audit
+  # reports every workspace-relative `./<path>`, and the hub cannot move its
+  # pin past 1.29.0 while it carries one (t-e7tb).
+
   # Static workflow lint. This DOGFOODS the reusable the hub distributes to the
   # fleet (actionlint.yml, t-ya55) the same way the zizmor job below dogfoods
-  # its own: `uses: ./` exercises it at PR time, so a break in the reusable
+  # its own: `uses: $/` exercises it at PR time, so a break in the reusable
   # fails HERE, not in a fleet caller after @v2 moves. The binary pin
   # (VERSION + SHA256) lives in the reusable — the hub carries no second copy
   # to drift. Only the hub passes extra-files: the fleet canonicals are
@@ -105,7 +113,7 @@ jobs:
   # fleet/dependabot.yml and fleet/zizmor-config.yml are configs, not
   # workflows, and actionlint syntax-errors on them.
   actionlint:
-    uses: ./.github/workflows/actionlint.yml
+    uses: $/.github/workflows/actionlint.yml
     with:
       extra-files: >-
         fleet/actionlint.yml
@@ -141,7 +149,7 @@ jobs:
             tests/*.test.sh
 
   # Actions-specific security lint as a HARD PR gate. This DOGFOODS the reusable the
-  # hub distributes to the fleet (zizmor.yml, t-qbp1): calling it via `uses: ./`
+  # hub distributes to the fleet (zizmor.yml, t-qbp1): calling it via `uses: $/`
   # exercises it at PR time, so a break in the reusable fails HERE, not in a fleet
   # caller after @v2 moves — the same guarantee the taplo/design-md/swift-format
   # smokes below give, applied to the hub's own security gate. The gate's mechanics
@@ -150,7 +158,7 @@ jobs:
   # the hub scans `actions` too (its composite); fleet callers take the reusable's
   # `.github/workflows` default.
   zizmor:
-    uses: ./.github/workflows/zizmor.yml
+    uses: $/.github/workflows/zizmor.yml
     with:
       inputs: .github/workflows actions
       # No `min-confidence:` on purpose — the hub takes the reusable's default,
@@ -203,7 +211,7 @@ jobs:
           echo "all smoke fixtures present"
 
   # Reusable smoke tests — RUN each of the three cheap/deterministic reusables via
-  # `uses: ./` against its fixture so a break in the reusable's own runtime (bad
+  # `uses: $/` against its fixture so a break in the reusable's own runtime (bad
   # tool call, input handling) fails here at PR time, not in a caller after the
   # moving `v2` tag moves (`v1` is frozen and must never move). Each fixture is
   # kept tool-clean and documents its contract under
@@ -214,17 +222,17 @@ jobs:
     # this job doubles as a repo-wide taplo(-fmt) gate: a red here on some OTHER
     # *.toml is a real unclean-TOML failure, not a reusable regression (the
     # '**/*.toml' path trigger above makes it fire on the PR that adds it).
-    uses: ./.github/workflows/taplo.yml
+    uses: $/.github/workflows/taplo.yml
 
   smoke-design-md-lint:
-    uses: ./.github/workflows/design-md-lint.yml
+    uses: $/.github/workflows/design-md-lint.yml
     with:
       paths: tests/fixtures/design/DESIGN.md
 
   smoke-swift-format:
     # Runs on macOS (the reusable pins Xcode) — the one non-linux job here. `swift
     # format lint` doesn't compile, so it's fast; bounded by the reusable's timeout.
-    uses: ./.github/workflows/swift-format.yml
+    uses: $/.github/workflows/swift-format.yml
     with:
       paths: tests/fixtures/swift
 
@@ -234,7 +242,7 @@ jobs:
     # side is pinned by repo-policy-check-test below). Also executes the
     # reusable's job.workflow_sha self-checkout before @v2 moves, so a break
     # in that plumbing fails here, not in a fleet caller.
-    uses: ./.github/workflows/repo-policy.yml
+    uses: $/.github/workflows/repo-policy.yml
 
   # RUN the extracted formula-mutation logic over a case table (the real .sh,
   # drift-free) so a break fails HERE, not in a caller after @v2 moves. This is
@@ -253,7 +261,7 @@ jobs:
         run: bash tests/bump-formula.test.sh
 
   # Exercise the composite WRAPPER (action.yml's input→env→arg mapping) once via
-  # `uses: ./`, so a wrapper break fails here too — the table test above calls the
+  # `uses: $/`, so a wrapper break fails here too — the table test above calls the
   # .sh directly and would miss it. Mutates the checked-out fixture copy in place.
   bump-formula-smoke:
     runs-on: ubuntu-latest
@@ -263,7 +271,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Run the composite on a fixture
-        uses: ./actions/bump-formula
+        uses: $/actions/bump-formula
         with:
           formula-path: tests/fixtures/tap/plain.rb
           tag: v2.0.0
@@ -276,7 +284,7 @@ jobs:
       # production rollbacks. Roll the fixture back so every declared input travels
       # through the wrapper at least once.
       - name: Run the composite again, rolling back
-        uses: ./actions/bump-formula
+        uses: $/actions/bump-formula
         with:
           formula-path: tests/fixtures/tap/plain.rb
           tag: v1.0.0

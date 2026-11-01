@@ -64,30 +64,22 @@ jobs:
           # Reads history and runs tests, never pushes (zizmor artipacked).
           persist-credentials: false
 
-      # The gate's own script lives in the hub, not in the caller — and a step's
-      # `uses: ./…` resolves against the WORKSPACE, which holds the caller's tree.
-      # So fetch the hub beside it. The `job` context's workflow-identity properties
-      # name the repository and the resolved commit of the workflow file defining
-      # this job — i.e. THIS file, at whatever tag, branch or SHA the caller pinned —
-      # so the YAML and the script it runs can never drift apart. (`github.*` would
-      # be the caller's; `github.job_workflow_sha` was a documentation error and is
-      # always null, an OIDC claim only.)
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-        with:
-          repository: ${{ job.workflow_repository }}
-          ref: ${{ job.workflow_sha }}
-          path: .go-bite-hub
-          persist-credentials: false
-
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: ${{ inputs.go-version }}
           go-version-file: ${{ inputs.go-version-file }}
           cache: true
 
-      # Runs the composite the hub self-tests, from the checkout above — one code
-      # path for the fleet and for the hub's own smoke.
-      - uses: ./.go-bite-hub/actions/go-bite
+      # The gate's own composite lives in the hub, not in the caller. `$/<path>`
+      # is GitHub's self-repository reference: the path in the repository THIS
+      # workflow file lives in, at the commit the caller's pin resolved it to —
+      # so the YAML and the script it runs can never drift apart, with no second
+      # checkout (a step's `./…` resolves against the WORKSPACE, which holds the
+      # caller's tree; the hub used to check itself out beside it through
+      # job.workflow_repository / job.workflow_sha). That a reusable's `$/`
+      # resolves to the reusable's own repository, not the caller's, was measured
+      # in glyph's reusables first (glyph-test#135, t-fzhx).
+      - uses: $/actions/go-bite
         with:
           base-sha: ${{ github.event.pull_request.base.sha }}
           # The MERGE commit, not the branch head. Nothing forces a rebase, so on a
