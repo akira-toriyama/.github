@@ -257,26 +257,39 @@ else
   fail "ONLY= limits the run to one repo"
 fi
 
-# The `build` context (t-jvdr): required ONLY where a check-run named `build`
-# exists on the default branch HEAD — ground truth, because a required context
-# that no run produces wedges every PR invisibly (the t-c51t shape). The swift
-# family's `build` was hand-added per repo; every new repo opened the hole again.
+# The `build` and `bite / bite` contexts (t-jvdr, t-a3s1): required ONLY where a
+# check-run of that name exists on the default branch HEAD — ground truth,
+# because a required context that no run produces wedges every PR invisibly (the
+# t-c51t shape). Both were hand-added per repo; every new repo opened the hole
+# again. A private repo is n/a (403 on this plan), never unreadable.
 STUB_HOME="$stub_dir/fleet-build"; mkdir -p "$STUB_HOME"
-printf 'appish\tPUBLIC\nlibish\tPUBLIC\n' >"$STUB_HOME/repos"
-cp "$canonical" "$STUB_HOME/commit-lint.appish"
-cp "$canonical" "$STUB_HOME/commit-lint.libish"
+printf 'appish\tPUBLIC\nlibish\tPUBLIC\ngoish\tPUBLIC\nsecretish\tPRIVATE\n' >"$STUB_HOME/repos"
+for n in appish libish goish secretish; do cp "$canonical" "$STUB_HOME/commit-lint.$n"; done
 printf 'build\nbite / bite\nAnalyze (actions)\n' >"$STUB_HOME/check-runs.appish"
-# libish has runs on HEAD, none of them named `build`.
+# libish has runs on HEAD, none of them named `build` or `bite / bite`.
 printf 'test-macos\ntest-linux\n' >"$STUB_HOME/check-runs.libish"
+# goish is the Go shape: a bite caller and go-ci, no `build`.
+printf 'bite / bite\nci / test (ubuntu-latest)\nlint / lint\n' >"$STUB_HOME/check-runs.goish"
+# secretish answers 403 to the protection endpoint, as every private repo does.
+: >"$STUB_HOME/protection-unreadable.secretish"
 
 run_script WITH_PROTECTION=1
 if [ "$RC" -eq 0 ] \
-  && printf '%s' "$OUT" | grep -q "would: protection(PUT new): require \[build, lint / lint\]" \
-  && printf '%s' "$OUT" | grep -q "would: protection(PUT new): require \[lint / lint\] (admin bypass"; then
-  pass "build is required where HEAD demonstrably runs it, and only there"
+  && printf '%s' "$OUT" | grep -q "would: protection(PUT new): require \[bite / bite, build, lint / lint\]" \
+  && printf '%s' "$OUT" | grep -q "would: protection(PUT new): require \[lint / lint\] (admin bypass" \
+  && printf '%s' "$OUT" | grep -q "would: protection(PUT new): require \[bite / bite, lint / lint\]"; then
+  pass "build and bite are required where HEAD demonstrably runs them, and only there"
 else
-  fail "build is required where HEAD demonstrably runs it, and only there"
+  fail "build and bite are required where HEAD demonstrably runs them, and only there"
 fi
+if [ "$RC" -eq 0 ] \
+  && printf '%s' "$OUT" | grep -q "n/a: branch protection (private repo" \
+  && ! printf '%s' "$OUT" | grep -q "unreadable: branch protection in secretish"; then
+  pass "a private repo's protection is n/a, not an unreadable that reds the run"
+else
+  fail "a private repo's protection is n/a, not an unreadable that reds the run"
+fi
+rm -f "$STUB_HOME/protection-unreadable.secretish"
 
 # A transient check-runs failure must NOT decide "no build" silently: it warns,
 # requires lint alone this run, and leaves build to the next (idempotent) run.

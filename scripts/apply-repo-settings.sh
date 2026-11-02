@@ -10,7 +10,7 @@
 #   ./apply-repo-settings.sh                 # DRY RUN: report the diff, change nothing
 #   APPLY=1 ./apply-repo-settings.sh         # apply the SAFE baseline (7 settings), read each write back
 #   APPLY=1 WITH_TOKEN_FLIP=1 ...            # also flip default token -> read (see SKIP_TOKEN_FLIP)
-#   APPLY=1 WITH_PROTECTION=1 ...            # also add the commit-lint required check (additive)
+#   APPLY=1 WITH_PROTECTION=1 ...            # also require the checks main demonstrably runs: lint, build, bite (additive)
 #   APPLY=1 WITH_IMMUTABLE=1 ...             # also enable immutable releases on release repos
 #   APPLY=1 WITH_CODEQL_GO=1 ...             # also add CodeQL "go" (build) on GO_REPOS
 #   ONLY=facet APPLY=1 ...                   # limit to one repo (the canary)
@@ -390,19 +390,26 @@ for line in "${REPOS[@]}"; do
   #    glyph's reusable ⇒ context "lint / lint"). The hub itself never appears
   #    here: fleet-sync EXCLUDEs `.github`, and its hand-maintained
   #    self-commit-lint.yml uses job id `commit-lint` ⇒ a different context.
-  #    PLUS "build" — but only where a check-run named `build` exists on the
-  #    default branch HEAD (t-jvdr). The swift family's `build` was hand-added
-  #    per repo, so every new repo opened the same hole: red bite/build PRs that
-  #    were still mergeable. The probe is ground truth, not file inference: a
-  #    required context that no run produces wedges every PR invisibly (the
-  #    t-c51t shape), so we require only what the repo demonstrably runs — a
-  #    build.yml whose job never fired on main is exactly the case to skip.
+  #    PLUS the contexts the fleet's own callers produce — `build` (the swift
+  #    family's build.yml) and `bite / bite` (the go-bite / swift-bite callers,
+  #    job id `bite`) — but only where a check-run of that name exists on the
+  #    default branch HEAD (t-jvdr, t-a3s1). Both were hand-added per repo, so
+  #    every new repo opened the same hole: red bite/build PRs that were still
+  #    mergeable. The probe is ground truth, not file inference: a required
+  #    context that no run produces wedges every PR invisibly (the t-c51t shape),
+  #    so we require only what the repo demonstrably runs — a build.yml whose job
+  #    never fired on main is exactly the case to skip.
   #    For already-protected repos we PATCH only the status-check contexts
   #    (preserving enforce_admins / force-push / strict / reviews — a full PUT
   #    would reset allow_force_pushes etc.). For unprotected repos we PUT a fresh
   #    config matching the .github reference. Contexts an active ruleset already
-  #    requires, and repos outside PROTECT_REPOS, are skipped.
-  if [ "$WITH_PROTECTION" = "1" ] && { [ -z "$PROTECT_REPOS" ] || in_list "$R" "$PROTECT_REPOS"; }; then
+  #    requires, and repos outside PROTECT_REPOS, are skipped. A private repo is
+  #    n/a, not unreadable: this plan answers 403 to every protection endpoint
+  #    there (1b), and the 2026-11-02 dry run read all 7 private repos as
+  #    "unreadable" and exited 1 over a state that will never change.
+  if [ "$WITH_PROTECTION" = "1" ] && [ "$VIS" != "PUBLIC" ] && { [ -z "$PROTECT_REPOS" ] || in_list "$R" "$PROTECT_REPOS"; }; then
+    echo "    n/a: branch protection (private repo; branch protection is 403 on this plan)"
+  elif [ "$WITH_PROTECTION" = "1" ] && { [ -z "$PROTECT_REPOS" ] || in_list "$R" "$PROTECT_REPOS"; }; then
     protection_considered=$((protection_considered + 1))
     cl=$(gh api -H "Accept: application/vnd.github.raw" \
       "repos/$full/contents/.github/workflows/commit-lint.yml" 2>/dev/null || true)
@@ -411,12 +418,18 @@ for line in "${REPOS[@]}"; do
     else
       protection_matched=$((protection_matched + 1))
       wants="lint / lint"
-      if cr=$(gh api "repos/$full/commits/HEAD/check-runs" --jq '[.check_runs[].name]' 2>/dev/null); then
-        if printf '%s' "$cr" | jq -e 'index("build") != null' >/dev/null 2>&1; then
-          wants=$(printf 'build\n%s' "$wants")
-        fi
+      probed='build
+bite / bite'
+      # Every page: a HEAD with matrix jobs and re-runs can carry more than the
+      # 30 check-runs of a single page.
+      if cr=$(gh api --paginate "repos/$full/commits/HEAD/check-runs" --jq '.check_runs[].name' 2>/dev/null); then
+        while IFS= read -r p; do
+          if printf '%s\n' "$cr" | grep -qxF "$p"; then
+            wants=$(printf '%s\n%s' "$p" "$wants")
+          fi
+        done <<<"$probed"
       else
-        echo "    warn: cannot read check-runs on $R@HEAD — 'build' not considered this run (the next run heals)"
+        echo "    warn: cannot read check-runs on $R@HEAD — 'build' and 'bite / bite' not considered this run (the next run heals)"
       fi
       need=""
       while IFS= read -r w; do
