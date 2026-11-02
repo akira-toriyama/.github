@@ -29,7 +29,9 @@ trap 'rm -rf "$stub_dir"' EXIT
 #   prs-<r>.fail          present = listing fails
 #   commits-<r>-<n>.txt   commit message(s) for pulls/<n>/commits; absent = 500
 #   merge-<r>-<n>         arm outcome: armed (default) | merged | unprotected |
-#                         noauto | boom | ghost (arm "succeeds", read-back shows nothing)
+#                         noauto | boom | ghost (arm "succeeds", read-back shows nothing) |
+#                         clean (--auto refused "in clean status", outright merge lands) |
+#                         blind (arm succeeds, the read-back itself fails)
 cat >"$stub_dir/gh" <<'STUB'
 #!/usr/bin/env bash
 set -uo pipefail
@@ -78,13 +80,18 @@ case "$cmd $sub $verb" in
       unprotected) echo "GraphQL: Pull request Protected branch rules not configured for this branch (enablePullRequestAutoMerge)" >&2; exit 1 ;;
       noauto)      echo "GraphQL: Auto merge is not allowed for this repository (enablePullRequestAutoMerge)" >&2; exit 1 ;;
       boom)        echo "GraphQL: Something went wrong (enablePullRequestAutoMerge)" >&2; exit 1 ;;
+      clean)       case "$fields" in
+                     *--auto*) echo "GraphQL: Pull request Pull request is in clean status (enablePullRequestAutoMerge)" >&2; exit 1 ;;
+                     *) echo "✓ Squashed and merged pull request $repo#$num"; exit 0 ;;
+                   esac ;;
       *) echo "✓ Pull request $repo#$num will be automatically merged via squash when all requirements are met"; exit 0 ;;
     esac ;;
   "pr view GET")
     mode="$(cat "$STUB_HOME/merge-$r-$num" 2>/dev/null || echo armed)"
     case "$mode" in
-      merged) emit '{"state":"MERGED","autoMergeRequest":null}' ;;
+      merged|clean) emit '{"state":"MERGED","autoMergeRequest":null}' ;;
       ghost)  emit '{"state":"OPEN","autoMergeRequest":null}' ;;
+      blind)  echo "gh: HTTP 502 Bad Gateway (https://api.github.com/graphql)" >&2; exit 1 ;;
       *)      emit '{"state":"OPEN","autoMergeRequest":{"enabledBy":{"login":"o"}}}' ;;
     esac ;;
   *) echo "stub gh: unhandled $cmd $sub $verb $path" >&2; exit 64 ;;
@@ -233,6 +240,28 @@ printf ghost > "$STUB_HOME/merge-alpha-1"
 APPLY=1 run_script o; rc=$?
 check "a ghost arm is exit 1" [ "$rc" -eq 1 ]
 check "…named as a read-back failure" line "failed: o/alpha#1 fleet-sync arm answered success but the pull request shows neither auto-merge nor MERGED"
+
+# a pull that turns CLEAN between gh's read and its mutation is refused as
+# "in clean status" (dotfiles#406); it is merged outright, as gh would have
+fresh
+repo alpha true
+pr alpha 1 fleet-sync/x o 'sync that turned clean while arming'
+printf clean > "$STUB_HOME/merge-alpha-1"
+APPLY=1 run_script o; rc=$?
+check "a clean-status refusal exits 0" [ "$rc" -eq 0 ]
+check "…is followed by one outright squash merge" [ "$(grep -c '^pr merge GET o/alpha 1 --squash$' "$STUB_HOME/calls.log")" -eq 1 ]
+check "…read back as merged-now" line "merged-now: o/alpha#1 fleet-sync"
+check "…and is not a failure" line "failed=0 dry-run=false"
+
+# a read-back that itself cannot read fails WITH gh's words (glyph-test#113
+# failed with them discarded)
+fresh
+repo alpha true
+pr alpha 1 fleet-sync/x o 'sync'
+printf blind > "$STUB_HOME/merge-alpha-1"
+APPLY=1 run_script o; rc=$?
+check "a blind read-back is exit 1" [ "$rc" -eq 1 ]
+check "…and carries what gh said" line "failed: o/alpha#1 fleet-sync armed, but the read-back failed: gh: HTTP 502 Bad Gateway (https://api.github.com/graphql) — sync"
 
 # reads that fail are failures, never silent skips
 fresh

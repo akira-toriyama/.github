@@ -30,9 +30,15 @@
 # second, both `gh pr merge --auto --squash`):
 #   GraphQL: Pull request Protected branch rules not configured for this branch (enablePullRequestAutoMerge)
 #   GraphQL: Auto merge is not allowed for this repository (enablePullRequestAutoMerge)
+# A pull request whose checks already pass is merged on the spot by gh (that is
+# what --auto does when nothing is pending) — reported as merged-now. gh decides
+# that from one read of the pull, so a pull that turns CLEAN between gh's read
+# and its mutation is refused with a third measured text (dotfiles#406, run
+# 37215471110, 2026-10-04) and this merges it outright, which is what gh would
+# have done a moment later:
+#   GraphQL: Pull request Pull request is in clean status (enablePullRequestAutoMerge)
 # Any other refusal is a failure that reds the run — a new message is a new fact
-# to read, not a case to wave through. A pull request whose checks already pass is merged on the spot by gh
-# (that is what --auto does when nothing is pending) — reported as merged-now.
+# to read, not a case to wave through.
 # Under `required_status_checks.strict` a BEHIND pull stays armed and waits
 # (measured, #99); glyph-pin-land rebuilds its branches nightly, dependabot
 # rebases its own, and apply-repo-settings levels strict to false.
@@ -44,7 +50,10 @@
 #
 # READ-BACK. An arm that gh reports as success is re-read: the pull must now
 # show an auto-merge request or be MERGED; anything else is `failed`, because
-# "gh exited 0" is a claim and the pull request is the measurement.
+# "gh exited 0" is a claim and the pull request is the measurement. A read-back
+# that itself cannot read fails WITH gh's words in the line — glyph-test#113
+# (run 36528379136, 2026-09-29) failed with them discarded, and the pull turned
+# out to be merged; the cause is still unknown because nothing kept it.
 #
 # `hold` is a plain label — nothing creates it; put it on a pull request and
 # this leaves that pull alone until it is removed.
@@ -66,6 +75,9 @@ armed=0 merged_now=0 would_arm=0 major_left=0 held=0 already_armed=0
 skipped_no_auto=0 skipped_unprotected=0 failed=0 nrepos=0
 
 fail() { echo "::error::fleet-automerge: failed: $1"; failed=$((failed + 1)); }
+# gh's own words, flattened and capped, for a log line that has to stand alone.
+oneline() { printf '%s' "$1" | tr '\n' ' ' | head -c 300; }
+errf="$(mktemp)"; trap 'rm -f "$errf"' EXIT
 
 if [ -n "$only" ]; then
   repos="$only"
@@ -138,28 +150,36 @@ while IFS= read -r -u 4 name; do
     if [ "$ms" = "DIRTY" ]; then echo "held: $tag merge conflict — $title"; held=$((held + 1)); continue; fi
     if [ "$apply" != "1" ]; then echo "would-arm: $tag $detail — $title"; would_arm=$((would_arm + 1)); continue; fi
 
-    if err="$(gh pr merge "$num" --repo "$full" --auto --squash 2>&1 </dev/null)"; then
-      if ! back="$(gh pr view "$num" --repo "$full" --json state,autoMergeRequest --jq '[.state, (.autoMergeRequest != null)] | @tsv' 2>/dev/null </dev/null)"; then
-        fail "$tag armed, but the read-back failed — $title"; continue
-      fi
-      state="${back%%	*}"; armed_now="${back#*	}"
-      if [ "$state" = "MERGED" ]; then
-        echo "merged-now: $tag $detail — $title"; merged_now=$((merged_now + 1))
-      elif [ "$armed_now" = "true" ]; then
-        echo "armed: $tag $detail — $title"; armed=$((armed + 1))
-      else
-        fail "$tag arm answered success but the pull request shows neither auto-merge nor MERGED — $title"
-      fi
-    else
+    if ! err="$(gh pr merge "$num" --repo "$full" --auto --squash 2>&1 </dev/null)"; then
       case "$err" in
+        *"is in clean status"*)
+          # gh arms only a pull it read as not yet mergeable and merges a CLEAN
+          # one outright (merge.go: autoMerge = enable && !isImmediatelyMergeable);
+          # a pull that turns CLEAN between that read and the mutation is refused
+          # with this text (dotfiles#406, run 37215471110, 2026-10-04). Merge it
+          # outright, as gh would have: CLEAN means the required checks passed.
+          if ! err="$(gh pr merge "$num" --repo "$full" --squash 2>&1 </dev/null)"; then
+            fail "$tag turned clean while arming, and the outright merge was refused: $(oneline "$err") — $title"; continue
+          fi ;;
         *"Protected branch rules not configured"*)
           echo "skipped(unprotected): $tag the base branch has no protection, so auto-merge cannot be armed — $title"
-          skipped_unprotected=$((skipped_unprotected + 1)) ;;
+          skipped_unprotected=$((skipped_unprotected + 1)); continue ;;
         *"not allowed"*|*"not enabled"*)
           echo "skipped(no-auto-merge): $tag auto-merge is not allowed on this repository — $title"
-          skipped_no_auto=$((skipped_no_auto + 1)) ;;
-        *) fail "$tag arm refused: $(printf '%s' "$err" | tr '\n' ' ' | head -c 300) — $title" ;;
+          skipped_no_auto=$((skipped_no_auto + 1)); continue ;;
+        *) fail "$tag arm refused: $(oneline "$err") — $title"; continue ;;
       esac
+    fi
+    if ! back="$(gh pr view "$num" --repo "$full" --json state,autoMergeRequest --jq '[.state, (.autoMergeRequest != null)] | @tsv' 2>"$errf" </dev/null)"; then
+      fail "$tag armed, but the read-back failed: $(oneline "$(cat "$errf")") — $title"; continue
+    fi
+    state="${back%%	*}"; armed_now="${back#*	}"
+    if [ "$state" = "MERGED" ]; then
+      echo "merged-now: $tag $detail — $title"; merged_now=$((merged_now + 1))
+    elif [ "$armed_now" = "true" ]; then
+      echo "armed: $tag $detail — $title"; armed=$((armed + 1))
+    else
+      fail "$tag arm answered success but the pull request shows neither auto-merge nor MERGED — $title"
     fi
   done 3<<<"$prs"
 done 4<<<"$repos"
