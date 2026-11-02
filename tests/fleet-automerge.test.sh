@@ -32,19 +32,26 @@ trap 'rm -rf "$stub_dir"' EXIT
 #                         noauto | boom | ghost (arm "succeeds", read-back shows nothing) |
 #                         clean (--auto refused "in clean status", outright merge lands) |
 #                         blind (arm succeeds, the read-back itself fails)
+#   behind-<r>-<sha>      compare base...head behind_by; absent = 0
+#   checks-<r>-<sha>      check-runs on the head, `name<TAB>conclusion` per line; absent = none
+#   required-<r>          the base's classic required contexts, one per line; absent = 404
+#   comments-<r>-<n>      issue comments, `created_at<TAB>body` per line; absent = none
+#                         (a `pr comment` appends one at 2026-11-02T00:00:00Z)
+#   comment-fail-<r>-<n>  present = `pr comment` is refused
+#   every head commit is dated 2026-11-01T08:00:00Z
 cat >"$stub_dir/gh" <<'STUB'
 #!/usr/bin/env bash
 set -uo pipefail
 cmd="${1:-}"; shift
 sub=""; case "$cmd" in pr|repo) sub="${1:-}"; shift ;; esac
-verb=GET; path=""; jqexpr=""; repo=""; num=""; fields=""
+verb=GET; path=""; jqexpr=""; repo=""; num=""; fields=""; body=""
 while [ "$#" -gt 0 ]; do
   case "$1" in
     -X) verb="$2"; shift 2 ;;
     --jq|-q) jqexpr="$2"; shift 2 ;;
     --repo) repo="$2"; shift 2 ;;
-    --json|--limit|--state|-f|-F) fields="$fields $1=$2"; shift 2 ;;
-    --auto|--squash|--no-archived|--source) fields="$fields $1"; shift ;;
+    --json|--limit|--state|-f|-F|--body|-b) fields="$fields $1=$2"; [ "$1" = "--body" ] || [ "$1" = "-b" ] && body="$2"; shift 2 ;;
+    --auto|--squash|--no-archived|--source|--paginate) fields="$fields $1"; shift ;;
     -*) shift ;;
     *) if [ -z "$path" ]; then path="$1"; else num="$1"; fi; shift ;;
   esac
@@ -63,6 +70,26 @@ case "$cmd $sub $verb" in
         f="$STUB_HOME/commits-$rr-$n.txt"
         [ -e "$f" ] || { echo "gh: HTTP 500" >&2; exit 1; }
         emit "$(jq -Rs '[{commit:{message: .}}]' "$f")" ;;
+      repos/*/compare/*)
+        p="${path#repos/*/}"; rr="${p%%/*}"; sha="${path##*...}"
+        emit "{\"behind_by\": $(cat "$STUB_HOME/behind-$rr-$sha" 2>/dev/null || echo 0)}" ;;
+      repos/*/commits/*/check-runs)
+        p="${path#repos/*/}"; rr="${p%%/*}"; sha="${path##*/commits/}"; sha="${sha%%/*}"
+        f="$STUB_HOME/checks-$rr-$sha"
+        if [ -e "$f" ]; then emit "$(jq -Rn '{check_runs: [inputs | split("\t") | {name: .[0], conclusion: .[1]}]}' <"$f")"
+        else emit '{"check_runs":[]}'; fi ;;
+      repos/*/commits/*)
+        emit '{"commit":{"committer":{"date":"2026-11-01T08:00:00Z"}}}' ;;
+      repos/*/branches/*/protection/required_status_checks)
+        p="${path#repos/*/}"; rr="${p%%/*}"
+        f="$STUB_HOME/required-$rr"
+        [ -e "$f" ] || { echo "gh: Branch not protected (HTTP 404)" >&2; exit 1; }
+        emit "$(jq -Rn '{contexts: [inputs]}' <"$f")" ;;
+      repos/*/issues/*/comments)
+        p="${path#repos/*/}"; rr="${p%%/*}"; n="${path##*/issues/}"; n="${n%%/*}"
+        f="$STUB_HOME/comments-$rr-$n"
+        if [ -e "$f" ]; then emit "$(jq -Rn '[inputs | split("\t") | {created_at: .[0], body: .[1]}]' <"$f")"
+        else emit '[]'; fi ;;
       repos/*)
         rr="${path#repos/*/}"
         f="$STUB_HOME/repo-$rr.json"
@@ -70,6 +97,10 @@ case "$cmd $sub $verb" in
         emit "$(cat "$f")" ;;
       *) echo "stub gh: unhandled api $path" >&2; exit 64 ;;
     esac ;;
+  "pr comment GET")
+    [ -e "$STUB_HOME/comment-fail-$r-$num" ] && { echo "GraphQL: Resource not accessible by personal access token (addComment)" >&2; exit 1; }
+    printf '%s\t%s\n' "2026-11-02T00:00:00Z" "$body" >> "$STUB_HOME/comments-$r-$num"
+    echo "https://github.com/$repo/pull/$num#issuecomment-1"; exit 0 ;;
   "pr list GET")
     [ -e "$STUB_HOME/prs-$r.fail" ] && { echo "gh: HTTP 502" >&2; exit 1; }
     f="$STUB_HOME/prs-$r.json"; [ -e "$f" ] || f=/dev/null
@@ -110,14 +141,15 @@ repo() { # repo <name> <allow_auto_merge> — register a repo with default branc
   printf '{"allow_auto_merge":%s,"default_branch":"main"}\n' "$2" > "$STUB_HOME/repo-$1.json"
 }
 # pr <repo> <number> <head> <author> <title> [draft] [mergeState] [armed] [labels-json] [base]
+# — the head sha is `sha<number>`
 pr() {
   local r="$1" n="$2" head="$3" author="$4" title="$5" draft="${6:-false}" ms="${7:-BLOCKED}" armed="${8:-false}" labels="${9:-[]}" base="${10:-main}"
   local f="$STUB_HOME/prs-$r.json"; [ -s "$f" ] || echo '[]' > "$f"
   local auto=null; [ "$armed" = "true" ] && auto='{"enabledBy":{"login":"o"}}'
   jq --argjson n "$n" --arg head "$head" --arg author "$author" --arg title "$title" --argjson draft "$draft" \
-     --arg ms "$ms" --argjson auto "$auto" --argjson labels "$labels" --arg base "$base" \
+     --arg ms "$ms" --argjson auto "$auto" --argjson labels "$labels" --arg base "$base" --arg sha "sha$n" \
      '. + [{number:$n, title:$title, headRefName:$head, baseRefName:$base, author:{login:$author}, isDraft:$draft,
-            mergeStateStatus:$ms, autoMergeRequest:$auto, labels:($labels | map({name: .}))}]' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+            mergeStateStatus:$ms, autoMergeRequest:$auto, headRefOid:$sha, labels:($labels | map({name: .}))}]' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
 }
 trailer() { # trailer <repo> <n> <entries: name[:type]...>
   local r="$1" n="$2"; shift 2
@@ -200,7 +232,7 @@ check "dependabot/ by a non-bot is held" line "held: o/alpha#11 dependabot autho
 check "a pull not aimed at the default branch is held" line "held: o/alpha#12 glyph-pin base release is not the default branch main — "
 check "allow_auto_merge=false skips the repo and counts its candidates" line "skipped(no-auto-merge): o/beta allow_auto_merge=false (1 candidate pull request(s) left to a person)"
 check "the no-auto-merge repo's commits are never read" [ "$(grep -c 'pulls/1/commits' "$STUB_HOME/calls.log")" -eq 1 ]
-check "counts line" line "done: armed=0 merged-now=0 would-arm=2 major-left=1 held=7 already-armed=1 skipped-no-auto-merge=1 skipped-unprotected=0 failed=0 dry-run=true across 3 repo(s)"
+check "counts line" line "done: armed=0 merged-now=0 would-arm=2 major-left=1 held=7 already-armed=1 rebase-asked=0 would-rebase=0 skipped-no-auto-merge=1 skipped-unprotected=0 failed=0 dry-run=true across 3 repo(s)"
 
 # ── apply: arm, read back, classify refusals ────────────────────────────────
 fresh
@@ -221,7 +253,7 @@ check "armed line" line "armed: o/alpha#1 dependabot 1 update(s), highest semver
 check "an already-mergeable pull gh merged outright is merged-now" line "merged-now: o/alpha#2 glyph-pin v3.3.1 -> v3.4.0 (minor) — "
 check "no protection is the counted unprotected skip" line "skipped(unprotected): o/alpha#3 fleet-sync the base branch has no protection"
 check "auto-merge disallowed at arm time is the counted no-auto-merge skip" line "skipped(no-auto-merge): o/alpha#4 fleet-sync auto-merge is not allowed on this repository"
-check "apply counts" line "done: armed=1 merged-now=1 would-arm=0 major-left=0 held=0 already-armed=0 skipped-no-auto-merge=1 skipped-unprotected=1 failed=0 dry-run=false across 1 repo(s)"
+check "apply counts" line "done: armed=1 merged-now=1 would-arm=0 major-left=0 held=0 already-armed=0 rebase-asked=0 would-rebase=0 skipped-no-auto-merge=1 skipped-unprotected=1 failed=0 dry-run=false across 1 repo(s)"
 
 # an arm the API refuses for any other reason is a failure, and reds the run
 fresh
@@ -263,6 +295,97 @@ APPLY=1 run_script o; rc=$?
 check "a blind read-back is exit 1" [ "$rc" -eq 1 ]
 check "…and carries what gh said" line "failed: o/alpha#1 fleet-sync armed, but the read-back failed: gh: HTTP 502 Bad Gateway (https://api.github.com/graphql) — sync"
 
+# ── the rebase nudge (t-ezyr): armed, BLOCKED, behind, a required check red ───
+# stale <repo> <n> — an armed dependabot pull 2 behind main whose required
+# `scan / govulncheck` is red on the head (the glyph#315 / prq#50 / dotfiles#418 shape)
+stale() {
+  pr "$1" "$2" dependabot/go_modules/gomod-1 app/dependabot 'bump on a stale head' false BLOCKED true
+  printf 2 > "$STUB_HOME/behind-$1-sha$2"
+  printf 'scan / govulncheck\tfailure\nlint / lint\tsuccess\n' > "$STUB_HOME/checks-$1-sha$2"
+  printf 'lint / lint\nscan / govulncheck\n' > "$STUB_HOME/required-$1"
+}
+comments() { grep -c '^pr comment GET' "$STUB_HOME/calls.log"; }
+
+# gated: without NUDGE=1 the pull is already-armed and nothing beyond the list is read
+fresh
+repo alpha true
+stale alpha 1
+APPLY=1 run_script o; rc=$?
+check "without NUDGE the stale pull is plain already-armed" line "already-armed: o/alpha#1 dependabot — bump on a stale head"
+check "…and its base is never compared" [ "$(grep -c '/compare/' "$STUB_HOME/calls.log")" -eq 0 ]
+check "…and nothing is commented" [ "$(comments)" -eq 0 ]
+
+# apply: the nudge is one comment, read back, counted
+fresh
+repo alpha true
+stale alpha 1
+NUDGE=1 APPLY=1 run_script o; rc=$?
+check "a nudged run exits 0" [ "$rc" -eq 0 ]
+# the stub answers every field; gh answers only the ones asked for, and a head
+# sha the list did not request would compare `main...null` in production
+check "the pull list asks for the head sha" grep -q '^pr list GET o/alpha .*headRefOid' "$STUB_HOME/calls.log"
+check "the nudge is one @dependabot rebase comment" [ "$(grep -c '^pr comment GET o/alpha 1 --body=@dependabot rebase$' "$STUB_HOME/calls.log")" -eq 1 ]
+check "…reported with the red check and the distance" line "rebase-asked: o/alpha#1 dependabot scan / govulncheck is red on a head 2 behind main — bump on a stale head"
+check "…and counted" line "already-armed=0 rebase-asked=1 would-rebase=0"
+
+# once per head: a newer @dependabot rebase comment — anyone's — is the nudge already in
+fresh
+repo alpha true
+stale alpha 1
+printf '2026-11-01T09:00:00Z\t@dependabot rebase\n' > "$STUB_HOME/comments-alpha-1"
+NUDGE=1 APPLY=1 run_script o; rc=$?
+check "a head already asked is not asked again" [ "$(comments)" -eq 0 ]
+check "…and says when it was asked" line "already-armed: o/alpha#1 dependabot rebase asked at 2026-11-01T09:00:00Z for this head (scan / govulncheck red, 2 behind main)"
+# …but a comment OLDER than the head commit was for a previous head
+fresh
+repo alpha true
+stale alpha 1
+printf '2026-11-01T07:00:00Z\t@dependabot rebase\n' > "$STUB_HOME/comments-alpha-1"
+NUDGE=1 APPLY=1 run_script o; rc=$?
+check "a comment older than the head does not count" [ "$(comments)" -eq 1 ]
+
+# dry run: would-rebase, no comment
+fresh
+repo alpha true
+stale alpha 1
+NUDGE=1 run_script o; rc=$?
+check "a dry run would-rebase" line "would-rebase: o/alpha#1 dependabot scan / govulncheck is red on a head 2 behind main"
+check "…and comments nothing" [ "$(comments)" -eq 0 ]
+check "…counted as would-rebase" line "rebase-asked=0 would-rebase=1"
+
+# the three conditions, each alone, are not a nudge
+fresh
+repo alpha true
+stale alpha 1; printf 0 > "$STUB_HOME/behind-alpha-sha1"
+stale alpha 2; printf 'scan / govulncheck\tsuccess\nlint / lint\tsuccess\n' > "$STUB_HOME/checks-alpha-sha2"
+stale alpha 3; printf 'mutations\tfailure\n' > "$STUB_HOME/checks-alpha-sha3"
+pr alpha 4 dependabot/go_modules/gomod-4 app/dependabot 'armed and UNSTABLE' false UNSTABLE true
+printf 2 > "$STUB_HOME/behind-alpha-sha4"; printf 'scan / govulncheck\tfailure\n' > "$STUB_HOME/checks-alpha-sha4"
+pr alpha 5 glyph-pin/v9.0.1 o 'an armed pin, not dependabot' false BLOCKED true
+printf 2 > "$STUB_HOME/behind-alpha-sha5"; printf 'lint / lint\tfailure\n' > "$STUB_HOME/checks-alpha-sha5"
+NUDGE=1 APPLY=1 run_script o; rc=$?
+check "not behind, no red, red but not required, not BLOCKED, not dependabot: none is nudged" [ "$(comments)" -eq 0 ]
+check "…all five are already-armed" [ "$(out 'already-armed: o/alpha#')" -eq 5 ]
+check "…a pin is never compared" [ "$(grep -c 'compare/main...sha5' "$STUB_HOME/calls.log")" -eq 0 ]
+check "…an UNSTABLE pull is never compared" [ "$(grep -c 'compare/main...sha4' "$STUB_HOME/calls.log")" -eq 0 ]
+
+# a base without classic protection (a ruleset repo) is left alone, and said so
+fresh
+repo alpha true
+stale alpha 1; rm -f "$STUB_HOME/required-alpha"
+NUDGE=1 APPLY=1 run_script o; rc=$?
+check "no classic protection: exit 0" [ "$rc" -eq 0 ]
+check "…left alone with the reason" line "already-armed: o/alpha#1 dependabot 2 behind main with a red check, but main has no classic protection naming the required checks — left alone"
+check "…nothing commented" [ "$(comments)" -eq 0 ]
+
+# a refused comment is a failure with the API's words
+fresh
+repo alpha true
+stale alpha 1; : > "$STUB_HOME/comment-fail-alpha-1"
+NUDGE=1 APPLY=1 run_script o; rc=$?
+check "a refused nudge is exit 1" [ "$rc" -eq 1 ]
+check "…named with the API's words" line "failed: o/alpha#1 dependabot asking dependabot to rebase was refused: GraphQL: Resource not accessible by personal access token (addComment)"
+
 # reads that fail are failures, never silent skips
 fresh
 printf 'alpha\nbeta\n' > "$STUB_HOME/repos"
@@ -297,7 +420,7 @@ repo alpha true
 pr alpha 1 fleet-sync/x o 'sync'
 export GITHUB_STEP_SUMMARY="$stub_dir/summary.md"; : > "$GITHUB_STEP_SUMMARY"
 run_script o; rc=$?
-check "summary written" grep -q '^| 0 | 0 | 1 | 0 | 0 | 0 | 0 | 0 | 0 |$' "$GITHUB_STEP_SUMMARY"
+check "summary written" grep -q '^| 0 | 0 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |$' "$GITHUB_STEP_SUMMARY"
 unset GITHUB_STEP_SUMMARY
 
 [ "$fails" -eq 0 ] || { echo "$fails fleet-automerge case(s) failed"; exit 1; }

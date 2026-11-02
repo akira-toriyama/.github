@@ -55,6 +55,19 @@
 # (run 36528379136, 2026-09-29) failed with them discarded, and the pull turned
 # out to be merged; the cause is still unknown because nothing kept it.
 #
+# THE REBASE NUDGE (t-ezyr; NUDGE=1 while it is staged). An armed dependabot
+# pull stays BLOCKED for days when a required check is red on its head and the
+# fix landed on the base afterwards: strict=false means GitHub never calls it
+# BEHIND, and dependabot rebases only on a conflict. Measured 2026-10-23..11-02:
+# glyph#315 / cifail#49 / prq#52 (71-77h), prq#50 (226h), dotfiles#418 (17h),
+# each released by a hand-typed `@dependabot rebase` and merged within minutes.
+# So when an armed dependabot pull is BLOCKED, behind its base, and a check-run
+# the base's classic protection requires is red on its head, this comments
+# `@dependabot rebase` and reads the comment back — once per head: any such
+# comment newer than the head commit, a person's included, is the nudge already
+# in. A base without classic protection (a ruleset repo) is left alone and said
+# so. glyph-pin/ pulls need none of this: glyph-pin-land rebuilds them nightly.
+#
 # `hold` is a plain label — nothing creates it; put it on a pull request and
 # this leaves that pull alone until it is removed.
 set -uo pipefail
@@ -66,18 +79,79 @@ if [ -z "$owner" ]; then
 fi
 apply="${APPLY:-0}"
 dry=true; [ "$apply" = "1" ] && dry=false
+# The rebase nudge (header) is gated while it is staged (t-ezyr): only a run
+# that sets NUDGE=1 asks dependabot to rebase; every other run logs the same
+# already-armed line as before and reads nothing extra.
+nudge="${NUDGE:-0}"
 
 here="$(cd "$(dirname "$0")" && pwd)"
 tier="$here/automerge-tier.sh"
 [ -f "$tier" ] || { echo "::error::fleet-automerge: $tier is missing" >&2; exit 1; }
 
 armed=0 merged_now=0 would_arm=0 major_left=0 held=0 already_armed=0
-skipped_no_auto=0 skipped_unprotected=0 failed=0 nrepos=0
+rebase_asked=0 would_rebase=0 skipped_no_auto=0 skipped_unprotected=0 failed=0 nrepos=0
 
 fail() { echo "::error::fleet-automerge: failed: $1"; failed=$((failed + 1)); }
 # gh's own words, flattened and capped, for a log line that has to stand alone.
 oneline() { printf '%s' "$1" | tr '\n' ' ' | head -c 300; }
 errf="$(mktemp)"; trap 'rm -f "$errf"' EXIT
+
+# nudge_rebase — the caller has an armed, BLOCKED dependabot/ pull in $full/$num
+# at head $sha against $db (header: THE REBASE NUDGE). Reads, in order: behind
+# count, failing check-runs on the head, the base's classic required contexts,
+# the head commit's date, the pull's `@dependabot rebase` comments. Prints its
+# own line and counts it, returning 0, when the pull was nudged, had been nudged
+# on this head already, or sits on a base without classic protection; returns 1
+# when the pull is merely armed and waiting, so the caller logs already-armed.
+# A read that fails is a `failed`, never a silent skip (the script's contract).
+nudge_rebase() {
+  case "$author" in app/dependabot|dependabot|"dependabot[bot]") ;; *) return 1 ;; esac
+  local behind failing req ctx red head_at asked_at err
+  if ! behind="$(gh api "repos/$full/compare/$db...$sha" --jq '.behind_by' 2>/dev/null </dev/null)"; then
+    fail "$tag cannot compare its head with $db — $title"; return 0
+  fi
+  [ "$behind" -gt 0 ] 2>/dev/null || return 1
+  if ! failing="$(gh api --paginate "repos/$full/commits/$sha/check-runs" --jq '.check_runs[] | select(.conclusion == "failure") | .name' 2>/dev/null </dev/null)"; then
+    fail "$tag cannot read the check-runs on its head — $title"; return 0
+  fi
+  [ -n "$failing" ] || return 1
+  if ! req="$(gh api "repos/$full/branches/$db/protection/required_status_checks" --jq '.contexts[]' 2>"$errf" </dev/null)"; then
+    if grep -q 'HTTP 404' "$errf"; then
+      echo "already-armed: $tag $behind behind $db with a red check, but $db has no classic protection naming the required checks — left alone — $title"
+      already_armed=$((already_armed + 1)); return 0
+    fi
+    fail "$tag cannot read the required checks of $db: $(oneline "$(cat "$errf")") — $title"; return 0
+  fi
+  red=""
+  while IFS= read -r ctx; do
+    [ -n "$ctx" ] || continue
+    if printf '%s\n' "$failing" | grep -qxF "$ctx"; then red="$ctx"; break; fi
+  done <<<"$req"
+  [ -n "$red" ] || return 1
+  if ! head_at="$(gh api "repos/$full/commits/$sha" --jq '.commit.committer.date' 2>/dev/null </dev/null)"; then
+    fail "$tag cannot read its head commit — $title"; return 0
+  fi
+  # Newest `@dependabot rebase` comment on the pull, whoever wrote it; ISO-8601
+  # UTC strings order as text.
+  if ! asked_at="$(gh api --paginate "repos/$full/issues/$num/comments" --jq '.[] | select(.body | test("^\\s*@dependabot rebase\\b")) | .created_at' 2>/dev/null </dev/null | sort | tail -n 1)"; then
+    fail "$tag cannot read its comments — $title"; return 0
+  fi
+  if [ -n "$asked_at" ] && [[ "$asked_at" > "$head_at" ]]; then
+    echo "already-armed: $tag rebase asked at $asked_at for this head ($red red, $behind behind $db) — $title"
+    already_armed=$((already_armed + 1)); return 0
+  fi
+  if [ "$apply" != "1" ]; then
+    echo "would-rebase: $tag $red is red on a head $behind behind $db — $title"; would_rebase=$((would_rebase + 1)); return 0
+  fi
+  if ! err="$(gh pr comment "$num" --repo "$full" --body '@dependabot rebase' 2>&1 </dev/null)"; then
+    fail "$tag asking dependabot to rebase was refused: $(oneline "$err") — $title"; return 0
+  fi
+  if ! asked_at="$(gh api --paginate "repos/$full/issues/$num/comments" --jq '.[] | select(.body | test("^\\s*@dependabot rebase\\b")) | .created_at' 2>/dev/null </dev/null | sort | tail -n 1)" \
+     || [ -z "$asked_at" ] || ! [[ "$asked_at" > "$head_at" ]]; then
+    fail "$tag asked dependabot to rebase, but the read-back shows no such comment — $title"; return 0
+  fi
+  echo "rebase-asked: $tag $red is red on a head $behind behind $db — $title"; rebase_asked=$((rebase_asked + 1)); return 0
+}
 
 if [ -n "$only" ]; then
   repos="$only"
@@ -89,7 +163,7 @@ fi
 
 candidates='[.[] | select(.headRefName | test("^(glyph-pin|fleet-sync|dependabot)/"))] | sort_by(.number) | .[]
   | [.number, .headRefName, .baseRefName, .author.login, .isDraft, .mergeStateStatus,
-     (.autoMergeRequest != null), ([.labels[].name] | index("hold") != null), .title] | @tsv'
+     (.autoMergeRequest != null), ([.labels[].name] | index("hold") != null), .headRefOid, .title] | @tsv'
 
 # The pull list is read on fd 3: gh inside the loop must not eat the loop's
 # own stdin.
@@ -104,7 +178,7 @@ while IFS= read -r -u 4 name; do
   allow="${settings%%	*}"; db="${settings#*	}"
 
   if ! prs="$(gh pr list --repo "$full" --state open --limit 50 \
-        --json number,title,headRefName,baseRefName,author,labels,isDraft,mergeStateStatus,autoMergeRequest \
+        --json number,title,headRefName,baseRefName,author,labels,isDraft,mergeStateStatus,autoMergeRequest,headRefOid \
         --jq "$candidates" 2>/dev/null </dev/null)"; then
     fail "$full cannot list its open pull requests"; continue
   fi
@@ -116,13 +190,16 @@ while IFS= read -r -u 4 name; do
     skipped_no_auto=$((skipped_no_auto + n)); continue
   fi
 
-  while IFS=$'\t' read -r -u 3 num head base author draft ms armed_already hold title; do
+  while IFS=$'\t' read -r -u 3 num head base author draft ms armed_already hold sha title; do
     family="${head%%/*}"
     tag="$full#$num $family"
 
     if [ "$draft" = "true" ]; then echo "held: $tag draft — $title"; held=$((held + 1)); continue; fi
     if [ "$hold" = "true" ]; then echo "held: $tag label hold — $title"; held=$((held + 1)); continue; fi
-    if [ "$armed_already" = "true" ]; then echo "already-armed: $tag — $title"; already_armed=$((already_armed + 1)); continue; fi
+    if [ "$armed_already" = "true" ]; then
+      if [ "$nudge" = "1" ] && [ "$family" = "dependabot" ] && [ "$ms" = "BLOCKED" ] && nudge_rebase; then continue; fi
+      echo "already-armed: $tag — $title"; already_armed=$((already_armed + 1)); continue
+    fi
     if [ "$base" != "$db" ]; then echo "held: $tag base $base is not the default branch $db — $title"; held=$((held + 1)); continue; fi
     case "$family" in
       dependabot)
@@ -184,14 +261,14 @@ while IFS= read -r -u 4 name; do
   done 3<<<"$prs"
 done 4<<<"$repos"
 
-echo "done: armed=$armed merged-now=$merged_now would-arm=$would_arm major-left=$major_left held=$held already-armed=$already_armed skipped-no-auto-merge=$skipped_no_auto skipped-unprotected=$skipped_unprotected failed=$failed dry-run=$dry across $nrepos repo(s)"
+echo "done: armed=$armed merged-now=$merged_now would-arm=$would_arm major-left=$major_left held=$held already-armed=$already_armed rebase-asked=$rebase_asked would-rebase=$would_rebase skipped-no-auto-merge=$skipped_no_auto skipped-unprotected=$skipped_unprotected failed=$failed dry-run=$dry across $nrepos repo(s)"
 if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
   {
     echo "## fleet-automerge — $nrepos repo(s), dry-run=$dry"
     echo
-    echo "| armed | merged now | would arm | major left | held | already armed | no auto-merge | unprotected | failed |"
-    echo "|---|---|---|---|---|---|---|---|---|"
-    echo "| $armed | $merged_now | $would_arm | $major_left | $held | $already_armed | $skipped_no_auto | $skipped_unprotected | $failed |"
+    echo "| armed | merged now | would arm | major left | held | already armed | rebase asked | would rebase | no auto-merge | unprotected | failed |"
+    echo "|---|---|---|---|---|---|---|---|---|---|---|"
+    echo "| $armed | $merged_now | $would_arm | $major_left | $held | $already_armed | $rebase_asked | $would_rebase | $skipped_no_auto | $skipped_unprotected | $failed |"
   } >> "$GITHUB_STEP_SUMMARY"
 fi
 [ "$failed" -eq 0 ] || exit 1

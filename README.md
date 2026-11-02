@@ -118,6 +118,13 @@ raises no `on: push` workflow in the repo (measured on glyph-test, t-ksee).
 Orchestration: [`scripts/fleet-automerge.sh`](scripts/fleet-automerge.sh). It
 runs as the last job of every glyph-pin-rewrite and fleet-sync run, four times a
 day on its own, and on a push that changes it; a dispatch defaults to dry-run.
+An armed dependabot pull that stays BLOCKED because a required check is red on a
+head the base has since fixed (strict is false, so GitHub never calls it BEHIND,
+and dependabot rebases only on a conflict — five such pulls waited 17 h to 9
+days in 2026-10, each released by a hand-typed `@dependabot rebase`) is asked to
+rebase by the same run, once per head, and the comment is read back. The nudge is
+staged behind the dispatch input `rebase-nudge` until a canary has released a
+real stale pull (t-ezyr).
 
 ## fleet-repin — the fourth fleet writer
 
