@@ -81,14 +81,16 @@ Opt-in (need per-repo judgement, hence flags):
   `akira-toriyama` and `dotfiles` (the only write-default repos) were audited and
   cleared; `SKIP_TOKEN_FLIP` lists any repo to hold back.
 - `WITH_PROTECTION=1` — make `lint / lint` a required check (admin bypass:
-  `enforce_admins:false`), **plus `build` where the default branch HEAD carries a
-  check-run named `build`** (t-jvdr). The probe is ground truth, not file
-  inference: a required context that no run produces wedges every PR invisibly
-  (the t-c51t shape), so the script requires only what the repo demonstrably
-  runs — the swift family's hand-added `build` is now distributed, and a new
-  app repo gets it on the first run after its first `build` lands on main. A
+  `enforce_admins:false`), **plus `build` and `bite / bite` where the default
+  branch HEAD carries a check-run of that name** (t-jvdr, t-a3s1). The probe is
+  ground truth, not file inference: a required context that no run produces
+  wedges every PR invisibly (the t-c51t shape), so the script requires only what
+  the repo demonstrably runs — the swift family's hand-added `build` and the
+  go-bite / swift-bite callers' hand-added `bite / bite` are now distributed,
+  and a new repo gets each on the first run after it first lands on main. A
   transient probe failure warns and requires `lint` alone that run (never a
-  silent "no build"); the next run heals. Protection the run cannot read
+  silent "no build"); the next run heals. Private repos are `n/a:` (this plan
+  answers 403 to every protection endpoint there). Protection the run cannot read
   (anything but a 404) is `unreadable:` and never overwritten. Already-protected repos are
   **PATCH**ed (only the
   status-check contexts change, preserving `strict`/force-push/reviews); unprotected
