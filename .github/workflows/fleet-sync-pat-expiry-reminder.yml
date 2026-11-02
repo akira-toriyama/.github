@@ -172,7 +172,13 @@ jobs:
             '監査: Tokens (classic) 一覧の有効期限。' '' \
             '(このタスクは .github の fleet-sync-pat-expiry-reminder workflow が自動起票。)')"
 
-          furrow add "$title" -s ready -l shared -l security --body "$body"
+          # -r and -e are load-bearing. Inside the tracker checkout the local
+          # .furrow shadows the central board, so no repo is derived and an add
+          # without -r files a DRAFT (repos: []) that no repo's `furrow next`
+          # shows. An open task with no box is the lint error `epic-required`,
+          # which every operator's pre-push then refuses (projects t-tm0z).
+          # e-b09c = .github's standing parking-lot box.
+          furrow add "$title" -s ready -r akira-toriyama/.github -e e-b09c -l shared -l security --body "$body"
 
           git config user.name  'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
