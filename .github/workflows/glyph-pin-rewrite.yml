@@ -432,7 +432,7 @@ jobs:
   automerge:
     needs: rewrite
     if: ${{ !cancelled() }}
-    uses: ./.github/workflows/fleet-automerge.yml
+    uses: $/.github/workflows/fleet-automerge.yml
     with:
       dry-run: ${{ inputs.dry-run == true }}
       only-repo: ${{ inputs.only-repo }}

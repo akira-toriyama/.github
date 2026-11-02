@@ -371,15 +371,15 @@ jobs:
 EOF
 )"
 
-# glyph's own reusables reach the composite by relative path against a checkout
-# of glyph at the caller's pinned commit, and COMPUTE the version. Nothing here
+# glyph's own reusables reach the composite by self-repository
+# reference (`$/…` = glyph at the caller's pinned commit), and COMPUTE the version. Nothing here
 # is a hand-maintained pin — rewriting it would break glyph's own release.
-same_ "glyph's own relative install is not a pin to move" "$(cat <<'EOF'
+same_ "glyph's own self-repository install is not a pin to move" "$(cat <<'EOF'
 jobs:
   lint:
     steps:
       - name: Install glyph (pinned release binary)
-        uses: ./.glyph-action/.github/actions/install
+        uses: $/.github/actions/install
         with:
           version: ${{ steps.glyph.outputs.version }}
           token: ${{ github.token }}

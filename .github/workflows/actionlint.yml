@@ -66,6 +66,18 @@ jobs:
           VERSION: 1.7.12
           SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
           EXTRA_FILES: ${{ inputs.extra-files }}
+          # `uses: $/<path>` is GitHub's self-repository reference (changelog
+          # 2026-07-30): the action or workflow at that path in the repository
+          # the workflow file lives in, at the running commit, no `@ref` by
+          # design. actionlint 1.7.12 (upstream's latest, 2026-03-30) knows only
+          # `{owner}/{repo}[/{path}]@{ref}` and `./{path}`: a step's `uses` is
+          # reported as "ref is missing", a reusable-workflow call's as "not
+          # following the format". Both waived here once for every caller, each
+          # scoped to its exact message; the lines go when actionlint learns the
+          # form. A `$/` reference is therefore NOT validated — the target's
+          # existence and inputs are a smoke job's to catch, not lint's. (t-e7tb)
+          SELF_REPOSITORY_ACTION_WAIVER: 'specifying action "\$/[^"]*" in invalid format because ref is missing'
+          SELF_REPOSITORY_WORKFLOW_WAIVER: 'reusable workflow call "\$/[^"]*" at "uses" is not following the format'
         run: |
           set -euo pipefail
           workdir="$(mktemp -d)"
@@ -79,9 +91,11 @@ jobs:
           # run:-block checks — fail loud instead of quietly losing coverage.
           command -v shellcheck >/dev/null \
             || { echo "::error::shellcheck not on runner — actionlint would skip run: checks"; exit 1; }
-          "$workdir/actionlint" -color
+          "$workdir/actionlint" -color \
+            -ignore "$SELF_REPOSITORY_ACTION_WAIVER" -ignore "$SELF_REPOSITORY_WORKFLOW_WAIVER"
           if [ -n "${EXTRA_FILES:-}" ]; then
             # Intentional word-split: EXTRA_FILES is a space-separated file list.
             # shellcheck disable=SC2086
-            "$workdir/actionlint" -color $EXTRA_FILES
+            "$workdir/actionlint" -color \
+              -ignore "$SELF_REPOSITORY_ACTION_WAIVER" -ignore "$SELF_REPOSITORY_WORKFLOW_WAIVER" $EXTRA_FILES
           fi
