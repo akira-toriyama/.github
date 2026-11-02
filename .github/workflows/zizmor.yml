@@ -41,21 +41,21 @@ on:
         default: .github/workflows
       version:
         description: >-
-          zizmor version (the action maps it to a pinned image digest). 1.29.0
-          is the first release whose parser accepts GitHub's self-repository
-          reference (`uses: $/<path>`, changelog 2026-07-30) — 1.26.1 refused
-          the whole file as "malformed uses ref" — and the last before 1.30.0,
-          whose `self-repository` audit reports every workspace-relative
-          `uses: ./<path>` still in the fleet (26 sites in 8 repos, measured
-          2026-10-27 over every repo: the hub itself, canon, glyph, glyph-test,
-          tmp-skipprop-audit, zmk-beacon, zmk-hid-host, zmk-lantern; glyph's 4
-          moved in t-fzhx, the hub's 12 in t-e7tb). Between
-          1.26.1 and 1.31.1 that audit is the only new finding fleet-wide, so
-          1.29.0 moves glyph's reusables to `$/` (glyph t-fzhx) with no repo
-          reddened; the step to 1.30+ follows the last `./` site's move.
+          zizmor version (the action maps it to a pinned image digest). 1.31.1
+          carries the `self-repository` audit (new in 1.30.0): it reports every
+          workspace-relative `uses: ./<path>`, the form GitHub superseded with
+          the self-repository reference `uses: $/<path>` (parsed from 1.29.0,
+          the hub's previous pin). Measured 2026-11-02 over every non-archived
+          repo's main (each repo's own .github/zizmor.yml, min-confidence low,
+          offline): the only finding 1.31.1 adds over 1.29.0 is
+          `self-repository`, on ten `./` sites in six repos, every one moved to
+          `$/` by a t-e7tb pull request in that repo — the two cross-repo sites
+          in glyph-test's e2e-v2.yml carry `# zizmor: ignore[self-repository]`
+          instead. The forks zmk / zmk-keyboards are red under every version
+          and out of scope.
         required: false
         type: string
-        default: 1.29.0
+        default: 1.31.1
       min-confidence:
         description: >-
           Low-confidence floor. The default is `low`: every fleet checkout now

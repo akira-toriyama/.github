@@ -96,9 +96,9 @@ jobs:
   # Every self-call below is `uses: $/<path>`: GitHub's self-repository
   # reference, the path in the repository this workflow file lives in at the
   # running commit — for these jobs exactly the tree `./<path>` resolved to.
-  # The form matters for the fleet gate: zizmor 1.30's `self-repository` audit
-  # reports every workspace-relative `./<path>`, and the hub cannot move its
-  # pin past 1.29.0 while it carries one (t-e7tb).
+  # The form matters for the fleet gate: zizmor's `self-repository` audit
+  # (1.30+, the hub pins 1.31.1 since t-e7tb) reports every workspace-relative
+  # `./<path>`, so one here reddens this repository's own zizmor job.
 
   # Static workflow lint. This DOGFOODS the reusable the hub distributes to the
   # fleet (actionlint.yml, t-ya55) the same way the zizmor job below dogfoods
