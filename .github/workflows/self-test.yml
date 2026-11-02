@@ -447,6 +447,35 @@ jobs:
       - name: Table-test glyph-pin-land
         run: bash tests/glyph-pin-land.test.sh
 
+  # RUN the two rollout hand-tools over a case table (the real .sh, stubbed gh
+  # and glyph). glyph-config-drop opens a one-line glyph.toml pull in a repo
+  # the hub does not own, and merge-when-green squash-merges the pulls a
+  # rollout leaves to a person; what a live run cannot show both ways is
+  # pinned here — a line matched as written, a lint refusal under either
+  # config writing nothing, --dry and an existing branch writing nothing, and
+  # a cancelled check that gh prints as `fail` under exit 0 never merging.
+  glyph-config-drop-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # Runs a script against a stubbed gh; never pushes (zizmor artipacked).
+          persist-credentials: false
+      - name: Table-test glyph-config-drop
+        run: bash tests/glyph-config-drop.test.sh
+
+  merge-when-green-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # Runs a script against a stubbed gh; never pushes (zizmor artipacked).
+          persist-credentials: false
+      - name: Table-test merge-when-green
+        run: bash tests/merge-when-green.test.sh
+
   # fleet-automerge arms auto-merge on bot pull requests with the PAT. The tier
   # classifier is pure text (the `(vA -> vB)` title, dependabot's
   # `update-type:` trailer) and fails closed; the orchestrator's properties — a
@@ -596,6 +625,8 @@ jobs:
           bash tests/platform-floor-scan.test.sh
           bash tests/token-expiry-probe.test.sh
           bash tests/glyph-pin-land.test.sh
+          bash tests/glyph-config-drop.test.sh
+          bash tests/merge-when-green.test.sh
           bash tests/automerge-tier.test.sh
           bash tests/fleet-automerge.test.sh
           bash tests/repin-vendorhash.test.sh
