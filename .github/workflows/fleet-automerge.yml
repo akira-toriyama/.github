@@ -59,11 +59,23 @@ on:
         description: Limit to a single repo name (optional).
         type: string
         default: ''
+      # STAGING GATE (t-ezyr): the rebase nudge — `@dependabot rebase` on an
+      # armed dependabot pull that is BLOCKED by a required check red on a head
+      # the base has moved past (scripts/fleet-automerge.sh, THE REBASE NUDGE).
+      # Off everywhere until a canary dispatch has released a real stale pull;
+      # the follow-up then removes this input and the NUDGE env, and the nudge
+      # simply runs (fleet-change-policy: a transitional step may land when
+      # staging needs it, and leaves no trace at the end).
+      rebase-nudge:
+        description: Also ask dependabot to rebase armed pulls blocked by a red required check on a stale head (staged; see the gate comment).
+        type: boolean
+        default: false
   # Chained by the two producers (glyph-pin-rewrite.yml, fleet-sync.yml) as the
   # last job of their runs, so a pull they just opened is armed in the same
   # minute and merges the moment its checks pass. The caller passes its own
   # dry-run / only-repo through, so a dry-run dispatch of a producer stays a dry
-  # run here.
+  # run here. No producer passes rebase-nudge, so a chain never nudges while
+  # the gate stands.
   workflow_call:
     inputs:
       dry-run:
@@ -72,6 +84,9 @@ on:
       only-repo:
         type: string
         default: ''
+      rebase-nudge:
+        type: boolean
+        default: false
     secrets:
       FLEET_SYNC_PAT:
         required: true
@@ -120,6 +135,7 @@ jobs:
           EVENT: ${{ github.event_name }}
           DRY_RUN: ${{ inputs.dry-run }}
           ONLY_REPO: ${{ inputs.only-repo }}
+          REBASE_NUDGE: ${{ inputs.rebase-nudge }}
         run: |
           set -euo pipefail
 
@@ -143,5 +159,8 @@ jobs:
           # run of a producer reads as a dispatch here and stays dry.
           DRY="${DRY_RUN:-false}"
           [ "$EVENT" = "workflow_dispatch" ] || DRY=false
-          echo "event=$EVENT dry-run=$DRY only-repo=${ONLY_REPO:-<all>}"
-          APPLY="$([ "$DRY" = "true" ] && echo 0 || echo 1)" bash scripts/fleet-automerge.sh "$OWNER" "$ONLY_REPO"
+          # The staging gate (inputs above): only an input set to true nudges;
+          # schedule, push and chains carry no such input and read as false.
+          NUDGE="$([ "${REBASE_NUDGE:-false}" = "true" ] && echo 1 || echo 0)"
+          echo "event=$EVENT dry-run=$DRY only-repo=${ONLY_REPO:-<all>} rebase-nudge=$NUDGE"
+          APPLY="$([ "$DRY" = "true" ] && echo 0 || echo 1)" NUDGE="$NUDGE" bash scripts/fleet-automerge.sh "$OWNER" "$ONLY_REPO"
