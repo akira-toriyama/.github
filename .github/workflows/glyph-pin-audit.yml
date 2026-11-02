@@ -33,11 +33,10 @@
 # below derives its expected value from the canonical, so a fleet uniformly one
 # release behind used to be all green; t-2268).
 #
-# COMMENTS ARE IGNORED. Every glyph reusable carries a commented caller stub
-# showing an example pin, and those examples are always stale. Matching them
-# produces permanent false drift, so only real `uses:` lines are read. (Finding
-# this the hard way is why the check is written as a workflow and not a grep in
-# someone's notes.)
+# COMMENTS ARE IGNORED. The scanner matches any ref, so glyph's caller stubs (the
+# @vX.Y.Z placeholder) and any stub a consumer copied would read as drift; only
+# real `uses:` lines are read. (Finding this the hard way is why the check is
+# written as a workflow and not a grep in someone's notes.)
 #
 # THE AUDITOR MUST SEE WHAT THE WRITER WRITES. This ran on the default
 # GITHUB_TOKEN for its first week, and that token cannot list other repos'

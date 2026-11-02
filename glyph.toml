@@ -4,8 +4,9 @@
 # regenerated whole. The block is load-bearing — five commits inside the last
 # 40 carry no sigil (newest e80c395, 2026-09-10) and `lint` over a range
 # reaching them exits 3 without it. This repository runs no release walk (no
-# releases, no release caller), so the runbook's "remove the window once the
-# walk base sits past the sigil-less history" has no base to fire on.
+# releases, no release caller), so CONTRIBUTING's "the window is removed per
+# repo once the release walk's base sits past its sigil-less history" has no
+# base to fire on.
 schema = 1
 
 # Commits by these authors are excluded from lint and the version fold.

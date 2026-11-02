@@ -28,9 +28,9 @@
 # ~36 repos. What it does instead:
 #
 #   - a line whose first non-space character is `#` is documentation, skipped
-#     outright; every glyph reusable ships a commented caller stub with a
-#     permanently stale example pin, and matching those produces eternal false
-#     drift (that mistake predates this file — see glyph-pin-audit.yml).
+#     outright: the `uses:` match below takes any ref, so a commented caller
+#     stub — glyph's at the @vX.Y.Z placeholder, or one a consumer copied —
+#     would read as drift (see glyph-pin-audit.yml).
 #   - a ` #…` trailer is stripped for the same reason, so `@v0.11.1 # was v0.8.0`
 #     reports one pin and not two. A value that legitimately contains " #" would
 #     be truncated; no fleet workflow has one, and the blast radius is limited to

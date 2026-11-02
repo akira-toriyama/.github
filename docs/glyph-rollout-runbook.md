@@ -64,69 +64,69 @@ pin audit read `uses:` only, so none of it registered.
 **Bump the `@tag` and the `version:` in the same edit, always.** They ship lockstep
 from one glyph release; there is no combination of the two that is deliberate.
 
-## v2 (the sigil engine): what must be true before the sequence applies
+## Configuration precedes the pin
 
-The v2 engine (glyph e-qzpz) ships as tag **v3.0.0** — "v2" is the engine
-generation's name, not a tag. The existing `v2.0.0` / `v2.1.0` tags are
-**v1-grammar releases**, and they are exactly where the fleet's pins sit
-today, so "upgrade to glyph v2" reads two opposite ways and the wrong one has
-already happened (`pin glyph v2.0.0` in glyph-test pinned the OLD grammar).
-Every artifact this rollout writes therefore names both numbers: pin-move PR
-titles and bodies spell the move as `v2.1.0 -> v3.0.0` (or `v2.0.0 -> v3.0.0`
-for the repos still there), never "to v2".
+glyph embeds no grammar: every gate reads the repository's own committed
+`glyph.toml` (CONTRIBUTING, "Commit messages"), and in a checkout without one
+every gate answers usage, exit 2 — `lint` (`--stdin`, `--range`, `--pr`),
+`bump`, `notes`, `preview` and `release --dry-run` each did on glyph 46909b3
+(measured 2026-11-03; glyph's `TestMissingConfigStaysUsage` pins it for
+`lint`). So the file lands in a repository before its first glyph pin, never
+after: until a pin arrives nothing reads the file, while a pin that arrives
+first reddens every push and pull request there.
 
-The engine reads each
-repository's own `glyph.toml` instead of any embedded grammar, so a v2 pin
-move has a prerequisite no earlier rollout had: **the repository must carry a
-committed `glyph.toml` before any v2-pinned workflow runs there.** A v2 binary
-in a config-less repo answers usage (2) on every gate — not red-as-violation,
-red-as-misconfigured, on every push. The per-repo order is therefore
-config first, pins second, and it changes the sequence above in four ways:
+Two mechanisms hold that order, one from each side. glyph-pin-rewrite's
+**config arm** (in its "Move every unmanaged glyph pin to the canonical" step)
+fetches glyph's own `glyph.toml` at the canonical tag — held byte-identical
+to `glyph init --gemoji` output by glyph's
+`TestGlyphOwnConfigIsTheGemojiPreset` — and adds it to every glyph consumer
+that has none, in the same per-repo pull request as that repository's pins (a
+config-only pull when no pin moves). It never overwrites an existing
+`glyph.toml`: that file is the repository's own grammar to evolve.
+`glyph-pin-audit` is red, by name, for a consumer of a v3+ canonical with no
+committed `glyph.toml`. Neither closes the window fleet-sync opens: fleet-sync
+moves `commit-lint.yml` by direct commit, and the arm's pull request follows
+only on the rewriter's next run, so commit `glyph init --gemoji` output to a
+new repository before fleet-sync first reaches it.
 
-1. **Before step 0**: land the sigil grammar in CONTRIBUTING (this repo — the
-   convention's canonical copy) and commit a `glyph.toml` to every consumer.
-   The file is GENERATED, not hand-copied: `glyph init --gemoji` writes the
-   whole thing, and glyph's own committed `glyph.toml` is held byte-identical
-   to that output by test (`TestGlyphOwnConfigIsTheGemojiPreset`), so there is
-   no reference copy to transcribe and nothing to drift. From glyph v4.0.0 the
-   generator writes NO v1-acceptance window (`--v1-window` is gone, exit 2):
-   a repository whose walk base still sits below sigil-less history keeps the
-   window block it already has, as its own grammar. Under the window a
-   sigil-less gitmoji subject lints clean and folds as none, and every gate
-   annotates a `::warning::` naming the fix — green and loud is the expected
-   migration state, not a defect. (v1's breaking `!` already sits where the
-   v2 major sigil does, so nothing breaking is lost to the window.) The
-   vehicle is glyph-pin-rewrite's **config arm**: it fetches glyph's own
-   `glyph.toml` at the tag (generator output, by the byte-equality test) and
-   adds it to any consumer that has none, in the same per-repo PR as the
-   pins. **Run the config pass BEFORE the canonical bump** —
-   `gh workflow run glyph-pin-rewrite.yml -f dry-run=false -f config-ref=vX.Y.Z`
-   — and merge those config-only PRs first: the file is inert under the v1
-   pins the fleet still runs, whereas the other order has a real red window
-   (fleet-sync moves `commit-lint.yml` by direct commit, so between that
-   commit and the config merge every push and PR in the repo answers usage).
-   The arm never overwrites an existing `glyph.toml` (that file is the repo's
-   own grammar to evolve), and `glyph-pin-audit` enforces the invariant from
-   the other side: a consumer of a v3+ canonical with no committed
-   `glyph.toml` is red, by name.
-2. **Step 0 reads differently**: fleet-preflight's probes run the candidate
-   binary inside each consumer clone, so before configs land fleet-wide every
-   probe answers usage (2) and the differential is meaningless — and after
-   configs land, every lint verdict "moves" by construction (the grammar
-   changed). Run it after the config pass to enumerate surprises, but the
-   go/no-go for v2 is per-repo config readiness plus the glyph-test E2E
-   (t-dz5c, green 2026-08-16), not a zero-move preflight.
-3. **History stops counting**: under the acceptance window, pre-sigil commits
-   fold as none. A repo whose next release should reflect pre-migration work
-   must cut it under the old pin first (or accept the none-fold); after
-   migration, the first sigil-carrying commit is the first one that can move
-   the version. Remove the window from a repo's `glyph.toml` once the release
-   walk's base tag sits past its sigil-less history.
-4. **Rollback stays per-repo and cheap**: pin back to the last v1 tag —
-   `glyph.toml` is inert under v1, which reads no config, so the file needs no
-   revert. The hooks need nothing either way: an installed hook calls the
-   binary and blocks only on exit 3, so a v2 binary meeting a config-less repo
-   at authoring time warns and lets the commit through.
+**A major that removes a `glyph.toml` key.** glyph's loader refuses a key it
+does not know — with a `[commit] style` line in the file every one of those
+gates answers exit 2, `unknown key commit.style`, on glyph 46909b3 (measured
+2026-11-03) — so a major that drops a key from the schema stops loading every
+`glyph.toml` that still carries it. The same order applies one level down: the
+line leaves every copy first, under the current pin, which loads the file
+without it, and only then does the major ship. The record is t-85y9
+(2026-10-20 → 10-26: glyph v6.0.0 removing `[commit] style`).
+
+- **Census the whole tree, not the root file.** On t-85y9 the key sat in
+  three kinds of place: (1) the root `glyph.toml` (39 of 39 repositories);
+  (2) a workflow-embedded fixture — glyph-test's `e2e-v2.yml` wrote its own
+  `glyph.toml` carrying the line, which `gh search code` did not find and a
+  tree-wide grep did (glyph-test#127 dropped it); (3) the two harnesses'
+  frozen coordinates — glyph-test runs its walk tier in a worktree of tag
+  `v0.3.0` and glyph-monorepo-test in a checkout of `380db9d`, the
+  `glyph.toml` of that day still carried the key, and both walk tiers went red
+  until each harness edited its frozen copy (glyph-test#130,
+  glyph-monorepo-test#43). So shallow-clone the default branch of every
+  non-archived, non-fork repository (`gh repo list <owner> --no-archived
+  --source --limit 200`, the limit the hub's own loops pass — gh's default of
+  30 listed 30 of this owner's 39 on 2026-11-03 — then
+  `gh repo clone <repo> -- --depth 1 --branch <default>`), grep each whole
+  tree outside `.git` with leading whitespace allowed (an embedded fixture is
+  indented), read `glyph.toml` at the two frozen coordinates, and edit the
+  harnesses first. fleet-preflight does not stand in for the census: it runs
+  the candidate in each consumer's default-branch clone, which reads the root
+  file alone, so a zero-move preflight says nothing about the other two kinds.
+- **Then the sequence.** Under the current pin, open one one-line pull request
+  per repository with `scripts/glyph-config-drop.sh` (`GLYPH=` the current
+  pin's binary; `--dry` over every repository first): it drops exactly one
+  line through the API and refuses unless the message, and its first line as
+  the title, lint clean under that repository's old and new file. Merge them
+  with `scripts/merge-when-green.sh`, re-run the census to zero, then merge
+  the major and roll it out by the sequence below. On t-85y9 the one-line
+  pulls opened under v5.0.0 — glyph-test#126 first, pare#55 as the canary,
+  then the other 36 — and before glyph#317 merged the census found the key
+  only in glyph's own tree, which that pull edits, and in a task-body record.
 
 ## The sequence
 
@@ -153,8 +153,22 @@ config first, pins second, and it changes the sequence above in four ways:
    Before merging, apply to one repo and read the result:
    `gh workflow run fleet-sync.yml -f dry-run=false -f only-repo=glyph-test`.
    Nothing enforces this step — see `fleet-change-policy.md`, "Not enforced".
-3. Merge. The push onto `main` applies fleet-wide by itself (`paths: fleet/**`);
-   `gh workflow run fleet-sync.yml -f dry-run=false` is only needed to re-run it.
+3. Read the REST budget, then merge. fleet-preflight and every apply draw on
+   one 5000/h core budget — `FLEET_SYNC_PAT` is the owner's account, the local
+   `gh` token's — and one full apply costs about 1,850 requests (38 repos, 72
+   files, read-back included; measured 2026-10-05). So before this merge, and
+   again before step 5's apply, read a real request's `X-RateLimit-Remaining`
+   (`gh api -i repos/akira-toriyama/.github`), never `/rate_limit` (glyph's
+   `scripts/fleet-preflight.sh`, "API budget", records it lying), and wait for
+   the reset when the apply does not fit. On 2026-09-28 (v4.1.1) the apply this
+   merge fired, after fleet-preflight and review agents had drained the
+   budget, died with `API rate limit exceeded for user ID 92862731` — the
+   local token's user — after 7 of 37 repos and moved the rest only when
+   re-dispatched after the reset (runs 36414494391, 36417221128); on v6.0.0
+   this merge waited for the reset (t-85y9, 2026-10-26). The push onto `main`
+   applies fleet-wide by itself (`paths: fleet/**`);
+   `gh workflow run fleet-sync.yml -f dry-run=false` is only needed to re-run
+   it.
 4. Merge any `fleet-sync/*` PRs it opened (see branch protection below) — `canon`
    is the one target whose protection forces the PR path.
 5. Run the rewriter **with apply**:
@@ -162,12 +176,26 @@ config first, pins second, and it changes the sequence above in four ways:
    `glyph-pin/vX.Y.Z` PR per repo still carrying an unmanaged pin, moving the
    `@tag` and the `version:` under it in the same edit. Below a major they merge
    on their own — the run's last job arms auto-merge and each repo's required
-   checks do the rest; read that job's log for `major-left:` lines and merge
-   those by hand. (Its `workflow_dispatch` defaults to dry-run for the same
-   reason fleet-sync's does; run it without the flag first if you want the list.) A pull request that a
-   later fleet-sync push left `BEHIND` catches up on the next scheduled run —
-   the branch is rebuilt on the current tip (`scripts/glyph-pin-land.sh`) — so
-   a stale one is a reason to wait for the nightly, not to update it by hand.
+   checks do the rest; read that job's log for the lines that leave a pull to
+   a person — `major-left:`, `skipped(no-auto-merge):` and
+   `skipped(unprotected):` — and merge those pulls with
+   `scripts/merge-when-green.sh`, which squash-merges a pull only once every
+   check passed or skipped, or the head reports no checks. Write its list by
+   pull number, one `<owner/repo> <pull>` per line
+   (`gh pr list --repo <r> --head glyph-pin/vX.Y.Z` names the pull): those log
+   lines name the repository, not always the pull. For a major, merge
+   glyph-test's pull first, then glyph-monorepo-test's, read that their Release
+   runs installed the new tag, fire each harness's e2e at it
+   (`glyph-ref=vX.Y.Z`), then list the rest. On v6.0.0 (t-85y9, 2026-10-26)
+   glyph-test#131 and glyph-monorepo-test#44 went first and their Release runs
+   installed v6.0.0 (finished 09:55–09:56Z); the script then merged the other 19
+   while the two e2e runs (40303592990, 40303597047; 09:57–10:02Z) ran, 13 of
+   them before either finished. (Its `workflow_dispatch` defaults to dry-run
+   for the same reason fleet-sync's does; run it without the flag first if you
+   want the list.) A pull request that a later fleet-sync push left `BEHIND`
+   catches up on the next scheduled run — the branch is rebuilt on the current
+   tip (`scripts/glyph-pin-land.sh`) — so a stale one is a reason to wait for
+   the nightly, not to update it by hand.
 6. Verify with the audit and the live check below.
 
 ## Traps
@@ -191,11 +219,24 @@ unmerged, so the repo stays on the old pin while every other repo moves. canon
 was the only one on 2026-07-20; check for others after every sync.
 
 **Grepping for pins is easy to get wrong, in both directions.** Every glyph
-reusable ships a *commented* caller stub (`#   uses: …/lint.yml@v0.4.0`) that is
-permanently stale. A naive grep reports glyph itself as drifted forever; a
-`head -1` grep reads the comment instead of the real `uses:` line and reports the
-wrong version everywhere. Filter `^\s*#` out and anchor on `uses:`. This is why
-the audit is a workflow — see `glyph-pin-audit.yml`.
+reusable ships a *commented* caller stub (`#   uses: …/lint.yml@vX.Y.Z`) whose
+version is a placeholder on purpose — a tag is cut on an already-frozen tree,
+so a version written into a comment is stale on arrival. glyph's
+`TestCallerStubsCarryNoConcreteVersion` fails a concrete version in a stub, and
+`TestNaiveGrepSeesNoPinInTheReusables` runs a version grep
+(`uses:…@v[0-9][0-9.]*`) over the reusables with comments left in and requires
+it to find nothing: for a version grep the placeholder closes the trap at the
+source (unfiltered over glyph's `.github/workflows/*.yml` it matched only the
+two real callers, `commit-lint.yml` and `version-preview.yml`, at glyph
+46909b3 on 2026-11-03). The trap stays open two ways. A consumer that copied a
+stub above its real `uses:` line carries the comment with whatever version it
+was copied at (`tests/glyph-pin-scan.test.sh`, "commented example pin
+ignored", is that shape), and a `head -1` grep reads it instead of the real
+line. And a grep that accepts any ref (`@[^[:space:]]+`) reads `vX.Y.Z` itself
+as drift — the audit's scanner, `scripts/glyph-pin-scan.sh`, accepts any ref
+so it can classify a branch or SHA pin, and skips comment lines for this
+reason. Filter `^\s*#` out and anchor on `uses:`. This is why the audit is a
+workflow — see `glyph-pin-audit.yml`.
 
 **The rewriter refuses some pins, on purpose.** An `actions/install@` step that
 passes **no** `version:`, or one that **computes** it, is reported and left alone:
@@ -250,16 +291,3 @@ Close the PR without merging.
 show an unmerged branch that merged hours ago, and every conclusion drawn from it
 is wrong. On 2026-07-20 a whole analysis was built on a branch whose PR was
 already merged and whose remote branch was deleted.
-
-## Regression: a line break was worth a major release
-
-`Parse` matched `BREAKING CHANGE:` on any body line starting with it, so prose
-that merely **wrapped** onto the phrase declared a breaking change. The commit
-introducing the removal rule wrapped exactly that way and classified itself as
-breaking — the next release would have been v1.0.0 instead of v0.10.0.
-
-Fixed in glyph v0.10.0: footers are read only in trailer position (opening a
-block, or stacked under another trailer). Two habits follow. When a commit body
-discusses breaking changes, keep the phrase off the start of a line. And when a
-release verdict surprises you, ask `glyph bump --range … --json` for its
-`reason` — it names the commit it blamed, which is faster than reading bodies.

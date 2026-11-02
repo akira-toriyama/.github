@@ -86,8 +86,9 @@ Both release shapes read the same commit data; the difference is only who
 builds the artifacts. (**Verdict is glyph's; artifacts are GoReleaser's.**)
 
 - **Rolling-draft repos** (glyph's reusable `release.yml`): every push to
-  `main` recomputes the verdict from `lastPublishedTag..HEAD` and converges
-  the repo's single **draft** GitHub Release (notes + next `vX.Y.Z`). **No
+  `main` recomputes the verdict over the walk from the highest version tag
+  HEAD's history holds to HEAD, and converges a single **draft** GitHub
+  Release (notes + next `vX.Y.Z`) — both per declared line. **No
   tag is created** — review the draft and **Publish** it in the GitHub UI;
   GitHub creates the tag at publish time. A no-bump range means no draft
   (unless the repo's `glyph.toml` sets `draft_on_none = true`, which keeps an
@@ -107,7 +108,7 @@ Install once per clone, in any repo:
 glyph hook install
 ```
 
-That writes the local hooks (`commit-msg` pipes the message into
+That writes the local hooks (`commit-msg` hands the message file to
 `glyph lint --stdin`; `pre-push` lints the outgoing range), so a violation
 surfaces as you commit rather than after a push. The hooks carry **no copy of
 the convention** — they call glyph, which reads the repo's `glyph.toml`, so
@@ -116,5 +117,5 @@ lets the commit through: CI is the authority, the hook is only an early
 warning.
 
 It honours `core.hooksPath` and refuses to overwrite a hook it did not write
-(`--force` overrides). `glyph hook install --print` shows the script without
-installing it.
+(`--force` overrides). `glyph hook install --print commit-msg` (or
+`pre-push`) prints that one script without installing it.

@@ -74,8 +74,8 @@ jobs:
 EOF
 )" "$(printf 'uses\tv0.10.2\t4\nversion\tv0.10.2\t6')"
 
-# Every glyph reusable ships a commented caller stub with a permanently stale
-# example pin. Reading it is how a naive grep reports eternal false drift.
+# A commented caller stub — here one a consumer copied, with the version it was
+# copied at — is documentation; reading it reports drift that is not there.
 case_ "commented example pin ignored" "$(cat <<'EOF'
 # Example caller:
 #   jobs:
