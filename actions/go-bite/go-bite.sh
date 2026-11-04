@@ -34,6 +34,9 @@
 # selected test and warns about the ones that pinned nothing.
 #
 # Standing down (each is reported, never silent):
+#   - The range is empty — HEAD_SHA is the merge base, as in a local run on a clean
+#     main. There is no pull request to read, and that is said as such: calling it
+#     a test-only change would be a false diagnosis.
 #   - The pull request changes no shipping source — only tests and testdata. Nothing
 #     is being claimed about behaviour, so there is nothing to prove.
 #   - No test function was added, and no existing one changed in a way that is more
@@ -145,6 +148,13 @@ git -c core.quotePath=false diff --name-status --no-renames "$before" "$HEAD_SHA
 
 if cut -f2 "$work/status.tsv" | grep -q '^"'; then
   die "a changed path needs c-style quoting (a newline or quote in the filename); refusing to guess"
+fi
+
+# An empty diff is not a test-only pull request; it is no pull request at all
+# (HEAD_SHA = BASE_SHA, which a local run on a clean main produces). The next
+# stand-down would otherwise claim "only tests and fixtures changed" about nothing.
+if [ ! -s "$work/status.tsv" ]; then
+  stand_down "nothing to judge: $(git rev-parse --short "$HEAD_SHA") is already the merge base $short — the range is empty"
 fi
 
 : >"$work/overlay"   # paths to carry back from HEAD onto the old tree

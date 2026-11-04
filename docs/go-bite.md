@@ -67,6 +67,7 @@ Each of these is reported in the log and the job summary — never silent.
 
 | Situation | Why |
 |---|---|
+| The range is empty — HEAD is already the merge base (a local run on a clean main) | There is no pull request to read. It is named as such rather than as a test-only change. |
 | No shipping source changed — only tests and fixtures | Nothing is being claimed about behaviour, so there is nothing to prove. |
 | No test function added, and none changed beyond comments or blank lines | Rewording a comment in a test must not put that test on trial. |
 | Every selected test carries `bite-exempt: <reason>` | See below. |

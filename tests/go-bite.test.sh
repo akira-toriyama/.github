@@ -692,6 +692,16 @@ RC=$?
 expect 2 "an unreachable base commit is an environment error" \
   'fetch-depth'
 
+# HEAD_SHA = BASE_SHA is what a local run on a clean main hands the gate. There is
+# no pull request in that range, and the gate must say so — not "only tests and
+# fixtures changed", which is false about an empty diff.
+repo_new
+OUT="$(cd "$REPO" && BASE_SHA="$BEFORE" HEAD_SHA="$BEFORE" bash "$script" 2>&1)"
+RC=$?
+printf '%s' "$OUT" | grep -q 'claims nothing about behaviour' && RC=99
+expect 0 "an empty range is named as such, not as a test-only pull request" \
+  'nothing to judge' 'the range is empty'
+
 # result
 if [ "$fails" -ne 0 ]; then
   echo "$fails case(s) failed"
