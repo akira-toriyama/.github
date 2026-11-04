@@ -76,6 +76,11 @@ jobs:
         os: ${{ fromJSON(inputs.runners) }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
+    # The fleet lint FLOOR (t-5xyp, ratified 2026-07-26): linters that run in every
+    # caller whether or not its .golangci.yml lists them. One definition, read by
+    # the lint step's `--enable` and by the floor check after it.
+    env:
+      LINT_FLOOR: errcheck,govet,ineffassign,misspell,revive,staticcheck,unconvert,unused,gosec
     steps:
       # Set GOTOOLCHAIN only when asked, and BEFORE setup-go resolves the toolchain.
       # Leaving it unset (vs an empty job-level env) is what lets setup-go honor a
@@ -122,14 +127,38 @@ jobs:
       # v9 installs golangci-lint v2 (repo .golangci.yml is v2 format). Lint once,
       # on Linux only — it is OS-independent.
       #
-      # `--enable` is the fleet lint FLOOR (t-5xyp, ratified 2026-07-26): these
-      # linters run in every caller whether or not its .golangci.yml lists them.
-      # It ADDS to the repo config — `linters.settings` and `exclusions` there
-      # still apply (unlike `--enable-only`, which would replace the set), so a
-      # repo can scope a floor linter (e.g. gosec to G204/G304) but not drop it.
+      # `--enable=$LINT_FLOOR` ADDS to the repo config — `linters.settings` and
+      # `exclusions` there still apply (unlike `--enable-only`, which would replace
+      # the set), so a repo can scope a floor linter (e.g. gosec to G204/G304). It
+      # does NOT stop a repo dropping one: a `linters.disable` entry in the repo
+      # config wins over the flag (golangci-lint v2.12.2, measured 2026-11-04,
+      # t-3tpg), and `--default=none` changes nothing there. Hence the floor check
+      # after this step.
       - name: golangci-lint
         if: runner.os == 'Linux'
         uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
         with:
           version: ${{ inputs.golangci-lint-version }}
-          args: --enable=errcheck,govet,ineffassign,misspell,revive,staticcheck,unconvert,unused,gosec
+          args: --enable=${{ env.LINT_FLOOR }}
+
+      # The action leaves the binary it installed on PATH (its `install-only` mode
+      # is built on that). `golangci-lint linters` applies the same config + flag
+      # merge the run did and lists what came out enabled, so the floor is judged
+      # by the tool itself, not by a yaml reading of `linters.disable` that a
+      # renamed key or a future mechanism would slip past.
+      - name: lint floor (every floor linter was in the set)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          enabled="$(golangci-lint linters --enable="$LINT_FLOOR" \
+            | sed -n '/^Enabled by your configuration linters:$/,/^$/p' | cut -d: -f1)"
+          missing=""
+          IFS=, read -ra floor <<<"$LINT_FLOOR"
+          for linter in "${floor[@]}"; do
+            grep -qx "$linter" <<<"$enabled" || missing="$missing $linter"
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::golangci-lint ran without the fleet lint floor:$missing — .golangci.yml drops it (a linters.disable entry); scope the linter through linters.settings or exclusions instead"
+            exit 1
+          fi
+          echo "lint floor intact: $LINT_FLOOR"
