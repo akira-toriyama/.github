@@ -109,10 +109,16 @@ jobs:
           ONLY_REPO: ${{ inputs.only-repo }}
           WRITE_PAT: ${{ secrets.PROJECTS_WRITE_PAT }}
           TAP_KEY: ${{ secrets.HOMEBREW_TAP_DEPLOY_KEY }}
-          # Repos to skip (space-separated). Only the hub is left: it holds the
-          # canonicals, so syncing them onto it would overwrite each source with
-          # a copy of itself. Its own lint caller is hand-maintained as a
-          # consequence — docs/glyph-rollout-runbook.md says who moves that pin.
+          # Repos to skip (space-separated). The hub holds the canonicals, so
+          # syncing them onto it would overwrite each source with a copy of
+          # itself; its own lint caller is hand-maintained as a consequence —
+          # docs/glyph-rollout-runbook.md says who moves that pin.
+          # prospector-sprite-template is a GitHub template repository for
+          # other people (zmk-beacon's README, canon t-hkc6): a repository made
+          # from it copies every file, so the fleet's workflows would land in
+          # strangers' copies without the PATs they call for and fail there,
+          # and a commit-lint caller without a glyph.toml would redden
+          # glyph-pin-audit here. It carries one workflow and a README only.
           #
           # Both temporary entries are gone. glyph-test left at the v3.0.0
           # canonical bump (#201): a range pinned differently from the fleet
@@ -121,7 +127,7 @@ jobs:
           # what the repository's own glyph.toml says — so it was archived
           # (glyph t-jvgy) and now falls out of the --no-archived listing below
           # rather than needing a name here.
-          EXCLUDE: '.github'
+          EXCLUDE: '.github prospector-sprite-template'
         run: |
           set -euo pipefail
 
