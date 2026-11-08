@@ -244,6 +244,12 @@ jobs:
     # in that plumbing fails here, not in a fleet caller.
     uses: $/.github/workflows/repo-policy.yml
 
+  smoke-picture-ban:
+    # The picture gate run against the hub itself (it tracks no picture, pack
+    # or binary: the clean side; the violation side is pinned by
+    # picture-ban-check-test below), with the same self-checkout plumbing.
+    uses: $/.github/workflows/picture-ban.yml
+
   # RUN the extracted formula-mutation logic over a case table (the real .sh,
   # drift-free) so a break fails HERE, not in a caller after @v2 moves. This is
   # the coverage #98 lacked — actionlint/zizmor never executed the sed, so the
@@ -339,6 +345,24 @@ jobs:
           persist-credentials: false
       - name: Table-test repo-policy-check
         run: bash tests/repo-policy-check.test.sh
+
+  # The picture gate's decision half, and the pre-commit hook it installs.
+  # Every rule fails SILENTLY when it regresses (a header pattern that stops
+  # matching reads exactly like a repository without pictures), so the table
+  # pins picture and look-alike for each: the five formats by their first
+  # bytes vs text that opens with "BM" or "RIFF"; the names vs "gif" inside a
+  # name; a binary at the limit vs one under it; the index vs the working
+  # tree. The hook cases run a real `git commit` through the installed hook.
+  picture-ban-check-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # Builds throwaway git fixtures under mktemp; never pushes.
+          persist-credentials: false
+      - name: Table-test picture-ban-check
+        run: bash tests/picture-ban-check.test.sh
 
   # The same extractor/audit split, for the furrow pin: furrow-pin-audit.yml sees
   # the whole fleet through scripts/furrow-pin-scan.sh, including the
@@ -631,6 +655,9 @@ jobs:
           bash tests/fleet-automerge.test.sh
           bash tests/repin-vendorhash.test.sh
           bash tests/fleet-repin.test.sh
+          # The pre-commit hook of the sprite repositories runs on the author's
+          # Mac under /bin/bash 3.2 and the BSD od, tr and head.
+          bash tests/picture-ban-check.test.sh
 
   # RUN the go-bite gate over a case table (the real .sh) so a break fails HERE, not
   # in a fleet caller after @v2 moves. Each case builds a throwaway Go repo under

@@ -5,17 +5,21 @@
 # being dodged. `job.workflow_repository` and `job.workflow_sha` are documented
 # properties (runner v2.334.0, 2026-04) naming the repository and resolved commit of
 # the workflow file that defines the current job — for a reusable workflow, itself.
-# repo-policy.yml uses them to check out its own script at exactly the commit the
-# caller resolved this workflow to, which is what keeps the YAML and the script from
-# drifting apart (go-bite.yml and swift-bite.yml reach their composites through the
+# repo-policy.yml and picture-ban.yml use them to check out their own script at
+# exactly the commit the caller resolved the workflow to, which is what keeps the
+# YAML and the script from drifting apart (go-bite.yml and swift-bite.yml reach their composites through the
 # self-repository reference `$/…` instead and need no checkout — t-e7tb; that
 # form's own actionlint waiver lives in the reusable, .github/workflows/actionlint.yml,
 # once for every caller). actionlint's built-in `job` type predates them.
 #
-# Scoped to the one file and those two properties, so every other expression error
-# in it still gates.
+# Scoped to those two files and those two properties, so every other expression
+# error in them still gates.
 paths:
   .github/workflows/repo-policy.yml:
+    ignore:
+      - 'property "workflow_repository" is not defined'
+      - 'property "workflow_sha" is not defined'
+  .github/workflows/picture-ban.yml:
     ignore:
       - 'property "workflow_repository" is not defined'
       - 'property "workflow_sha" is not defined'
