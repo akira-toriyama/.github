@@ -1,0 +1,65 @@
+name: picture-ban
+
+# Reusable picture gate, called by the thin caller workflow of a repository
+# that keeps personal pictures off its public tree (canon, zmk-beacon,
+# zmk-lantern: the sprite GIFs). Tool-free. It fails on a tracked file that is
+# a picture by its name (.gif .png .jpg .jpeg .webp .bmp) or by its first bytes
+# (GIF, PNG, JPEG, WebP, BMP), a sprite pack (.spk, the embedded
+# beacon_sprite_pack.inc), a path naming the sprites' source or a sprites/
+# directory, or a binary of 16 KiB or more. Rules and reasons: the header of
+# scripts/picture-ban-check.sh, which is also the pre-commit hook of those
+# repositories (`picture-ban-check.sh --install-hook`), so the gate and the
+# hook cannot disagree.
+#
+# It runs in the CALLER repo's context: the first checkout pulls the caller's
+# tree, which is what gets judged. The logic lives in the HUB's
+# scripts/picture-ban-check.sh (table-tested — tests/picture-ban-check.test.sh)
+# rather than inline here, so the second checkout pulls the hub at
+# job.workflow_sha — the exact commit THIS reusable was resolved from — and
+# script and workflow can never skew (the same self-checkout repo-policy.yml
+# uses; `github.job_workflow_sha` is NOT it — that documented name is always
+# null at runtime, an OIDC claim only).
+#
+# Caller skeleton (.github/workflows/picture-ban.yml in each repo):
+#   on:
+#     pull_request:
+#   permissions:
+#     contents: read
+#   jobs:
+#     picture-ban:
+#       uses: akira-toriyama/.github/.github/workflows/picture-ban.yml@v2
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  picture-ban:
+    runs-on: ubuntu-latest
+    # A few hundred `git cat-file` calls; bound it anyway (house rule).
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # Lint-only, never pushes — drop the persisted checkout token (zizmor
+          # artipacked); nothing downstream needs it.
+          persist-credentials: false
+
+      # job.workflow_repository / job.workflow_sha name the repository and the
+      # resolved commit of the workflow file defining this job — THIS file, at
+      # whatever tag the caller pinned — waived in .github/actionlint.yaml
+      # (actionlint's `job` schema predates the properties).
+      - name: Fetch the check script (hub, at this reusable's own commit)
+        uses: actions/checkout@v7
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .picture-ban-hub
+          persist-credentials: false
+
+      - name: Picture ban
+        # The hub checkout sits UNTRACKED inside the caller's tree; the check
+        # reads the caller's index, so it can never see itself.
+        run: bash .picture-ban-hub/scripts/picture-ban-check.sh
