@@ -114,7 +114,7 @@ jobs:
           # itself; its own lint caller is hand-maintained as a consequence —
           # docs/glyph-rollout-runbook.md says who moves that pin.
           # prospector-sprite-template is a GitHub template repository for
-          # other people (zmk-beacon's README, canon t-hkc6): a repository made
+          # other people (zmk-vfx-beacon's README, canon t-hkc6): a repository made
           # from it copies every file, so the fleet's workflows would land in
           # strangers' copies without the PATs they call for and fail there,
           # and a commit-lint caller without a glyph.toml would redden
