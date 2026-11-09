@@ -1,8 +1,8 @@
 name: picture-ban
 
 # Reusable picture gate, called by the thin caller workflow of a repository
-# that keeps personal pictures off its public tree (canon, zmk-beacon,
-# zmk-lantern: the sprite GIFs). Tool-free. It fails on a tracked file that is
+# that keeps personal pictures off its public tree (canon, zmk-vfx-beacon,
+# zmk-vfx-lantern: the sprite GIFs). Tool-free. It fails on a tracked file that is
 # a picture by its name (.gif .png .jpg .jpeg .webp .bmp) or by its first bytes
 # (GIF, PNG, JPEG, WebP, BMP), a sprite pack (.spk, the embedded
 # beacon_sprite_pack.inc), a path naming the sprites' source or a sprites/

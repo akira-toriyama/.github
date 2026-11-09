@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # The picture ban: no picture, sprite pack or large binary enters a repository
-# that keeps personal pictures off its tree (canon, zmk-beacon, zmk-lantern:
+# that keeps personal pictures off its tree (canon, zmk-vfx-beacon, zmk-vfx-lantern:
 # the sprite GIFs are personal files, and the repositories are public). Run
 # per-repo by the picture-ban reusable (.github/workflows/picture-ban.yml)
 # against the CALLER repo's checkout, and by the pre-commit hook this script
