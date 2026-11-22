@@ -671,7 +671,7 @@ jobs:
         with:
           # Builds its own repos under mktemp; never pushes (zizmor artipacked). t-2nh8
           persist-credentials: false
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
           go-version: stable
       - name: Table-test go-bite
@@ -714,7 +714,7 @@ jobs:
           # Needs the merge base to reconstruct the pre-change gate.
           fetch-depth: 0
           persist-credentials: false
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
           go-version: stable
       - name: The gate's own tests must bite
