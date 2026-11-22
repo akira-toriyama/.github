@@ -97,7 +97,7 @@ jobs:
           # anyway: `go` fetches via the proxy or into the module cache's own
           # clones, where a repo-local credential never applies. t-2nh8
           persist-credentials: false
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
           go-version: ${{ inputs.go-version }}
           go-version-file: ${{ inputs.go-version-file }}
