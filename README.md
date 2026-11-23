@@ -64,7 +64,7 @@ carries the app name.
 | Action | What it does |
 |---|---|
 | [`actions/swift-build`](actions/swift-build/action.yml) | Build + test a Swift package on the pinned latest-stable Xcode (`build-cmd`, `run-tests` inputs) |
-| [`actions/go-bite`](actions/go-bite/action.yml) | The go-bite gate as a step, for a caller that already has a Go job (the reusable above wraps it) |
+| [`actions/go-bite`](actions/go-bite/action.yml) | The go-bite gate as a step, for a caller that already has a Go job (the reusable above wraps it). Make it the job's last Go step: it removes setup-go's `go` problem matcher for the rest of the job, so the pre-change tree's expected compile errors do not become annotations |
 | [`actions/swift-bite`](actions/swift-bite/action.yml) | The swift-bite gate as a step (the reusable above wraps it) |
 | [`actions/bump-formula`](actions/bump-formula/action.yml) | Move a Homebrew formula to a new tag + source sha256 in place. The pure file-mutation half of `update-tap.yml`, extracted so it can be table-tested; a backward move is refused unless `allow-downgrade` |
 

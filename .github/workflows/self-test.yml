@@ -776,7 +776,18 @@ jobs:
           # line — before the verdict logic below ever runs.
           rc=0
           out="$(bash tests/go-bite.test.sh 2>&1)" || rc=$?
+          # The table's output is a record to read, and a failing case in it is the
+          # expected outcome — but it quotes what the fixture gate printed, and the
+          # runner acts on that: setup-go's `go` matcher read an indented
+          # `pkg_test.go:12:5: undefined: Farewell` as a failure annotation, and an
+          # indented `::notice::` was executed as this job's own (both on #289,
+          # check-run 137502267029, a job that passed). So the matcher comes off and
+          # workflow commands are held for the length of the print.
+          echo "::remove-matcher owner=go::"
+          quiet="$(uuidgen)"
+          echo "::stop-commands::$quiet"
           printf '%s\n' "$out"
+          echo "::$quiet::"
           if [ "$rc" -eq 0 ]; then
             echo "::error::the go-bite table passes against the PRE-CHANGE gate — the new cases pin nothing. Add a case that fails without this change, or waive it with a \`Bite-exempt: <reason>\` commit trailer on every commit."
             exit 1
