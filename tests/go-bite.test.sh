@@ -155,6 +155,33 @@ run_gate
 expect 0 "a test for a new API counts as a bite (it cannot build without it)" \
   'does not build without the change'
 
+# That compile error is printed on a runner where setup-go has registered a problem
+# matcher (owner `go`), which reads a `file.go:line:col: message` line as a failure
+# annotation on the pull request's diff — from a job that passed. The gate has to
+# take the matcher off BEFORE the first line of pre-change output. Only the order is
+# visible to a shell test; what the runner does with the command was read off a real
+# run instead (glyph-test#143, cited beside the command in the script).
+repo_new
+cat >>"$REPO/pkg/pkg.go" <<'EOF'
+
+// Farewell is new.
+func Farewell(name string) string { return "bye " + name }
+EOF
+cat >>"$REPO/pkg/pkg_test.go" <<'EOF'
+
+func TestFarewell(t *testing.T) {
+	if Farewell("a") != "bye a" {
+		t.Fatal("wrong")
+	}
+}
+EOF
+run_gate
+unmatch="$(printf '%s\n' "$OUT" | grep -n '^::remove-matcher owner=go::$' | sed -n '1p' | cut -d: -f1)"
+trial="$(printf '%s\n' "$OUT" | grep -n '^::group::go test ' | sed -n '1p' | cut -d: -f1)"
+if [ -z "$unmatch" ] || [ -z "$trial" ] || [ "$unmatch" -ge "$trial" ]; then RC=99; fi
+expect 0 "the go problem matcher is removed before the pre-change tree is printed" \
+  'pkg_test.go:[0-9]*:[0-9]*: undefined: Farewell'
+
 # A test that deliberately pins current behaviour opts out — with a reason.
 repo_new
 cat >>"$REPO/pkg/pkg.go" <<'EOF'

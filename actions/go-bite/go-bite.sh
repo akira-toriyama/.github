@@ -429,6 +429,21 @@ module_root() {
 
 record() { printf '%s\t%s\t%s\n' "$1" "$2" "$3" >>"$work/rows.tsv"; }
 
+# Everything printed from here on comes from a tree that is EXPECTED to be red — a
+# compile error there is a bite. setup-go registers a problem matcher (owner `go`)
+# that turns each `file.go:line:col: message` line into a failure annotation on the
+# pull request's diff, so a gate that passed marked ten lines of furrow#544 as
+# broken (t-b3jw). The verdict does not travel that way: `die`, `warn`, `note` and
+# the closing ::error are workflow commands of the gate's own. The matcher is
+# removed for the rest of the JOB, not suspended: go-bite.yml runs the gate as its
+# last step, and a caller that runs the composite inside a Go job of its own has to
+# do the same (README). Where no such matcher is registered the command changes
+# nothing. Measured on glyph-test#143, 2026-11-23:
+# the same diff leaves the annotation without this line and none with it, a gate
+# that fails keeps its own ::error, and the command on a job that never ran
+# setup-go is silent.
+printf '::remove-matcher owner=go::\n'
+
 : >"$work/rows.tsv"
 while IFS= read -r dir; do
   names="$(awk -F'\t' -v d="$dir" '$1 == d { print $2 }' "$work/run.tsv")"
