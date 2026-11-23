@@ -23,9 +23,11 @@ Closes #
 <!-- Anything subtle, deferred, or risky — state it explicitly rather than leaving it implicit. -->
 
 <!--
-Task tracker (optional): link a furrow task so its status follows this PR. One footer line:
-  SetStatus-task: https://github.com/akira-toriyama/projects/blob/main/.furrow/bodies/<id>.md <lane>
-PR open → the task is nudged to in-progress; merge → applies <lane> (e.g. `done`). Omit <lane> to
-just reference it. Lanes: inbox → backlog → ready → in-progress → done → icebox. Non-blocking:
-a bad id/lane comments on the PR but never blocks the merge.
+Task tracker (optional), so a furrow task's status follows this PR: a footer line of its own that
+starts with the directive SetStatus-task:, then the task's body URL
+https://github.com/akira-toriyama/projects/blob/main/.furrow/bodies/<id>.md and an optional <lane>.
+furrow reads this comment too, so no line in it starts with the directive. <lane> is where the task
+should be once the PR lands (e.g. `done`); without it, open and merge only annotate the task body.
+`furrow apply --help` has the rules, `furrow board` the lanes. Non-blocking: a bad id or lane
+comments on the PR but never blocks the merge.
 -->
