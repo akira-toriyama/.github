@@ -57,7 +57,7 @@ on:
       golangci-lint-version:
         description: 'golangci-lint v2 release to install.'
         type: string
-        default: 'v2.12.2'
+        default: 'v2.14.0'
       coverage:
         description: 'Run tests with atomic coverage and print a func summary.'
         type: boolean
