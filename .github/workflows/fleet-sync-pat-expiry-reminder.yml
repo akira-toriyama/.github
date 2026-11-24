@@ -126,8 +126,8 @@ jobs:
           # file — the shell parses the version out of it, and
           # tests/fleet-manifest.test.sh §8 holds it in lockstep with the
           # other call sites.
-          FURROW_RELEASE: akira-toriyama/furrow@v10.1.0
-          FURROW_SHA256: 48cd7800a15e6026f0496791ddb05f8d64e3bb4af261bdac6b6e8d20718c271b
+          FURROW_RELEASE: akira-toriyama/furrow@v10.2.0
+          FURROW_SHA256: bce0bab0fdc84c4d6a944d5d8d52a7a13b252dd4655d7cd5e7b941783ac44650
         run: |
           set -euo pipefail
           ver="${FURROW_RELEASE#*@}"
