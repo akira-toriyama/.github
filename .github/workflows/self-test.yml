@@ -399,6 +399,24 @@ jobs:
       - name: Table-test token-expiry-probe
         run: bash tests/token-expiry-probe.test.sh
 
+  # The question fleet-sync's prune, its tap-secret gate and fleet-repin ask of
+  # a file read through the Contents API: does it hold this string? Asked
+  # inline as a base64 decode piped into `grep -q`, under pipefail, a match
+  # read as a miss whenever grep left before the decoder finished — and on
+  # 2026-11-24 the prune deleted glyph's pr-verdict.yml reusable from main on
+  # that answer. The table carries an input the old shape misreads every time
+  # (its control), and scans the hub for the shape coming back.
+  contents-has-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # Runs a script against generated fixtures; never pushes. t-2nh8
+          persist-credentials: false
+      - name: Table-test contents-has
+        run: bash tests/contents-has.test.sh
+
   # The same extractor/audit split, for the sill platform floor:
   # platform-floor-audit.yml reads every consumer's macOS floor and sill
   # dependency through scripts/platform-floor-scan.sh. A parser regression does
@@ -648,6 +666,7 @@ jobs:
           bash tests/apply-repo-settings.test.sh
           bash tests/platform-floor-scan.test.sh
           bash tests/token-expiry-probe.test.sh
+          bash tests/contents-has.test.sh
           bash tests/glyph-pin-land.test.sh
           bash tests/glyph-config-drop.test.sh
           bash tests/merge-when-green.test.sh

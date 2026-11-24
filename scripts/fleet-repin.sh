@@ -123,8 +123,14 @@ while IFS= read -r -u 4 name; do
     err="$work/err"
     if flake_json="$(gh api "repos/$full/contents/flake.nix?ref=$head" 2>"$err" </dev/null)"; then
       flake_sha="$(printf '%s' "$flake_json" | jq -r '.sha')"
-      if ! printf '%s' "$flake_json" | jq -r '.content' | base64 -d 2>/dev/null | grep -q '^[[:space:]]*vendorHash = '; then
+      # contents-has.sh, not an inline decode piped into `grep -q`: under
+      # pipefail that shape reads a match as a miss (its header has the case).
+      pins_rc=0
+      printf '%s' "$flake_json" | jq -r '.content // empty' | bash "$(dirname "${BASH_SOURCE[0]}")/contents-has.sh" -E '^[[:space:]]*vendorHash = ' || pins_rc=$?
+      if [ "$pins_rc" -eq 1 ]; then
         skip no-vendorhash "$tag flake.nix pins no vendorHash — $title"; continue
+      elif [ "$pins_rc" -ne 0 ]; then
+        fail "$tag cannot decode flake.nix at $head — $title"; continue
       fi
     elif grep -q 'HTTP 404' "$err"; then
       skip no-flake "$tag no flake.nix at $head — $title"; continue

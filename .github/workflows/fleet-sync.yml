@@ -168,10 +168,14 @@ jobs:
           # gh login does not. Entries are removed from this list once a run reports
           # every repo already clean.
           #
-          # pr-verdict.yml: renamed to version-preview.yml after it overwrote glyph's
-          # reusable (see the collision guard). Leaving it would race the new caller
-          # for the same sticky comment.
-          PRUNE=".github/workflows/pr-verdict.yml"
+          # Empty today. `.github/workflows/pr-verdict.yml` (the caller renamed to
+          # version-preview.yml after it overwrote glyph's reusable — see the
+          # collision guard) left the list on 2026-11-24: no repo carried the
+          # caller any more (46 of 46 read), so the one file the entry could still
+          # reach was glyph's reusable DEFINITION at that path, and that day the
+          # prune deleted it when the guard misread it (scripts/contents-has.sh
+          # has the mechanism).
+          PRUNE=""
 
           # The read-back step re-checks these same lists; hand it the ONE
           # definition rather than keeping a second copy to drift
@@ -400,8 +404,17 @@ jobs:
               # not finish the job that collision started. Decided on CONTENT, not on
               # a repo name: a workflow_call file is something callers pin, whoever
               # owns it, and no fleet operation may delete one by accident.
-              if printf '%s' "$dead_json" | jq -r '.content' | base64 -d 2>/dev/null | grep -q "workflow_call"; then
+              # Asked through scripts/contents-has.sh, never an inline
+              # `base64 -d` piped into `grep -q`: under this step's pipefail
+              # that shape read a reusable as a caller (2026-11-24). A file
+              # that cannot be read is not known to be a caller: keep it.
+              reusable_rc=0
+              printf '%s' "$dead_json" | jq -r '.content // empty' | bash scripts/contents-has.sh workflow_call || reusable_rc=$?
+              if [ "$reusable_rc" -eq 0 ]; then
                 echo "skip(reusable): $full $dead defines a reusable — not a caller; refusing to prune"
+                continue
+              elif [ "$reusable_rc" -ne 1 ]; then
+                echo "::warning::fleet: could not read $full $dead to tell a caller from a reusable — not pruning it this run"
                 continue
               fi
               echo "needs-prune: $full $dead"
@@ -509,9 +522,13 @@ jobs:
                 # log (the daily idempotent rerun heals it).
                 gate_err="$RUNNER_TEMP/tap-gate.err"
                 if content="$(gh api "repos/$full/contents/.github/workflows/$wf" --jq '.content' 2>"$gate_err")"; then
-                  if printf '%s' "$content" | base64 -d 2>/dev/null | grep -q HOMEBREW_TAP_DEPLOY_KEY; then
+                  consumer_rc=0
+                  printf '%s' "$content" | bash scripts/contents-has.sh HOMEBREW_TAP_DEPLOY_KEY || consumer_rc=$?
+                  if [ "$consumer_rc" -eq 0 ]; then
                     tap_consumer=true
                     break
+                  elif [ "$consumer_rc" -ne 1 ]; then
+                    echo "::warning::fleet: tap-gate could not decode $full $wf (treated as non-consumer this run)"
                   fi
                 elif ! grep -q 'HTTP 404' "$gate_err"; then
                   echo "::warning::fleet: tap-gate read failed for $full $wf (treated as non-consumer this run): $(head -c 200 "$gate_err")"
@@ -597,7 +614,9 @@ jobs:
           # canonicals would pass vacuously, which is the exact green-that-
           # means-nothing this step exists to end.
           [ -n "${MANIFEST:-}" ] || { echo "::error::read-back: MANIFEST not inherited from the sync step — refusing a vacuous pass."; exit 1; }
-          [ -n "${PRUNE:-}" ] || { echo "::error::read-back: PRUNE not inherited from the sync step — refusing a vacuous pass."; exit 1; }
+          # PRUNE may be EMPTY (nothing is being retired); what must not happen
+          # is the sync step dying before it defined the list at all.
+          [ -n "${PRUNE+defined}" ] || { echo "::error::read-back: PRUNE not inherited from the sync step — refusing a vacuous pass."; exit 1; }
           [ -n "${EXCLUDE:-}" ] || { echo "::error::read-back: EXCLUDE not inherited from the sync step — the hub would be misread as a stale fleet repo."; exit 1; }
 
           # Every per-file verdict is also recorded as one JSON line, so the
@@ -680,9 +699,15 @@ jobs:
               if dead_json="$(gh api "repos/$full/contents/$dead" 2>"$err")"; then
                 # A reusable DEFINITION at a retired path is deliberately not
                 # pruned (see the sync step) — deliberate skips are not stale.
-                if printf '%s' "$dead_json" | jq -r '.content' | base64 -d 2>/dev/null | grep -q "workflow_call"; then
+                reusable_rc=0
+                printf '%s' "$dead_json" | jq -r '.content // empty' | bash scripts/contents-has.sh workflow_call || reusable_rc=$?
+                if [ "$reusable_rc" -eq 0 ]; then
                   record "$full" "$dead" "prune-skipped-reusable"
                   ok=$((ok + 1)); continue
+                elif [ "$reusable_rc" -ne 1 ]; then
+                  echo "::error::read-back: cannot decode $full $dead to tell a caller from a reusable"
+                  record "$full" "$dead" "prune-unreadable"
+                  unreadable=$((unreadable + 1)); continue
                 fi
                 deadbase="$(basename "$dead")"
                 branch="fleet-sync/prune-${deadbase%.*}"
